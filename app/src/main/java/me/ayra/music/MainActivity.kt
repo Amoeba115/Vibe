@@ -55,7 +55,6 @@ import me.ayra.music.ui.home.modernExit
 import me.ayra.music.ui.home.modernPopEnter
 import me.ayra.music.ui.home.modernPopExit
 import me.ayra.music.ui.player.PlayerSheet
-import me.ayra.music.ui.player.PlayerSheetState
 import me.ayra.music.ui.settings.SettingsScreen
 import me.ayra.music.ui.theme.MusicTheme
 import me.ayra.music.util.MusicPreferences
@@ -361,7 +360,6 @@ private enum class RootRoute { Main, Settings }
 fun MusicApp(viewModel: MusicViewModel = viewModel()) {
     val context = LocalContext.current
     var rootRoute by rememberSaveable { mutableStateOf(RootRoute.Main) }
-    var playerSheetState by rememberSaveable { mutableStateOf(PlayerSheetState.Collapsed) }
     val permission = remember { audioPermission() }
     var permissionGranted by remember {
         mutableStateOf(ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED)
@@ -415,10 +413,8 @@ fun MusicApp(viewModel: MusicViewModel = viewModel()) {
             }
 
             PlayerSheet(
-                sheetState = playerSheetState,
                 playerState = playerState,
                 isFavorite = playerState.currentTrack?.id in library.favorites,
-                onSheetStateChange = { playerSheetState = it },
                 onSettings = { rootRoute = RootRoute.Settings },
                 onToggleFavorite = { playerState.currentTrack?.id?.let(viewModel::toggleFavorite) },
                 onPlayPause = viewModel::togglePlayPause,
