@@ -15,20 +15,10 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.animation.SizeTransform
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.expandIn
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.shrinkOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -40,10 +30,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
@@ -67,7 +54,8 @@ import me.ayra.music.ui.home.modernEnter
 import me.ayra.music.ui.home.modernExit
 import me.ayra.music.ui.home.modernPopEnter
 import me.ayra.music.ui.home.modernPopExit
-import me.ayra.music.ui.player.ExpandedPlayerScreen
+import me.ayra.music.ui.player.PlayerSheet
+import me.ayra.music.ui.player.PlayerSheetState
 import me.ayra.music.ui.settings.SettingsScreen
 import me.ayra.music.ui.theme.MusicTheme
 import me.ayra.music.util.MusicPreferences
@@ -373,7 +361,7 @@ private enum class RootRoute { Main, Settings }
 fun MusicApp(viewModel: MusicViewModel = viewModel()) {
     val context = LocalContext.current
     var rootRoute by rememberSaveable { mutableStateOf(RootRoute.Main) }
-    var expandedPlayer by rememberSaveable { mutableStateOf(false) }
+    var playerSheetState by rememberSaveable { mutableStateOf(PlayerSheetState.Collapsed) }
     val permission = remember { audioPermission() }
     var permissionGranted by remember {
         mutableStateOf(ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED)
@@ -396,71 +384,41 @@ fun MusicApp(viewModel: MusicViewModel = viewModel()) {
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background,
     ) {
-        AnimatedContent(
-            targetState = rootRoute,
-            transitionSpec = {
-                if (targetState == RootRoute.Settings) {
-                    modernEnter() togetherWith modernExit()
-                } else {
-                    modernPopEnter() togetherWith modernPopExit()
-                }.using(SizeTransform(clip = false))
-            },
-            label = "root-nav",
-        ) { route ->
-            when (route) {
-                RootRoute.Main -> MainScreen(
-                    library = library,
-                    playerState = playerState,
-                    onRequestPermission = { permissionLauncher.launch(permission) },
-                    onSettings = { rootRoute = RootRoute.Settings },
-                    onTrackClick = viewModel::playTrack,
-                    onToggleFavorite = viewModel::toggleFavorite,
-                    onMiniPlayerClick = { expandedPlayer = true },
-                    onPlayPause = viewModel::togglePlayPause,
-                    onPrevious = viewModel::previous,
-                    onNext = viewModel::next,
-                    initialTabIndex = lastHomeTab,
-                    onTabSelected = { tabIndex ->
-                        lastHomeTab = tabIndex
-                        preferences.saveLastTab(tabIndex)
-                    },
-                )
+        Box(modifier = Modifier.fillMaxSize()) {
+            AnimatedContent(
+                targetState = rootRoute,
+                transitionSpec = {
+                    if (targetState == RootRoute.Settings) {
+                        modernEnter() togetherWith modernExit()
+                    } else {
+                        modernPopEnter() togetherWith modernPopExit()
+                    }.using(SizeTransform(clip = false))
+                },
+                label = "root-nav",
+            ) { route ->
+                when (route) {
+                    RootRoute.Main -> MainScreen(
+                        library = library,
+                        onRequestPermission = { permissionLauncher.launch(permission) },
+                        onSettings = { rootRoute = RootRoute.Settings },
+                        onTrackClick = viewModel::playTrack,
+                        onToggleFavorite = viewModel::toggleFavorite,
+                        initialTabIndex = lastHomeTab,
+                        onTabSelected = { tabIndex ->
+                            lastHomeTab = tabIndex
+                            preferences.saveLastTab(tabIndex)
+                        },
+                    )
 
-                RootRoute.Settings -> SettingsScreen(onBack = { rootRoute = RootRoute.Main })
+                    RootRoute.Settings -> SettingsScreen(onBack = { rootRoute = RootRoute.Main })
+                }
             }
-        }
 
-        AnimatedVisibility(
-            visible = expandedPlayer,
-            enter = slideInVertically(
-                animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-                initialOffsetY = { it / 2 },
-            ) + expandIn(
-                animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-                expandFrom = Alignment.BottomCenter,
-                initialSize = { fullSize -> IntSize(width = (fullSize.width * 0.94f).toInt(), height = 88) },
-            ) + scaleIn(
-                animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-                initialScale = 0.94f,
-                transformOrigin = TransformOrigin(0.5f, 1f),
-            ) + fadeIn(spring(stiffness = Spring.StiffnessMediumLow)),
-            exit = slideOutVertically(
-                animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-                targetOffsetY = { it / 2 },
-            ) + shrinkOut(
-                animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-                shrinkTowards = Alignment.BottomCenter,
-                targetSize = { fullSize -> IntSize(width = (fullSize.width * 0.94f).toInt(), height = 88) },
-            ) + scaleOut(
-                animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-                targetScale = 0.94f,
-                transformOrigin = TransformOrigin(0.5f, 1f),
-            ) + fadeOut(),
-        ) {
-            ExpandedPlayerScreen(
+            PlayerSheet(
+                sheetState = playerSheetState,
                 playerState = playerState,
                 isFavorite = playerState.currentTrack?.id in library.favorites,
-                onDismiss = { expandedPlayer = false },
+                onSheetStateChange = { playerSheetState = it },
                 onSettings = { rootRoute = RootRoute.Settings },
                 onToggleFavorite = { playerState.currentTrack?.id?.let(viewModel::toggleFavorite) },
                 onPlayPause = viewModel::togglePlayPause,
@@ -472,7 +430,6 @@ fun MusicApp(viewModel: MusicViewModel = viewModel()) {
             )
         }
     }
-
 }
 
 private fun audioPermission(): String {

@@ -84,10 +84,8 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import me.ayra.music.FolderGroup
 import me.ayra.music.LibraryState
-import me.ayra.music.PlayerState
 import me.ayra.music.Track
 import me.ayra.music.ui.player.AlbumArt
-import me.ayra.music.ui.player.MiniPlayer
 
 enum class HomeTab(val label: String) {
     Favorite("Favorite"),
@@ -106,15 +104,10 @@ private const val ROUTE_FOLDER_PREFIX = "folder:"
 @Composable
 fun MainScreen(
     library: LibraryState,
-    playerState: PlayerState,
     onRequestPermission: () -> Unit,
     onSettings: () -> Unit,
     onTrackClick: (Track, List<Track>) -> Unit,
     onToggleFavorite: (Long) -> Unit,
-    onMiniPlayerClick: () -> Unit,
-    onPlayPause: () -> Unit,
-    onPrevious: () -> Unit,
-    onNext: () -> Unit,
     initialTabIndex: Int,
     onTabSelected: (Int) -> Unit,
 ) {
@@ -192,14 +185,6 @@ fun MainScreen(
                 }
             }
         }
-        MiniPlayer(
-            state = playerState,
-            onClick = onMiniPlayerClick,
-            onPlayPause = onPlayPause,
-            onPrevious = onPrevious,
-            onNext = onNext,
-            modifier = Modifier.align(Alignment.BottomCenter),
-        )
     }
 }
 

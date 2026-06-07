@@ -1,3 +1,20 @@
 # TODO
-- When minimizing from fullscreen to mini player, transition cover art from fullscreen to anchored mini player
-- When tab is changed, immediatelly save the selected tab. And when go back from anywhere (example search/settings), restore tab selection from last saved
+- Refactor UI structure of mini player and fullscreen player:
+MusicApp
+ ├─ MainScreen
+ └─ PlayerSheet
+With state:
+enum class PlayerSheetState {
+    Collapsed,
+    Expanded
+}
+And shared cover:
+SharedTransitionLayout {
+    sharedElement(...)
+}
+- Refactor ExpandedPlayerScreen to:
+PlayerSheet
+├─ CollapsedPlayerContent
+├─ ExpandedPlayerContent
+├─ SeekBar
+└─ Controls

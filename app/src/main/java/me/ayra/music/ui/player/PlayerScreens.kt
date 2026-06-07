@@ -3,15 +3,16 @@ package me.ayra.music.ui.player
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalAnimationApi
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -55,17 +56,13 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -73,10 +70,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.Player
 import coil3.compose.AsyncImage
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import me.ayra.music.PlayerState
 import me.ayra.music.Track
+
+enum class PlayerSheetState {
+    Collapsed,
+    Expanded,
+}
 
 @Composable
 fun AlbumArt(artwork: Uri?, modifier: Modifier, shape: RoundedCornerShape) {
@@ -104,16 +104,114 @@ fun AlbumArt(artwork: Uri?, modifier: Modifier, shape: RoundedCornerShape) {
     }
 }
 
+@OptIn(ExperimentalAnimationApi::class, ExperimentalSharedTransitionApi::class)
 @Composable
-fun MiniPlayer(
-    state: PlayerState,
-    onClick: () -> Unit,
+fun PlayerSheet(
+    sheetState: PlayerSheetState,
+    playerState: PlayerState,
+    isFavorite: Boolean,
+    onSheetStateChange: (PlayerSheetState) -> Unit,
+    onSettings: () -> Unit,
+    onToggleFavorite: () -> Unit,
     onPlayPause: () -> Unit,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
+    onSeek: (Long) -> Unit,
+    onShuffle: () -> Unit,
+    onRepeat: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val track = state.currentTrack
+    var lyricsVisible by rememberSaveable { mutableStateOf(false) }
+
+    BackHandler(enabled = sheetState == PlayerSheetState.Expanded) {
+        if (lyricsVisible) {
+            lyricsVisible = false
+        } else {
+            onSheetStateChange(PlayerSheetState.Collapsed)
+        }
+    }
+
+    SharedTransitionLayout(modifier = modifier.fillMaxSize()) {
+        AnimatedContent(
+            targetState = sheetState,
+            transitionSpec = {
+                fadeIn(spring(stiffness = Spring.StiffnessMediumLow)) togetherWith
+                    fadeOut(spring(stiffness = Spring.StiffnessMediumLow)) using SizeTransform(clip = false)
+            },
+            label = "player-sheet",
+        ) { targetState ->
+            when (targetState) {
+                PlayerSheetState.Collapsed -> Box(Modifier.fillMaxSize()) {
+                    CollapsedPlayerContent(
+                        playerState = playerState,
+                        onExpand = { onSheetStateChange(PlayerSheetState.Expanded) },
+                        onPlayPause = onPlayPause,
+                        onPrevious = onPrevious,
+                        onNext = onNext,
+                        animatedVisibilityScope = this@AnimatedContent,
+                        modifier = Modifier.align(Alignment.BottomCenter),
+                    )
+                }
+
+                PlayerSheetState.Expanded -> Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background,
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .windowInsetsPadding(WindowInsets.statusBars)
+                            .windowInsetsPadding(WindowInsets.navigationBars)
+                            .padding(horizontal = 24.dp),
+                    ) {
+                        ExpandedPlayerContent(
+                            playerState = playerState,
+                            isFavorite = isFavorite,
+                            lyricsVisible = lyricsVisible,
+                            onMinimize = { onSheetStateChange(PlayerSheetState.Collapsed) },
+                            onSettings = onSettings,
+                            onToggleFavorite = onToggleFavorite,
+                            onLyrics = { lyricsVisible = true },
+                            animatedVisibilityScope = this@AnimatedContent,
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
+                        )
+                        SeekBar(
+                            positionMs = playerState.positionMs,
+                            durationMs = playerState.durationMs,
+                            onSeek = onSeek,
+                        )
+                        Controls(
+                            isPlaying = playerState.isPlaying,
+                            shuffle = playerState.shuffle,
+                            repeatMode = playerState.repeatMode,
+                            hasTrack = playerState.currentTrack != null,
+                            onShuffle = onShuffle,
+                            onPrevious = onPrevious,
+                            onPlayPause = onPlayPause,
+                            onNext = onNext,
+                            onRepeat = onRepeat,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalSharedTransitionApi::class)
+@Composable
+private fun SharedTransitionScope.CollapsedPlayerContent(
+    playerState: PlayerState,
+    onExpand: () -> Unit,
+    onPlayPause: () -> Unit,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+    animatedVisibilityScope: AnimatedVisibilityScope,
+    modifier: Modifier = Modifier,
+) {
+    val track = playerState.currentTrack
     Surface(
         modifier = modifier
             .fillMaxWidth()
@@ -121,7 +219,7 @@ fun MiniPlayer(
             .padding(horizontal = 10.dp, vertical = 8.dp)
             .height(68.dp)
             .clip(RoundedCornerShape(28.dp))
-            .clickable(onClick = onClick),
+            .clickable(onClick = onExpand),
         shape = RoundedCornerShape(28.dp),
         color = MaterialTheme.colorScheme.primaryContainer,
         tonalElevation = 4.dp,
@@ -132,7 +230,12 @@ fun MiniPlayer(
                 .padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            AlbumArt(track?.albumArtUri, Modifier.size(46.dp), RoundedCornerShape(14.dp))
+            SharedCoverArt(
+                artwork = track?.albumArtUri,
+                animatedVisibilityScope = animatedVisibilityScope,
+                modifier = Modifier.size(46.dp),
+                shape = RoundedCornerShape(14.dp),
+            )
             Column(
                 modifier = Modifier
                     .weight(1f)
@@ -145,7 +248,7 @@ fun MiniPlayer(
                 Icon(Icons.Default.SkipPrevious, contentDescription = "Previous")
             }
             IconButton(onClick = onPlayPause, enabled = track != null) {
-                Icon(if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, contentDescription = "Play or pause")
+                Icon(if (playerState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, contentDescription = "Play or pause")
             }
             IconButton(onClick = onNext, enabled = track != null) {
                 Icon(Icons.Default.SkipNext, contentDescription = "Next")
@@ -157,179 +260,104 @@ fun MiniPlayer(
     }
 }
 
-@OptIn(ExperimentalAnimationApi::class)
+@OptIn(ExperimentalAnimationApi::class, ExperimentalSharedTransitionApi::class)
 @Composable
-fun ExpandedPlayerScreen(
+private fun SharedTransitionScope.ExpandedPlayerContent(
     playerState: PlayerState,
     isFavorite: Boolean,
-    onDismiss: () -> Unit,
-    onSettings: () -> Unit,
-    onToggleFavorite: () -> Unit,
-    onPlayPause: () -> Unit,
-    onPrevious: () -> Unit,
-    onNext: () -> Unit,
-    onSeek: (Long) -> Unit,
-    onShuffle: () -> Unit,
-    onRepeat: () -> Unit,
-) {
-    var lyricsVisible by rememberSaveable { mutableStateOf(false) }
-    var coverVisible by remember { mutableStateOf(false) }
-    val coroutineScope = rememberCoroutineScope()
-    val track = playerState.currentTrack
-    fun minimize() {
-        coverVisible = false
-        coroutineScope.launch {
-            delay(130)
-            onDismiss()
-        }
-    }
-
-    BackHandler {
-        if (lyricsVisible) {
-            lyricsVisible = false
-        } else {
-            minimize()
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        coverVisible = true
-    }
-
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background,
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .windowInsetsPadding(WindowInsets.statusBars)
-                .windowInsetsPadding(WindowInsets.navigationBars)
-                .padding(horizontal = 24.dp),
-        ) {
-            AnimatedContent(
-                targetState = lyricsVisible,
-                transitionSpec = {
-                    fadeIn(spring(stiffness = Spring.StiffnessLow)) togetherWith fadeOut() using SizeTransform(clip = false)
-                },
-                label = "lyrics-switch",
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-            ) { showLyrics ->
-                if (showLyrics) {
-                    LyricsContent(
-                        track = track,
-                        onDismiss = { minimize() },
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                } else {
-                    ArtworkPlayerContent(
-                        track = track,
-                        isFavorite = isFavorite,
-                        onDismiss = { minimize() },
-                        onSettings = onSettings,
-                        onToggleFavorite = onToggleFavorite,
-                        onLyrics = { lyricsVisible = true },
-                        coverVisible = coverVisible,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                }
-            }
-            SeekBar(
-                positionMs = playerState.positionMs,
-                durationMs = playerState.durationMs,
-                onSeek = onSeek,
-            )
-            PlayerControls(
-                isPlaying = playerState.isPlaying,
-                shuffle = playerState.shuffle,
-                repeatMode = playerState.repeatMode,
-                hasTrack = track != null,
-                onShuffle = onShuffle,
-                onPrevious = onPrevious,
-                onPlayPause = onPlayPause,
-                onNext = onNext,
-                onRepeat = onRepeat,
-            )
-        }
-    }
-}
-
-@Composable
-private fun ArtworkPlayerContent(
-    track: Track?,
-    isFavorite: Boolean,
-    onDismiss: () -> Unit,
+    lyricsVisible: Boolean,
+    onMinimize: () -> Unit,
     onSettings: () -> Unit,
     onToggleFavorite: () -> Unit,
     onLyrics: () -> Unit,
-    coverVisible: Boolean,
+    animatedVisibilityScope: AnimatedVisibilityScope,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier = modifier) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 18.dp, bottom = 28.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = onDismiss) {
-                Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Minimize", modifier = Modifier.size(34.dp))
-            }
-            Spacer(Modifier.weight(1f))
-            IconButton(onClick = onSettings) { Icon(Icons.Default.MoreVert, contentDescription = "Settings") }
-        }
-        AnimatedVisibility(
-            visible = coverVisible,
-            enter = scaleIn(
-                animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-                initialScale = 0.22f,
-                transformOrigin = TransformOrigin(0.12f, 1f),
-            ) + fadeIn(spring(stiffness = Spring.StiffnessMediumLow)),
-            exit = scaleOut(
-                animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-                targetScale = 0.22f,
-                transformOrigin = TransformOrigin(0.12f, 1f),
-            ) + fadeOut(spring(stiffness = Spring.StiffnessMediumLow)),
-        ) {
-            AlbumArt(
-                artwork = track?.albumArtUri,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(1f)
-                    .clip(RoundedCornerShape(34.dp))
-                    .clickable(onClick = onLyrics),
-                shape = RoundedCornerShape(34.dp),
+    val track = playerState.currentTrack
+    AnimatedContent(
+        targetState = lyricsVisible,
+        transitionSpec = {
+            fadeIn(spring(stiffness = Spring.StiffnessLow)) togetherWith fadeOut() using SizeTransform(clip = false)
+        },
+        label = "lyrics-switch",
+        modifier = modifier,
+    ) { showLyrics ->
+        if (showLyrics) {
+            LyricsContent(
+                track = track,
+                onMinimize = onMinimize,
+                modifier = Modifier.fillMaxSize(),
             )
-        }
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 28.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(track?.title ?: "No track selected", fontSize = 30.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(track?.artist ?: "Choose music to play", fontSize = 18.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-        Spacer(Modifier.weight(1f))
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 24.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            IconButton(onClick = { }) { Icon(Icons.Default.QueueMusic, contentDescription = "Queue", modifier = Modifier.size(32.dp)) }
-            IconButton(onClick = onToggleFavorite, enabled = track != null) {
-                Icon(if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, contentDescription = "Favorite", modifier = Modifier.size(34.dp))
+        } else {
+            Column(modifier = Modifier.fillMaxSize()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 18.dp, bottom = 28.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(onClick = onMinimize) {
+                        Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Minimize", modifier = Modifier.size(34.dp))
+                    }
+                    Spacer(Modifier.weight(1f))
+                    IconButton(onClick = onSettings) { Icon(Icons.Default.MoreVert, contentDescription = "Settings") }
+                }
+                SharedCoverArt(
+                    artwork = track?.albumArtUri,
+                    animatedVisibilityScope = animatedVisibilityScope,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(1f)
+                        .clickable(onClick = onLyrics),
+                    shape = RoundedCornerShape(34.dp),
+                )
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 28.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(track?.title ?: "No track selected", fontSize = 30.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(track?.artist ?: "Choose music to play", fontSize = 18.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                Spacer(Modifier.weight(1f))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 24.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    IconButton(onClick = { }) { Icon(Icons.Default.QueueMusic, contentDescription = "Queue", modifier = Modifier.size(32.dp)) }
+                    IconButton(onClick = onToggleFavorite, enabled = track != null) {
+                        Icon(if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, contentDescription = "Favorite", modifier = Modifier.size(34.dp))
+                    }
+                    IconButton(onClick = { }) { Icon(Icons.Default.Add, contentDescription = "Add to", modifier = Modifier.size(36.dp)) }
+                }
             }
-            IconButton(onClick = { }) { Icon(Icons.Default.Add, contentDescription = "Add to", modifier = Modifier.size(36.dp)) }
         }
     }
 }
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-private fun LyricsContent(track: Track?, onDismiss: () -> Unit, modifier: Modifier = Modifier) {
+private fun SharedTransitionScope.SharedCoverArt(
+    artwork: Uri?,
+    animatedVisibilityScope: AnimatedVisibilityScope,
+    modifier: Modifier,
+    shape: RoundedCornerShape,
+) {
+    AlbumArt(
+        artwork = artwork,
+        modifier = modifier.sharedElement(
+            sharedContentState = rememberSharedContentState(key = "player-cover-art"),
+            animatedVisibilityScope = animatedVisibilityScope,
+        ),
+        shape = shape,
+    )
+}
+
+@Composable
+private fun LyricsContent(track: Track?, onMinimize: () -> Unit, modifier: Modifier = Modifier) {
     Column(modifier = modifier) {
         Row(
             modifier = Modifier
@@ -337,7 +365,7 @@ private fun LyricsContent(track: Track?, onDismiss: () -> Unit, modifier: Modifi
                 .padding(top = 18.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onDismiss) {
+            IconButton(onClick = onMinimize) {
                 Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Minimize", modifier = Modifier.size(34.dp))
             }
             Column(
@@ -379,7 +407,7 @@ private fun SeekBar(positionMs: Long, durationMs: Long, onSeek: (Long) -> Unit) 
 }
 
 @Composable
-private fun PlayerControls(
+private fun Controls(
     isPlaying: Boolean,
     shuffle: Boolean,
     repeatMode: Int,
