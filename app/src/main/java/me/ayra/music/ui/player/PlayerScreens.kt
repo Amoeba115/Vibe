@@ -40,6 +40,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -60,6 +62,7 @@ import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
@@ -114,6 +117,12 @@ data class PlayerSheetState(val progress: Float)
 private enum class PlayerSheetAnchor {
     Expanded,
     Collapsed,
+}
+
+private enum class PlayerUpperContent {
+    Cover,
+    Lyrics,
+    Playlist,
 }
 
 private data class MiniPlayerAccent(
@@ -189,13 +198,14 @@ fun PlayerSheet(
     onNext: () -> Unit,
     onSeek: (Long) -> Unit,
     onShuffle: () -> Unit,
+    onQueueTrackClick: (Track) -> Unit,
     onRepeat: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
     val coroutineScope = rememberCoroutineScope()
     val miniPlayerHeight = 68.dp
-    var lyricsVisible by rememberSaveable { mutableStateOf(false) }
+    var upperContent by rememberSaveable { mutableStateOf(PlayerUpperContent.Cover) }
     val draggableState = remember {
         AnchoredDraggableState<PlayerSheetAnchor>(
             initialValue = PlayerSheetAnchor.Collapsed,
@@ -221,15 +231,15 @@ fun PlayerSheet(
 
         LaunchedEffect(expandRequest, collapsedOffsetPx) {
             if (expandRequest > 0) {
-                lyricsVisible = false
+                upperContent = PlayerUpperContent.Cover
                 draggableState.animateTo(PlayerSheetAnchor.Expanded)
             }
         }
 
         PredictiveBackHandler(enabled = draggableState.currentValue == PlayerSheetAnchor.Expanded) { backProgress ->
-            if (lyricsVisible) {
+            if (upperContent != PlayerUpperContent.Cover) {
                 backProgress.collect { }
-                lyricsVisible = false
+                upperContent = PlayerUpperContent.Cover
             } else {
                 try {
                     backProgress.collect { event ->
@@ -255,17 +265,30 @@ fun PlayerSheet(
             sheetState = sheetState,
             playerState = playerState,
             isFavorite = isFavorite,
-            lyricsVisible = lyricsVisible,
+            upperContent = upperContent,
             miniPlayerHeight = miniPlayerHeight,
             maxCoverSize = maxCoverSize,
             onExpand = { coroutineScope.launch { draggableState.animateTo(PlayerSheetAnchor.Expanded) } },
-            onMinimize = { coroutineScope.launch { draggableState.animateTo(PlayerSheetAnchor.Collapsed) } },
+            onMinimize = {
+                if (upperContent != PlayerUpperContent.Cover) {
+                    upperContent = PlayerUpperContent.Cover
+                } else {
+                    coroutineScope.launch { draggableState.animateTo(PlayerSheetAnchor.Collapsed) }
+                }
+            },
+            onExpandPlaylist = {
+                coroutineScope.launch {
+                    upperContent = PlayerUpperContent.Playlist
+                    draggableState.animateTo(PlayerSheetAnchor.Expanded)
+                }
+            },
             onSettings = onSettings,
             onToggleFavorite = onToggleFavorite,
-            onLyrics = { lyricsVisible = true },
-            onExitLyrics = { lyricsVisible = false },
+            onLyrics = { upperContent = PlayerUpperContent.Lyrics },
+            onExitUpperContent = { upperContent = PlayerUpperContent.Cover },
             onSeek = onSeek,
             onShuffle = onShuffle,
+            onQueueTrackClick = onQueueTrackClick,
             onPrevious = onPrevious,
             onPlayPause = onPlayPause,
             onNext = onNext,
@@ -278,7 +301,7 @@ fun PlayerSheet(
                 .anchoredDraggable(
                     state = draggableState,
                     orientation = Orientation.Vertical,
-                    enabled = !lyricsVisible,
+                    enabled = upperContent == PlayerUpperContent.Cover,
                     flingBehavior = AnchoredDraggableDefaults.flingBehavior(
                         state = draggableState,
                         positionalThreshold = { distance -> distance * 0.45f },
@@ -303,17 +326,19 @@ private fun PlayerSurface(
     sheetState: PlayerSheetState,
     playerState: PlayerState,
     isFavorite: Boolean,
-    lyricsVisible: Boolean,
+    upperContent: PlayerUpperContent,
     miniPlayerHeight: Dp,
     maxCoverSize: Dp,
     onExpand: () -> Unit,
     onMinimize: () -> Unit,
+    onExpandPlaylist: () -> Unit,
     onSettings: () -> Unit,
     onToggleFavorite: () -> Unit,
     onLyrics: () -> Unit,
-    onExitLyrics: () -> Unit,
+    onExitUpperContent: () -> Unit,
     onSeek: (Long) -> Unit,
     onShuffle: () -> Unit,
+    onQueueTrackClick: (Track) -> Unit,
     onPrevious: () -> Unit,
     onPlayPause: () -> Unit,
     onNext: () -> Unit,
@@ -393,7 +418,7 @@ private fun PlayerSurface(
                 ExpandedPlayerContent(
                     playerState = playerState,
                     isFavorite = isFavorite,
-                    lyricsVisible = lyricsVisible,
+                    upperContent = upperContent,
                     alpha = expandedVisible,
                     enabled = expandedInteractive,
                     progress = progress,
@@ -402,9 +427,11 @@ private fun PlayerSurface(
                     onSettings = onSettings,
                     onToggleFavorite = onToggleFavorite,
                     onLyrics = onLyrics,
-                    onExitLyrics = onExitLyrics,
+                    onPlaylist = onExpandPlaylist,
+                    onExitUpperContent = onExitUpperContent,
                     onSeek = onSeek,
                     onShuffle = onShuffle,
+                    onQueueTrackClick = onQueueTrackClick,
                     onPrevious = onPrevious,
                     onPlayPause = onPlayPause,
                     onNext = onNext,
@@ -421,6 +448,7 @@ private fun PlayerSurface(
                     onPlayPause = onPlayPause,
                     onPrevious = onPrevious,
                     onNext = onNext,
+                    onPlaylist = onExpandPlaylist,
                     modifier = Modifier.align(Alignment.TopCenter),
                 )
             } else {
@@ -434,12 +462,13 @@ private fun PlayerSurface(
                     onPlayPause = onPlayPause,
                     onPrevious = onPrevious,
                     onNext = onNext,
+                    onPlaylist = onExpandPlaylist,
                     modifier = Modifier.align(Alignment.TopCenter),
                 )
                 ExpandedPlayerContent(
                     playerState = playerState,
                     isFavorite = isFavorite,
-                    lyricsVisible = lyricsVisible,
+                    upperContent = upperContent,
                     alpha = expandedVisible,
                     enabled = expandedInteractive,
                     progress = progress,
@@ -448,9 +477,11 @@ private fun PlayerSurface(
                     onSettings = onSettings,
                     onToggleFavorite = onToggleFavorite,
                     onLyrics = onLyrics,
-                    onExitLyrics = onExitLyrics,
+                    onPlaylist = onExpandPlaylist,
+                    onExitUpperContent = onExitUpperContent,
                     onSeek = onSeek,
                     onShuffle = onShuffle,
+                    onQueueTrackClick = onQueueTrackClick,
                     onPrevious = onPrevious,
                     onPlayPause = onPlayPause,
                     onNext = onNext,
@@ -462,7 +493,7 @@ private fun PlayerSurface(
             AnchoredCoverArt(
                 artwork = playerState.currentTrack?.albumArtUri,
                 progress = progress,
-                visible = !lyricsVisible,
+                visible = upperContent == PlayerUpperContent.Cover,
                 miniPlayerHeight = miniPlayerHeight,
                 maxCoverSize = maxCoverSize,
                 onExpand = onExpand,
@@ -484,6 +515,7 @@ private fun CollapsedPlayerContent(
     onPlayPause: () -> Unit,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
+    onPlaylist: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val track = playerState.currentTrack
@@ -514,7 +546,7 @@ private fun CollapsedPlayerContent(
         IconButton(onClick = onNext, enabled = enabled && track != null) {
             Icon(Icons.Default.SkipNext, contentDescription = "Next")
         }
-        IconButton(onClick = { }, enabled = enabled && track != null) {
+        IconButton(onClick = onPlaylist, enabled = enabled && track != null) {
             Icon(Icons.Default.QueueMusic, contentDescription = "Queue")
         }
     }
@@ -566,7 +598,7 @@ private fun AnchoredCoverArt(
 private fun ExpandedPlayerContent(
     playerState: PlayerState,
     isFavorite: Boolean,
-    lyricsVisible: Boolean,
+    upperContent: PlayerUpperContent,
     alpha: Float,
     enabled: Boolean,
     progress: Float,
@@ -575,9 +607,11 @@ private fun ExpandedPlayerContent(
     onSettings: () -> Unit,
     onToggleFavorite: () -> Unit,
     onLyrics: () -> Unit,
-    onExitLyrics: () -> Unit,
+    onPlaylist: () -> Unit,
+    onExitUpperContent: () -> Unit,
     onSeek: (Long) -> Unit,
     onShuffle: () -> Unit,
+    onQueueTrackClick: (Track) -> Unit,
     onPrevious: () -> Unit,
     onPlayPause: () -> Unit,
     onNext: () -> Unit,
@@ -593,26 +627,34 @@ private fun ExpandedPlayerContent(
             .windowInsetsPadding(WindowInsets.navigationBars)
             .padding(horizontal = 24.dp)
             .alpha(alpha),
-    ) {
+        ) {
         AnimatedContent(
-            targetState = lyricsVisible,
+            targetState = upperContent,
             transitionSpec = {
                 fadeIn(spring(stiffness = Spring.StiffnessLow)) togetherWith fadeOut() using SizeTransform(clip = false)
             },
-            label = "lyrics-switch",
+            label = "player-upper-content",
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth(),
-        ) { showLyrics ->
-            if (showLyrics) {
-                LyricsContent(
+        ) { content ->
+            when (content) {
+                PlayerUpperContent.Lyrics -> LyricsContent(
                     track = track,
                     enabled = enabled,
-                    onExitLyrics = onExitLyrics,
+                    onExit = onExitUpperContent,
                     modifier = Modifier.fillMaxSize(),
                 )
-            } else {
-                Column(modifier = Modifier.fillMaxSize()) {
+
+                PlayerUpperContent.Playlist -> PlaylistContent(
+                    playerState = playerState,
+                    enabled = enabled,
+                    onExit = onExitUpperContent,
+                    onQueueTrackClick = onQueueTrackClick,
+                    modifier = Modifier.fillMaxSize(),
+                )
+
+                PlayerUpperContent.Cover -> Column(modifier = Modifier.fillMaxSize()) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -647,7 +689,9 @@ private fun ExpandedPlayerContent(
                             .padding(bottom = 24.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
-                        IconButton(onClick = { }, enabled = enabled) { Icon(Icons.Default.QueueMusic, contentDescription = "Queue", modifier = Modifier.size(32.dp)) }
+                        IconButton(onClick = onPlaylist, enabled = enabled && playerState.queue.isNotEmpty()) {
+                            Icon(Icons.Default.QueueMusic, contentDescription = "Queue", modifier = Modifier.size(32.dp))
+                        }
                         IconButton(onClick = onToggleFavorite, enabled = enabled && track != null) {
                             Icon(if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, contentDescription = "Favorite", modifier = Modifier.size(34.dp))
                         }
@@ -678,7 +722,7 @@ private fun ExpandedPlayerContent(
 }
 
 @Composable
-private fun LyricsContent(track: Track?, enabled: Boolean, onExitLyrics: () -> Unit, modifier: Modifier = Modifier) {
+private fun LyricsContent(track: Track?, enabled: Boolean, onExit: () -> Unit, modifier: Modifier = Modifier) {
     Column(modifier = modifier) {
         Row(
             modifier = Modifier
@@ -686,7 +730,7 @@ private fun LyricsContent(track: Track?, enabled: Boolean, onExitLyrics: () -> U
                 .padding(top = 18.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onExitLyrics, enabled = enabled) {
+            IconButton(onClick = onExit, enabled = enabled) {
                 Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Show cover", modifier = Modifier.size(34.dp))
             }
             Column(
@@ -708,6 +752,121 @@ private fun LyricsContent(track: Track?, enabled: Boolean, onExitLyrics: () -> U
         ) {
             Text("No lyric found", fontSize = 28.sp, color = MaterialTheme.colorScheme.onSurface)
         }
+    }
+}
+
+@Composable
+private fun PlaylistContent(
+    playerState: PlayerState,
+    enabled: Boolean,
+    onExit: () -> Unit,
+    onQueueTrackClick: (Track) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 18.dp, bottom = 18.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onExit, enabled = enabled) {
+                Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Show player", modifier = Modifier.size(34.dp))
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text("Playlist", fontSize = 28.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                Text("${playerState.queue.size} tracks", color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+            }
+            IconButton(onClick = { }, enabled = false) {
+                Icon(Icons.Default.MoreVert, contentDescription = null)
+            }
+        }
+        if (playerState.queue.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("No playlist", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 22.sp)
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 28.dp),
+            ) {
+                itemsIndexed(playerState.queue, key = { _, track -> track.id }) { index, track ->
+                    val selected = track.id == playerState.currentTrack?.id
+                    QueueTrackRow(
+                        index = index + 1,
+                        track = track,
+                        selected = selected,
+                        enabled = enabled,
+                        onClick = { onQueueTrackClick(track) },
+                    )
+                    if (index != playerState.queue.lastIndex) {
+                        HorizontalDivider(
+                            modifier = Modifier.padding(start = 58.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun QueueTrackRow(
+    index: Int,
+    track: Track,
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = index.toString(),
+            modifier = Modifier.size(width = 34.dp, height = 48.dp),
+            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 16.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+        )
+        AlbumArt(track.albumArtUri, Modifier.size(48.dp), RoundedCornerShape(12.dp))
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = 12.dp),
+        ) {
+            Text(
+                track.title,
+                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                fontSize = 17.sp,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            )
+            Text(
+                track.artist,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                fontSize = 13.sp,
+            )
+        }
+        Text(
+            formatDuration(track.durationMs),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 13.sp,
+            modifier = Modifier.padding(start = 8.dp),
+        )
     }
 }
 

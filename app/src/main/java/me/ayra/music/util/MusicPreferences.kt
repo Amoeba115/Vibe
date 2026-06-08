@@ -17,9 +17,20 @@ class MusicPreferences(context: Context) {
         preferences.edit().putLong(KEY_LAST_TRACK_ID, trackId).apply()
     }
 
+    fun loadLastQueueIds(): List<Long> =
+        preferences.getString(KEY_LAST_QUEUE_IDS, null)
+            ?.split(',')
+            ?.mapNotNull { it.toLongOrNull() }
+            .orEmpty()
+
+    fun saveLastQueueIds(trackIds: List<Long>) {
+        preferences.edit().putString(KEY_LAST_QUEUE_IDS, trackIds.joinToString(",")).apply()
+    }
+
     private companion object {
         const val KEY_LAST_TAB = "last_tab"
         const val KEY_LAST_TRACK_ID = "last_track_id"
+        const val KEY_LAST_QUEUE_IDS = "last_queue_ids"
         const val NO_TRACK_ID = -1L
     }
 }

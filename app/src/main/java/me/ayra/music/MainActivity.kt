@@ -296,6 +296,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         val player = controller ?: return
         if (queue.isEmpty()) return
         preferences.saveLastTrackId(track.id)
+        saveLastQueue(queue)
         lastSavedTrackId = track.id
         val startIndex = queue.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
         player.setMediaItems(queue.map { it.toMediaItem() }, startIndex, 0L)
@@ -389,6 +390,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 ?.let { mediaId -> _library.value.tracks.firstOrNull { it.id == mediaId } }
         if (currentTrack != null && currentTrack.id != lastSavedTrackId) {
             preferences.saveLastTrackId(currentTrack.id)
+            if (queue.isNotEmpty()) saveLastQueue(queue)
             lastSavedTrackId = currentTrack.id
         }
         _playerState.update {
@@ -418,15 +420,25 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         }
         if (restoredTrack) return
         val trackId = preferences.loadLastTrackId()
-        val startIndex = tracks.indexOfFirst { it.id == trackId }
+        val queue = restoredQueueFromPreferences(tracks).ifEmpty { tracks }
+        val startIndex = queue.indexOfFirst { it.id == trackId }
         if (startIndex < 0) return
 
         restoredTrack = true
         lastSavedTrackId = trackId
-        player.setMediaItems(tracks.map { it.toMediaItem() }, startIndex, 0L)
+        player.setMediaItems(queue.map { it.toMediaItem() }, startIndex, 0L)
         player.prepare()
-        _playerState.update { it.copy(queue = tracks) }
+        _playerState.update { it.copy(queue = queue) }
         publishPlayerState()
+    }
+
+    private fun saveLastQueue(queue: List<Track>) {
+        preferences.saveLastQueueIds(queue.map { it.id }.distinct())
+    }
+
+    private fun restoredQueueFromPreferences(tracks: List<Track>): List<Track> {
+        val tracksById = tracks.associateBy { it.id }
+        return preferences.loadLastQueueIds().mapNotNull(tracksById::get)
     }
 
     private fun controllerQueueFromLibrary(tracks: List<Track>): List<Track> {
@@ -931,7 +943,7 @@ fun MusicApp(openPlayerRequest: Int = 0, viewModel: MusicViewModel = viewModel()
     val library by viewModel.library.collectAsState()
     val playerState by viewModel.playerState.collectAsState()
     val preferences = remember(context) { MusicPreferences(context) }
-    var lastHomeTab by rememberSaveable { mutableStateOf(preferences.loadLastTab(HomeTab.Track.ordinal)) }
+    var lastHomeTab by rememberSaveable { mutableStateOf(preferences.loadLastTab(HomeTab.Favorite.ordinal)) }
 
     LaunchedEffect(openPlayerRequest) {
         if (openPlayerRequest > 0) {
@@ -994,6 +1006,7 @@ fun MusicApp(openPlayerRequest: Int = 0, viewModel: MusicViewModel = viewModel()
                 onNext = viewModel::next,
                 onSeek = viewModel::seekTo,
                 onShuffle = viewModel::toggleShuffle,
+                onQueueTrackClick = { track -> viewModel.playTrack(track, playerState.queue) },
                 onRepeat = viewModel::toggleRepeat,
             )
         }
