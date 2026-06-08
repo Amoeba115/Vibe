@@ -66,8 +66,8 @@ import me.ayra.music.data.toEntity
 import me.ayra.music.data.toSnapshot
 import me.ayra.music.data.toTrack
 import me.ayra.music.data.toVgmMetadata
-import me.ayra.music.ui.home.MainScreen
 import me.ayra.music.ui.home.HomeTab
+import me.ayra.music.ui.home.MainScreen
 import me.ayra.music.ui.home.modernEnter
 import me.ayra.music.ui.home.modernExit
 import me.ayra.music.ui.home.modernPopEnter
@@ -127,11 +127,36 @@ data class Track(
         get() = ContentUris.withAppendedId(Uri.parse("content://media/external/audio/albumart"), albumId)
 }
 
-data class AlbumGroup(val id: Long, val title: String, val artist: String, val tracks: List<Track>)
-data class ArtistGroup(val name: String, val albums: Int, val tracks: List<Track>)
-data class FolderGroup(val name: String, val path: String, val tracks: List<Track>)
-data class PlaylistGroup(val title: String, val tracks: List<Track>, val artwork: Uri?)
-data class FavoriteItem(val type: String, val key: String, val addedAt: Long)
+data class AlbumGroup(
+    val id: Long,
+    val title: String,
+    val artist: String,
+    val tracks: List<Track>,
+)
+
+data class ArtistGroup(
+    val name: String,
+    val albums: Int,
+    val tracks: List<Track>,
+)
+
+data class FolderGroup(
+    val name: String,
+    val path: String,
+    val tracks: List<Track>,
+)
+
+data class PlaylistGroup(
+    val title: String,
+    val tracks: List<Track>,
+    val artwork: Uri?,
+)
+
+data class FavoriteItem(
+    val type: String,
+    val key: String,
+    val addedAt: Long,
+)
 
 object FavoriteType {
     const val Track = "track"
@@ -150,21 +175,30 @@ data class LibraryState(
     val error: String? = null,
 ) {
     val favoriteTracks: List<Track> get() = tracks.filter { it.id in favorites }
-    fun isFavoriteItem(type: String, key: String): Boolean =
-        favoriteItems.any { it.type == type && it.key == key }
+
+    fun isFavoriteItem(
+        type: String,
+        key: String,
+    ): Boolean = favoriteItems.any { it.type == type && it.key == key }
 
     val albums: List<AlbumGroup>
-        get() = tracks.groupBy { it.albumId }
-            .map { (_, items) -> AlbumGroup(items.first().albumId, items.first().album, items.first().artist, items) }
-            .sortedBy { it.title.lowercase(Locale.getDefault()) }
+        get() =
+            tracks
+                .groupBy { it.albumId }
+                .map { (_, items) -> AlbumGroup(items.first().albumId, items.first().album, items.first().artist, items) }
+                .sortedBy { it.title.lowercase(Locale.getDefault()) }
     val artists: List<ArtistGroup>
-        get() = tracks.groupBy { it.artist.ifBlank { "Unknown artist" } }
-            .map { (name, items) -> ArtistGroup(name, items.map { it.albumId }.distinct().size, items) }
-            .sortedBy { it.name.lowercase(Locale.getDefault()) }
+        get() =
+            tracks
+                .groupBy { it.artist.ifBlank { "Unknown artist" } }
+                .map { (name, items) -> ArtistGroup(name, items.map { it.albumId }.distinct().size, items) }
+                .sortedBy { it.name.lowercase(Locale.getDefault()) }
     val folders: List<FolderGroup>
-        get() = tracks.groupBy { it.folder.ifBlank { "Unknown folder" } }
-            .map { (path, items) -> FolderGroup(path.substringAfterLast('/').ifBlank { path }, path, items) }
-            .sortedBy { it.path.lowercase(Locale.getDefault()) }
+        get() =
+            tracks
+                .groupBy { it.folder.ifBlank { "Unknown folder" } }
+                .map { (path, items) -> FolderGroup(path.substringAfterLast('/').ifBlank { path }, path, items) }
+                .sortedBy { it.path.lowercase(Locale.getDefault()) }
 }
 
 data class PlayerState(
@@ -177,7 +211,9 @@ data class PlayerState(
     val queue: List<Track> = emptyList(),
 )
 
-class MusicViewModel(application: Application) : AndroidViewModel(application) {
+class MusicViewModel(
+    application: Application,
+) : AndroidViewModel(application) {
     private val libraryScanner = LibraryScanner(application)
     private val preferences = MusicPreferences(application)
     private var controllerFuture: ListenableFuture<MediaController>? = null
@@ -203,25 +239,36 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun connectController(context: Context) {
         val sessionToken = SessionToken(context, ComponentName(context, MusicPlaybackService::class.java))
-        controllerFuture = MediaController.Builder(context, sessionToken).buildAsync().also { future ->
-            future.addListener(
-                {
-                    val connectedController = runCatching { future.get() }.getOrNull() ?: return@addListener
-                    controller = connectedController.also { mediaController ->
-                        mediaController.addListener(object : Player.Listener {
-                            override fun onIsPlayingChanged(isPlaying: Boolean) = publishPlayerState()
-                            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) = publishPlayerState()
-                            override fun onPlaybackStateChanged(playbackState: Int) = publishPlayerState()
-                            override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) = publishPlayerState()
-                            override fun onRepeatModeChanged(repeatMode: Int) = publishPlayerState()
-                        })
-                    }
-                    restoreOrSyncPlayerQueue(_library.value.tracks)
-                    publishPlayerState()
-                },
-                ContextCompat.getMainExecutor(context),
-            )
-        }
+        controllerFuture =
+            MediaController.Builder(context, sessionToken).buildAsync().also { future ->
+                future.addListener(
+                    {
+                        val connectedController = runCatching { future.get() }.getOrNull() ?: return@addListener
+                        controller =
+                            connectedController.also { mediaController ->
+                                mediaController.addListener(
+                                    object : Player.Listener {
+                                        override fun onIsPlayingChanged(isPlaying: Boolean) = publishPlayerState()
+
+                                        override fun onMediaItemTransition(
+                                            mediaItem: MediaItem?,
+                                            reason: Int,
+                                        ) = publishPlayerState()
+
+                                        override fun onPlaybackStateChanged(playbackState: Int) = publishPlayerState()
+
+                                        override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) = publishPlayerState()
+
+                                        override fun onRepeatModeChanged(repeatMode: Int) = publishPlayerState()
+                                    },
+                                )
+                            }
+                        restoreOrSyncPlayerQueue(_library.value.tracks)
+                        publishPlayerState()
+                    },
+                    ContextCompat.getMainExecutor(context),
+                )
+            }
     }
 
     fun loadLibrary(permissionGranted: Boolean) {
@@ -269,31 +316,32 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     }
                 }
+            }.onSuccess { refreshed ->
+                if (refreshed.snapshot == activeSnapshot) {
+                    _library.update { it.copy(loading = false, error = null) }
+                    return@onSuccess
+                }
+                _library.update {
+                    it.copy(
+                        loading = false,
+                        tracks = refreshed.tracks,
+                        favorites = refreshed.favorites,
+                        favoriteItems = refreshed.favoriteItems,
+                        playlists = libraryScanner.buildPlaylists(refreshed.tracks),
+                        error = null,
+                    )
+                }
+                restoreOrSyncPlayerQueue(refreshed.tracks)
+            }.onFailure { throwable ->
+                _library.update { it.copy(loading = false, error = throwable.message ?: "Unable to load music") }
             }
-                .onSuccess { refreshed ->
-                    if (refreshed.snapshot == activeSnapshot) {
-                        _library.update { it.copy(loading = false, error = null) }
-                        return@onSuccess
-                    }
-                    _library.update {
-                        it.copy(
-                            loading = false,
-                            tracks = refreshed.tracks,
-                            favorites = refreshed.favorites,
-                            favoriteItems = refreshed.favoriteItems,
-                            playlists = libraryScanner.buildPlaylists(refreshed.tracks),
-                            error = null,
-                        )
-                    }
-                    restoreOrSyncPlayerQueue(refreshed.tracks)
-                }
-                .onFailure { throwable ->
-                    _library.update { it.copy(loading = false, error = throwable.message ?: "Unable to load music") }
-                }
         }
     }
 
-    fun playTrack(track: Track, queue: List<Track>) {
+    fun playTrack(
+        track: Track,
+        queue: List<Track>,
+    ) {
         val player = controller ?: return
         if (queue.isEmpty()) return
         preferences.saveLastTrackId(track.id)
@@ -339,39 +387,45 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     fun toggleRepeat() {
         val player = controller ?: return
-        player.repeatMode = when (player.repeatMode) {
-            Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
-            Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
-            else -> Player.REPEAT_MODE_OFF
-        }
+        player.repeatMode =
+            when (player.repeatMode) {
+                Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
+                Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
+                else -> Player.REPEAT_MODE_OFF
+            }
     }
 
     fun toggleFavorite(trackId: Long) {
         toggleFavoriteItem(FavoriteType.Track, trackId.toString())
     }
 
-    fun toggleFavoriteItem(type: String, key: String) {
+    fun toggleFavoriteItem(
+        type: String,
+        key: String,
+    ) {
         var favoriteNow = false
         val normalizedKey = key.trim()
         if (normalizedKey.isEmpty()) return
         _library.update { state ->
             val exists = state.favoriteItems.any { it.type == type && it.key == normalizedKey }
             favoriteNow = !exists
-            val updatedItems = if (exists) {
-                state.favoriteItems.filterNot { it.type == type && it.key == normalizedKey }
-            } else {
-                listOf(FavoriteItem(type, normalizedKey, System.currentTimeMillis())) + state.favoriteItems
-            }
-            val favorites = if (type == FavoriteType.Track) {
-                val trackId = normalizedKey.toLongOrNull()
-                when {
-                    trackId == null -> state.favorites
-                    favoriteNow -> state.favorites + trackId
-                    else -> state.favorites - trackId
+            val updatedItems =
+                if (exists) {
+                    state.favoriteItems.filterNot { it.type == type && it.key == normalizedKey }
+                } else {
+                    listOf(FavoriteItem(type, normalizedKey, System.currentTimeMillis())) + state.favoriteItems
                 }
-            } else {
-                state.favorites
-            }
+            val favorites =
+                if (type == FavoriteType.Track) {
+                    val trackId = normalizedKey.toLongOrNull()
+                    when {
+                        trackId == null -> state.favorites
+                        favoriteNow -> state.favorites + trackId
+                        else -> state.favorites - trackId
+                    }
+                } else {
+                    state.favorites
+                }
             state.copy(favorites = favorites, favoriteItems = updatedItems)
         }
         viewModelScope.launch {
@@ -381,14 +435,16 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun publishPlayerState() {
         val player = controller ?: return
-        val queue = _playerState.value.queue
-            .takeIf { it.isNotEmpty() }
-            ?: controllerQueueFromLibrary(_library.value.tracks)
-        val currentTrack = queue.getOrNull(player.currentMediaItemIndex)
-            ?: player.currentMediaItem
-                ?.mediaId
-                ?.toLongOrNull()
-                ?.let { mediaId -> _library.value.tracks.firstOrNull { it.id == mediaId } }
+        val queue =
+            _playerState.value.queue
+                .takeIf { it.isNotEmpty() }
+                ?: controllerQueueFromLibrary(_library.value.tracks)
+        val currentTrack =
+            queue.getOrNull(player.currentMediaItemIndex)
+                ?: player.currentMediaItem
+                    ?.mediaId
+                    ?.toLongOrNull()
+                    ?.let { mediaId -> _library.value.tracks.firstOrNull { it.id == mediaId } }
         if (currentTrack != null && currentTrack.id != lastSavedTrackId) {
             preferences.saveLastTrackId(currentTrack.id)
             if (queue.isNotEmpty()) saveLastQueue(queue)
@@ -448,7 +504,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         val tracksById = tracks.associateBy { it.id }
         return (0 until player.mediaItemCount)
             .mapNotNull { index ->
-                player.getMediaItemAt(index).mediaId.toLongOrNull()?.let(tracksById::get)
+                player
+                    .getMediaItemAt(index)
+                    .mediaId
+                    .toLongOrNull()
+                    ?.let(tracksById::get)
             }
     }
 
@@ -461,20 +521,20 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 }
 
-private fun Track.toMediaItem(): MediaItem {
-    return MediaItem.Builder()
+private fun Track.toMediaItem(): MediaItem =
+    MediaItem
+        .Builder()
         .setUri(uri)
         .setMediaId(id.toString())
         .setMediaMetadata(
-            MediaMetadata.Builder()
+            MediaMetadata
+                .Builder()
                 .setTitle(title)
                 .setArtist(artist)
                 .setAlbumTitle(album)
                 .setArtworkUri(albumArtUri)
-                .build()
-        )
-        .build()
-}
+                .build(),
+        ).build()
 
 data class CachedLibrary(
     val tracks: List<Track>,
@@ -485,13 +545,15 @@ data class CachedLibrary(
 
 private suspend fun LibraryDao.loadLibraryFavorites(): List<FavoriteItem> {
     val itemFavorites = loadFavoriteItems().map { FavoriteItem(it.type, it.key, it.addedAt) }
-    val itemTrackIds = itemFavorites
-        .filter { it.type == FavoriteType.Track }
-        .mapNotNull { it.key.toLongOrNull() }
-        .toSet()
-    val legacyTrackFavorites = loadFavoriteIds()
-        .filterNot { it in itemTrackIds }
-        .map { FavoriteItem(FavoriteType.Track, it.toString(), 0L) }
+    val itemTrackIds =
+        itemFavorites
+            .filter { it.type == FavoriteType.Track }
+            .mapNotNull { it.key.toLongOrNull() }
+            .toSet()
+    val legacyTrackFavorites =
+        loadFavoriteIds()
+            .filterNot { it in itemTrackIds }
+            .map { FavoriteItem(FavoriteType.Track, it.toString(), 0L) }
     return (itemFavorites + legacyTrackFavorites).sortedByDescending { it.addedAt }
 }
 
@@ -500,78 +562,92 @@ private fun List<FavoriteItem>.trackIds(): Set<Long> =
         .mapNotNull { it.key.toLongOrNull() }
         .toSet()
 
-class LibraryScanner(context: Context) {
+class LibraryScanner(
+    context: Context,
+) {
     private val dao = LibraryDatabase.get(context).libraryDao()
     private val mediaStoreScanner = MediaStoreScanner(context)
     private val vgmFileScanner = VgmFileScanner(context)
 
-    suspend fun loadCachedLibrary(): CachedLibrary = withContext(Dispatchers.IO) {
-        val cachedTracks = dao.loadTracks()
-        val favoriteItems = dao.loadLibraryFavorites()
-        CachedLibrary(
-            tracks = cachedTracks.map { it.toTrack() },
-            favorites = favoriteItems.trackIds(),
-            favoriteItems = favoriteItems,
-            snapshot = cachedTracks.map { it.toSnapshot() },
-        )
-    }
-
-    suspend fun refreshLibrary(onPartial: suspend (CachedLibrary) -> Unit = {}): CachedLibrary = withContext(Dispatchers.IO) {
-        val favoriteItems = dao.loadLibraryFavorites()
-        val favorites = favoriteItems.trackIds()
-        val audioTracks = mediaStoreScanner.loadTracks(dao) { partialTracks ->
-            val sortedPartial = partialTracks.sortedForLibrary()
-            onPartial(
-                CachedLibrary(
-                    tracks = sortedPartial.map { it.track },
-                    favorites = favorites,
-                    favoriteItems = favoriteItems,
-                    snapshot = sortedPartial.map { it.toSnapshot() },
-                ),
+    suspend fun loadCachedLibrary(): CachedLibrary =
+        withContext(Dispatchers.IO) {
+            val cachedTracks = dao.loadTracks()
+            val favoriteItems = dao.loadLibraryFavorites()
+            CachedLibrary(
+                tracks = cachedTracks.map { it.toTrack() },
+                favorites = favoriteItems.trackIds(),
+                favoriteItems = favoriteItems,
+                snapshot = cachedTracks.map { it.toSnapshot() },
             )
         }
-        val vgmTracks = if (BuildConfig.IS_VGM_BUILD) {
-            vgmFileScanner.loadTracks(dao) { partialTracks ->
-                val sortedPartial = (audioTracks + partialTracks)
-                    .distinctBy { it.track.uri }
-                    .sortedForLibrary()
-                onPartial(
-                    CachedLibrary(
-                        tracks = sortedPartial.map { it.track },
-                        favorites = favorites,
-                        favoriteItems = favoriteItems,
-                        snapshot = sortedPartial.map { it.toSnapshot() },
-                    ),
-                )
+
+    suspend fun refreshLibrary(onPartial: suspend (CachedLibrary) -> Unit = {}): CachedLibrary =
+        withContext(Dispatchers.IO) {
+            val favoriteItems = dao.loadLibraryFavorites()
+            val favorites = favoriteItems.trackIds()
+            val audioTracks =
+                mediaStoreScanner.loadTracks(dao) { partialTracks ->
+                    val sortedPartial = partialTracks.sortedForLibrary()
+                    onPartial(
+                        CachedLibrary(
+                            tracks = sortedPartial.map { it.track },
+                            favorites = favorites,
+                            favoriteItems = favoriteItems,
+                            snapshot = sortedPartial.map { it.toSnapshot() },
+                        ),
+                    )
+                }
+            val vgmTracks =
+                if (BuildConfig.IS_VGM_BUILD) {
+                    vgmFileScanner.loadTracks(dao) { partialTracks ->
+                        val sortedPartial =
+                            (audioTracks + partialTracks)
+                                .distinctBy { it.track.uri }
+                                .sortedForLibrary()
+                        onPartial(
+                            CachedLibrary(
+                                tracks = sortedPartial.map { it.track },
+                                favorites = favorites,
+                                favoriteItems = favoriteItems,
+                                snapshot = sortedPartial.map { it.toSnapshot() },
+                            ),
+                        )
+                    }
+                } else {
+                    emptyList()
+                }
+
+            dao.replaceSourceTracks(LibrarySource.MediaStore, audioTracks.map { it.toEntity() })
+            if (BuildConfig.IS_VGM_BUILD) {
+                val vgmEntities = vgmTracks.map { it.toEntity() }
+                dao.replaceSourceTracks(LibrarySource.Vgm, vgmEntities)
+                dao.replaceVgmMetadata(vgmEntities.map { it.toVgmMetadata() })
+            } else {
+                dao.replaceSourceTracks(LibrarySource.Vgm, emptyList())
             }
-        } else {
-            emptyList()
+
+            val cachedTracks = dao.loadTracks()
+            dao.replaceDerivedCaches(cachedTracks)
+            CachedLibrary(
+                tracks = cachedTracks.map { it.toTrack() },
+                favorites = favorites,
+                favoriteItems = favoriteItems,
+                snapshot = cachedTracks.map { it.toSnapshot() },
+            )
         }
 
-        dao.replaceSourceTracks(LibrarySource.MediaStore, audioTracks.map { it.toEntity() })
-        if (BuildConfig.IS_VGM_BUILD) {
-            val vgmEntities = vgmTracks.map { it.toEntity() }
-            dao.replaceSourceTracks(LibrarySource.Vgm, vgmEntities)
-            dao.replaceVgmMetadata(vgmEntities.map { it.toVgmMetadata() })
-        } else {
-            dao.replaceSourceTracks(LibrarySource.Vgm, emptyList())
-        }
-
-        val cachedTracks = dao.loadTracks()
-        dao.replaceDerivedCaches(cachedTracks)
-        CachedLibrary(
-            tracks = cachedTracks.map { it.toTrack() },
-            favorites = favorites,
-            favoriteItems = favoriteItems,
-            snapshot = cachedTracks.map { it.toSnapshot() },
-        )
-    }
-
-    suspend fun setFavorite(trackId: Long, favorite: Boolean) = withContext(Dispatchers.IO) {
+    suspend fun setFavorite(
+        trackId: Long,
+        favorite: Boolean,
+    ) = withContext(Dispatchers.IO) {
         setFavoriteItem(FavoriteType.Track, trackId.toString(), favorite)
     }
 
-    suspend fun setFavoriteItem(type: String, key: String, favorite: Boolean) = withContext(Dispatchers.IO) {
+    suspend fun setFavoriteItem(
+        type: String,
+        key: String,
+        favorite: Boolean,
+    ) = withContext(Dispatchers.IO) {
         if (favorite) {
             dao.upsertFavoriteItem(FavoriteItemEntity(type, key, System.currentTimeMillis()))
             if (type == FavoriteType.Track) {
@@ -594,95 +670,100 @@ class LibraryScanner(context: Context) {
     }
 }
 
-class MediaStoreScanner(private val context: Context) {
+class MediaStoreScanner(
+    private val context: Context,
+) {
     suspend fun loadTracks(
         dao: LibraryDao,
         onPartial: suspend (List<ScannedTrack>) -> Unit = {},
     ): List<ScannedTrack> {
         val collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
-        val projection = buildList {
-            add(MediaStore.Audio.Media._ID)
-            add(MediaStore.Audio.Media.TITLE)
-            add(MediaStore.Audio.Media.ARTIST)
-            add(MediaStore.Audio.Media.ALBUM)
-            add(MediaStore.Audio.Media.DURATION)
-            add(MediaStore.Audio.Media.ALBUM_ID)
-            add(MediaStore.Audio.Media.TRACK)
-            add(MediaStore.Audio.Media.YEAR)
-            add(MediaStore.Audio.Media.DISPLAY_NAME)
-            add(MediaStore.Audio.Media.DATE_ADDED)
-            add(MediaStore.Audio.Media.DATE_MODIFIED)
-            add(MediaStore.Audio.Media.SIZE)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) add(MediaStore.Audio.Media.RELATIVE_PATH)
-            @Suppress("DEPRECATION")
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) add(MediaStore.Audio.Media.DATA)
-        }.toTypedArray()
+        val projection =
+            buildList {
+                add(MediaStore.Audio.Media._ID)
+                add(MediaStore.Audio.Media.TITLE)
+                add(MediaStore.Audio.Media.ARTIST)
+                add(MediaStore.Audio.Media.ALBUM)
+                add(MediaStore.Audio.Media.DURATION)
+                add(MediaStore.Audio.Media.ALBUM_ID)
+                add(MediaStore.Audio.Media.TRACK)
+                add(MediaStore.Audio.Media.YEAR)
+                add(MediaStore.Audio.Media.DISPLAY_NAME)
+                add(MediaStore.Audio.Media.DATE_ADDED)
+                add(MediaStore.Audio.Media.DATE_MODIFIED)
+                add(MediaStore.Audio.Media.SIZE)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) add(MediaStore.Audio.Media.RELATIVE_PATH)
+                @Suppress("DEPRECATION")
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) add(MediaStore.Audio.Media.DATA)
+            }.toTypedArray()
 
         val scanned = mutableListOf<ScannedTrack>()
-        context.contentResolver.query(
-            collection,
-            projection,
-            "${MediaStore.Audio.Media.IS_MUSIC} != 0",
-            null,
-            "${MediaStore.Audio.Media.TITLE} COLLATE NOCASE ASC"
-        )?.use { cursor ->
-            val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
-            val titleColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
-            val artistColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
-            val albumColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
-            val durationColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
-            val albumIdColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
-            val trackNumberColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TRACK)
-            val yearColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.YEAR)
-            val dateAddedColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
-            val dateModifiedColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_MODIFIED)
-            val sizeColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE)
-            val relativePathColumn = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                cursor.getColumnIndex(MediaStore.Audio.Media.RELATIVE_PATH)
-            } else {
-                @Suppress("DEPRECATION")
-                cursor.getColumnIndex(MediaStore.Audio.Media.DATA)
-            }
+        context.contentResolver
+            .query(
+                collection,
+                projection,
+                "${MediaStore.Audio.Media.IS_MUSIC} != 0",
+                null,
+                "${MediaStore.Audio.Media.TITLE} COLLATE NOCASE ASC",
+            )?.use { cursor ->
+                val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+                val titleColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
+                val artistColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
+                val albumColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
+                val durationColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
+                val albumIdColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
+                val trackNumberColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TRACK)
+                val yearColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.YEAR)
+                val dateAddedColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
+                val dateModifiedColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_MODIFIED)
+                val sizeColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE)
+                val relativePathColumn =
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        cursor.getColumnIndex(MediaStore.Audio.Media.RELATIVE_PATH)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        cursor.getColumnIndex(MediaStore.Audio.Media.DATA)
+                    }
 
-            while (cursor.moveToNext()) {
-                val id = cursor.getLong(idColumn)
-                val uri = ContentUris.withAppendedId(collection, id)
-                val title = cursor.getString(titleColumn)?.takeIf { it.isNotBlank() } ?: "Unknown title"
-                val artist = cursor.getString(artistColumn)?.takeIf { it.isNotBlank() } ?: "Unknown artist"
-                val album = cursor.getString(albumColumn)?.takeIf { it.isNotBlank() } ?: "Unknown album"
-                val folder = cursor.getStringOrNull(relativePathColumn)?.trimEnd('/') ?: "Music"
-                val trackMetadata = cursor.getInt(trackNumberColumn).toTrackMetadata()
-                scanned += ScannedTrack(
-                    track = Track(
-                        id = id,
-                        title = title,
-                        artist = artist,
-                        album = album,
-                        durationMs = cursor.getLong(durationColumn).coerceAtLeast(0L),
-                        uri = uri,
-                        albumId = cursor.getLong(albumIdColumn),
-                        folder = folder,
-                        trackNumber = trackMetadata.trackNumber,
-                        discNumber = trackMetadata.discNumber,
-                        year = cursor.getInt(yearColumn).takeIf { it > 0 } ?: 0,
-                        dateAddedMs = cursor.getLong(dateAddedColumn).coerceAtLeast(0L) * 1_000L,
-                    ),
-                    cacheKey = uri.toString(),
-                    source = LibrarySource.MediaStore,
-                    lastModifiedMs = cursor.getLong(dateModifiedColumn).coerceAtLeast(0L) * 1_000L,
-                    sizeBytes = cursor.getLong(sizeColumn).coerceAtLeast(0L),
-                )
-                if (scanned.size == 1) {
-                    onPartial(scanned.reuseUnchangedCache(dao))
+                while (cursor.moveToNext()) {
+                    val id = cursor.getLong(idColumn)
+                    val uri = ContentUris.withAppendedId(collection, id)
+                    val title = cursor.getString(titleColumn)?.takeIf { it.isNotBlank() } ?: "Unknown title"
+                    val artist = cursor.getString(artistColumn)?.takeIf { it.isNotBlank() } ?: "Unknown artist"
+                    val album = cursor.getString(albumColumn)?.takeIf { it.isNotBlank() } ?: "Unknown album"
+                    val folder = cursor.getStringOrNull(relativePathColumn)?.trimEnd('/') ?: "Music"
+                    val trackMetadata = cursor.getInt(trackNumberColumn).toTrackMetadata()
+                    scanned +=
+                        ScannedTrack(
+                            track =
+                                Track(
+                                    id = id,
+                                    title = title,
+                                    artist = artist,
+                                    album = album,
+                                    durationMs = cursor.getLong(durationColumn).coerceAtLeast(0L),
+                                    uri = uri,
+                                    albumId = cursor.getLong(albumIdColumn),
+                                    folder = folder,
+                                    trackNumber = trackMetadata.trackNumber,
+                                    discNumber = trackMetadata.discNumber,
+                                    year = cursor.getInt(yearColumn).takeIf { it > 0 } ?: 0,
+                                    dateAddedMs = cursor.getLong(dateAddedColumn).coerceAtLeast(0L) * 1_000L,
+                                ),
+                            cacheKey = uri.toString(),
+                            source = LibrarySource.MediaStore,
+                            lastModifiedMs = cursor.getLong(dateModifiedColumn).coerceAtLeast(0L) * 1_000L,
+                            sizeBytes = cursor.getLong(sizeColumn).coerceAtLeast(0L),
+                        )
+                    if (scanned.size == 1) {
+                        onPartial(scanned.reuseUnchangedCache(dao))
+                    }
                 }
             }
-        }
         return scanned.reuseUnchangedCache(dao)
     }
 
-    private suspend fun List<ScannedTrack>.reuseUnchangedCache(
-        dao: LibraryDao,
-    ): List<ScannedTrack> {
+    private suspend fun List<ScannedTrack>.reuseUnchangedCache(dao: LibraryDao): List<ScannedTrack> {
         if (isEmpty()) return emptyList()
         val cached = dao.loadTracksByCacheKey(map { it.cacheKey }).associateBy { it.cacheKey }
         return map { scanned ->
@@ -703,7 +784,10 @@ class MediaStoreScanner(private val context: Context) {
     }
 }
 
-private data class TrackMetadata(val discNumber: Int, val trackNumber: Int)
+private data class TrackMetadata(
+    val discNumber: Int,
+    val trackNumber: Int,
+)
 
 private fun Int.toTrackMetadata(): TrackMetadata {
     val normalized = this % 1_000
@@ -712,10 +796,11 @@ private fun Int.toTrackMetadata(): TrackMetadata {
     return TrackMetadata(discNumber = disc, trackNumber = track)
 }
 
-private fun List<ScannedTrack>.sortedForLibrary(): List<ScannedTrack> =
-    sortedBy { it.track.title.lowercase(Locale.getDefault()) }
+private fun List<ScannedTrack>.sortedForLibrary(): List<ScannedTrack> = sortedBy { it.track.title.lowercase(Locale.getDefault()) }
 
-class VgmFileScanner(private val context: Context) {
+class VgmFileScanner(
+    private val context: Context,
+) {
     suspend fun loadTracks(
         dao: LibraryDao,
         onPartial: suspend (List<ScannedTrack>) -> Unit = {},
@@ -730,42 +815,42 @@ class VgmFileScanner(private val context: Context) {
                 }
             }
         }
-        val cached = if (files.isEmpty()) {
-            emptyMap()
-        } else {
-            dao.loadVgmMetadata(files.map { it.absolutePath }).associateBy { it.path }
-        }
+        val cached =
+            if (files.isEmpty()) {
+                emptyMap()
+            } else {
+                dao.loadVgmMetadata(files.map { it.absolutePath }).associateBy { it.path }
+            }
         return files
             .map { file -> file.toScannedTrack(cached) }
             .distinctBy { it.track.uri }
             .sortedWith(compareBy({ it.track.folder.lowercase(Locale.ROOT) }, { it.track.title.lowercase(Locale.ROOT) }))
     }
 
-    private fun File.toScannedTrack(
-        cached: Map<String, me.ayra.music.data.VgmMetadataEntity>,
-    ): ScannedTrack {
+    private fun File.toScannedTrack(cached: Map<String, me.ayra.music.data.VgmMetadataEntity>): ScannedTrack {
         val lastModifiedMs = lastModified().coerceAtLeast(0L)
         val sizeBytes = length().coerceAtLeast(0L)
         val cachedMetadata = cached[absolutePath]
-        val track = if (
-            cachedMetadata != null &&
-            cachedMetadata.lastModifiedMs == lastModifiedMs &&
-            cachedMetadata.sizeBytes == sizeBytes
-        ) {
-            Track(
-                id = stableVgmTrackId(absolutePath),
-                title = cachedMetadata.title,
-                artist = cachedMetadata.artist,
-                album = cachedMetadata.album,
-                durationMs = cachedMetadata.durationMs,
-                uri = Uri.fromFile(this),
-                albumId = 0L,
-                folder = cachedMetadata.folder,
-                dateAddedMs = lastModifiedMs,
-            )
-        } else {
-            toVgmTrack()
-        }
+        val track =
+            if (
+                cachedMetadata != null &&
+                cachedMetadata.lastModifiedMs == lastModifiedMs &&
+                cachedMetadata.sizeBytes == sizeBytes
+            ) {
+                Track(
+                    id = stableVgmTrackId(absolutePath),
+                    title = cachedMetadata.title,
+                    artist = cachedMetadata.artist,
+                    album = cachedMetadata.album,
+                    durationMs = cachedMetadata.durationMs,
+                    uri = Uri.fromFile(this),
+                    albumId = 0L,
+                    folder = cachedMetadata.folder,
+                    dateAddedMs = lastModifiedMs,
+                )
+            } else {
+                toVgmTrack()
+            }
         return ScannedTrack(
             track = track,
             cacheKey = absolutePath,
@@ -778,15 +863,18 @@ class VgmFileScanner(private val context: Context) {
     private fun scanRoots(): List<File> {
         val roots = linkedSetOf<File>()
         @Suppress("DEPRECATION")
-        Environment.getExternalStorageDirectory()
+        Environment
+            .getExternalStorageDirectory()
             ?.takeIf { it.exists() && it.isDirectory }
             ?.let(roots::add)
         @Suppress("DEPRECATION")
-        context.getExternalMediaDirs()
+        context
+            .getExternalMediaDirs()
             .filterNotNull()
             .mapNotNull { it.storageRootOrNull() }
             .forEach(roots::add)
-        context.getExternalFilesDirs(null)
+        context
+            .getExternalFilesDirs(null)
             .filterNotNull()
             .mapNotNull { it.storageRootOrNull() }
             .forEach(roots::add)
@@ -822,8 +910,7 @@ class VgmFileScanner(private val context: Context) {
         return normalized.contains("/Android/data/") || normalized.contains("/Android/obb/")
     }
 
-    private fun File.isVgmFile(): Boolean =
-        isFile && extension.lowercase(Locale.ROOT) in VGM_EXTENSIONS
+    private fun File.isVgmFile(): Boolean = isFile && extension.lowercase(Locale.ROOT) in VGM_EXTENSIONS
 
     private fun File.toVgmTrack(): Track {
         val folderPath = parentFile?.absolutePath?.toDisplayFolder() ?: "VGM"
@@ -859,7 +946,8 @@ class VgmFileScanner(private val context: Context) {
     }
 }
 
-internal val VGM_EXTENSIONS = """
+internal val VGM_EXTENSIONS =
+    """
 208 2dx 2dx9 3do 3ds 4 8 800 9tav a3c aa3 aaf aax abc abk acb acm acx ad adc adm adm2
 adp adpcm adpcmx ads adw adx afc afs2 agsc ahv ahx ai aifc aix akb al al2 amb ams amx an2
 ao ap apc apm as4 asbin asd asf asr ast at3 at9 atsl atsl3 atsl4 atslx atx aud audio audio_data
@@ -893,40 +981,43 @@ wavm wavx wax way wb wb2 wbd wbk wd wem wic wiive wip wlv wmw wp2 wpd wsd wsi ws
 wve wvp wvs wvx wxd wxv x x360audio xa xa2 xa30 xag xai xau xav xb xbw xen xhd xma xma2 xmd xms
 xmu xmv xnb xopus xps xse xsew xsf xsh xss xst xvag xwav xwb xwc xwm xwma xws xwv ydsp ymf zic zsd
 zsm zss zwv
-""".trimIndent()
-    .split(Regex("\\s+"))
-    .filter { it.isNotBlank() }
-    .toSet()
+    """.trimIndent()
+        .split(Regex("\\s+"))
+        .filter { it.isNotBlank() }
+        .toSet()
 
-private fun android.database.Cursor.getStringOrNull(column: Int): String? {
-    return if (column >= 0 && !isNull(column)) getString(column) else null
-}
+private fun android.database.Cursor.getStringOrNull(column: Int): String? = if (column >= 0 && !isNull(column)) getString(column) else null
 
 private enum class RootRoute { Main, Settings }
 
 @OptIn(ExperimentalAnimationApi::class)
 @Composable
-fun MusicApp(openPlayerRequest: Int = 0, viewModel: MusicViewModel = viewModel()) {
+fun MusicApp(
+    openPlayerRequest: Int = 0,
+    viewModel: MusicViewModel = viewModel(),
+) {
     val context = LocalContext.current
     var rootRoute by rememberSaveable { mutableStateOf(RootRoute.Main) }
     val permission = remember { audioPermission() }
     var permissionGranted by remember {
         mutableStateOf(hasLibraryPermission(context, permission))
     }
-    val manageStorageLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-        permissionGranted = hasLibraryPermission(context, permission)
-        viewModel.loadLibrary(permissionGranted)
-    }
-    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
-        permissionGranted = hasLibraryPermission(context, permission)
-        if (permissionGranted) {
-            viewModel.loadLibrary(true)
-        } else if (needsManageExternalStoragePermission(context)) {
-            manageStorageLauncher.launch(manageExternalStorageIntent(context))
-        } else {
-            viewModel.loadLibrary(false)
+    val manageStorageLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+            permissionGranted = hasLibraryPermission(context, permission)
+            viewModel.loadLibrary(permissionGranted)
         }
-    }
+    val permissionLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+            permissionGranted = hasLibraryPermission(context, permission)
+            if (permissionGranted) {
+                viewModel.loadLibrary(true)
+            } else if (needsManageExternalStoragePermission(context)) {
+                manageStorageLauncher.launch(manageExternalStorageIntent(context))
+            } else {
+                viewModel.loadLibrary(false)
+            }
+        }
     val notificationPermission = remember { notificationPermission() }
     var notificationPermissionRequested by rememberSaveable { mutableStateOf(false) }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
@@ -975,30 +1066,34 @@ fun MusicApp(openPlayerRequest: Int = 0, viewModel: MusicViewModel = viewModel()
                 label = "root-nav",
             ) { route ->
                 when (route) {
-                    RootRoute.Main -> MainScreen(
-                        library = library,
-                        onRequestPermission = {
-                            if (ContextCompat.checkSelfPermission(context, permission) != PackageManager.PERMISSION_GRANTED) {
-                                permissionLauncher.launch(permission)
-                            } else if (needsManageExternalStoragePermission(context)) {
-                                manageStorageLauncher.launch(manageExternalStorageIntent(context))
-                            } else {
-                                permissionGranted = true
-                                viewModel.loadLibrary(true)
-                            }
-                        },
-                        onSettings = { rootRoute = RootRoute.Settings },
-                        onTrackClick = viewModel::playTrack,
-                        onToggleFavorite = viewModel::toggleFavorite,
-                        onToggleFavoriteItem = viewModel::toggleFavoriteItem,
-                        initialTabIndex = lastHomeTab,
-                        onTabSelected = { tabIndex ->
-                            lastHomeTab = tabIndex
-                            preferences.saveLastTab(tabIndex)
-                        },
-                    )
+                    RootRoute.Main -> {
+                        MainScreen(
+                            library = library,
+                            onRequestPermission = {
+                                if (ContextCompat.checkSelfPermission(context, permission) != PackageManager.PERMISSION_GRANTED) {
+                                    permissionLauncher.launch(permission)
+                                } else if (needsManageExternalStoragePermission(context)) {
+                                    manageStorageLauncher.launch(manageExternalStorageIntent(context))
+                                } else {
+                                    permissionGranted = true
+                                    viewModel.loadLibrary(true)
+                                }
+                            },
+                            onSettings = { rootRoute = RootRoute.Settings },
+                            onTrackClick = viewModel::playTrack,
+                            onToggleFavorite = viewModel::toggleFavorite,
+                            onToggleFavoriteItem = viewModel::toggleFavoriteItem,
+                            initialTabIndex = lastHomeTab,
+                            onTabSelected = { tabIndex ->
+                                lastHomeTab = tabIndex
+                                preferences.saveLastTab(tabIndex)
+                            },
+                        )
+                    }
 
-                    RootRoute.Settings -> SettingsScreen(onBack = { rootRoute = RootRoute.Main })
+                    RootRoute.Settings -> {
+                        SettingsScreen(onBack = { rootRoute = RootRoute.Main })
+                    }
                 }
             }
 
@@ -1020,36 +1115,35 @@ fun MusicApp(openPlayerRequest: Int = 0, viewModel: MusicViewModel = viewModel()
     }
 }
 
-private fun audioPermission(): String {
-    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+private fun audioPermission(): String =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         Manifest.permission.READ_MEDIA_AUDIO
     } else {
         Manifest.permission.READ_EXTERNAL_STORAGE
     }
-}
 
-private fun hasLibraryPermission(context: Context, audioPermission: String): Boolean {
+private fun hasLibraryPermission(
+    context: Context,
+    audioPermission: String,
+): Boolean {
     val audioGranted = ContextCompat.checkSelfPermission(context, audioPermission) == PackageManager.PERMISSION_GRANTED
     return audioGranted && !needsManageExternalStoragePermission(context)
 }
 
-private fun needsManageExternalStoragePermission(context: Context): Boolean {
-    return BuildConfig.IS_VGM_BUILD &&
+private fun needsManageExternalStoragePermission(context: Context): Boolean =
+    BuildConfig.IS_VGM_BUILD &&
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
         !Environment.isExternalStorageManager()
-}
 
-private fun manageExternalStorageIntent(context: Context): Intent {
-    return Intent(
+private fun manageExternalStorageIntent(context: Context): Intent =
+    Intent(
         Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
         Uri.parse("package:${context.packageName}"),
     ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-}
 
-private fun notificationPermission(): String? {
-    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+private fun notificationPermission(): String? =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         Manifest.permission.POST_NOTIFICATIONS
     } else {
         null
     }
-}

@@ -15,15 +15,16 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.AnchoredDraggableState
 import androidx.compose.foundation.gestures.AnchoredDraggableDefaults
+import androidx.compose.foundation.gestures.AnchoredDraggableState
 import androidx.compose.foundation.gestures.DraggableAnchors
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.anchoredDraggable
 import androidx.compose.foundation.gestures.animateTo
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -60,9 +61,9 @@ import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
@@ -76,11 +77,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
@@ -96,14 +96,14 @@ import androidx.compose.ui.unit.sp
 import androidx.media3.common.Player
 import androidx.palette.graphics.Palette
 import coil3.ImageLoader
-import coil3.request.ImageRequest
-import coil3.request.SuccessResult
 import coil3.compose.AsyncImage
 import coil3.compose.SubcomposeAsyncImage
+import coil3.request.ImageRequest
+import coil3.request.SuccessResult
 import coil3.toBitmap
 import com.google.android.material.color.utilities.TonalPalette
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.ayra.music.PlayerState
@@ -112,7 +112,9 @@ import java.util.Collections
 import java.util.LinkedHashMap
 import kotlin.math.roundToInt
 
-data class PlayerSheetState(val progress: Float)
+data class PlayerSheetState(
+    val progress: Float,
+)
 
 private enum class PlayerSheetAnchor {
     Expanded,
@@ -132,11 +134,12 @@ private data class MiniPlayerAccent(
     val onFullscreen: Color,
 )
 
-private val artworkSeedColorCache = Collections.synchronizedMap(
-    object : LinkedHashMap<String, Int?>(40, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Int?>): Boolean = size > 40
-    }
-)
+private val artworkSeedColorCache =
+    Collections.synchronizedMap(
+        object : LinkedHashMap<String, Int?>(40, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Int?>): Boolean = size > 40
+        },
+    )
 
 @Composable
 fun AlbumArt(
@@ -146,9 +149,10 @@ fun AlbumArt(
     contentScale: ContentScale = ContentScale.Crop,
 ) {
     Box(
-        modifier = modifier
-            .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceVariant),
+        modifier =
+            modifier
+                .clip(shape)
+                .background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center,
     ) {
         if (artwork != null) {
@@ -206,17 +210,19 @@ fun PlayerSheet(
     val coroutineScope = rememberCoroutineScope()
     val miniPlayerHeight = 68.dp
     var upperContent by rememberSaveable { mutableStateOf(PlayerUpperContent.Cover) }
-    val draggableState = remember {
-        AnchoredDraggableState<PlayerSheetAnchor>(
-            initialValue = PlayerSheetAnchor.Collapsed,
-        )
-    }
+    val draggableState =
+        remember {
+            AnchoredDraggableState<PlayerSheetAnchor>(
+                initialValue = PlayerSheetAnchor.Collapsed,
+            )
+        }
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val navigationBarBottom = with(density) { WindowInsets.navigationBars.getBottom(this).toDp() }
-        val collapsedOffsetPx = with(density) {
-            (maxHeight - miniPlayerHeight - navigationBarBottom).toPx().coerceAtLeast(0f)
-        }
+        val collapsedOffsetPx =
+            with(density) {
+                (maxHeight - miniPlayerHeight - navigationBarBottom).toPx().coerceAtLeast(0f)
+            }
         val miniHorizontalPadding = 10.dp
         val maxCoverSize = maxWidth - 48.dp
 
@@ -225,7 +231,7 @@ fun PlayerSheet(
                 DraggableAnchors {
                     PlayerSheetAnchor.Expanded at 0f
                     PlayerSheetAnchor.Collapsed at collapsedOffsetPx
-                }
+                },
             )
         }
 
@@ -293,21 +299,23 @@ fun PlayerSheet(
             onPlayPause = onPlayPause,
             onNext = onNext,
             onRepeat = onRepeat,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(sheetHeight)
-                .padding(horizontal = horizontalPadding)
-                .offsetY(offsetPx)
-                .anchoredDraggable(
-                    state = draggableState,
-                    orientation = Orientation.Vertical,
-                    enabled = upperContent == PlayerUpperContent.Cover,
-                    flingBehavior = AnchoredDraggableDefaults.flingBehavior(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .height(sheetHeight)
+                    .padding(horizontal = horizontalPadding)
+                    .offsetY(offsetPx)
+                    .anchoredDraggable(
                         state = draggableState,
-                        positionalThreshold = { distance -> distance * 0.45f },
-                        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                        orientation = Orientation.Vertical,
+                        enabled = upperContent == PlayerUpperContent.Cover,
+                        flingBehavior =
+                            AnchoredDraggableDefaults.flingBehavior(
+                                state = draggableState,
+                                positionalThreshold = { distance -> distance * 0.45f },
+                                animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                            ),
                     ),
-                ),
             shape = RoundedCornerShape(cornerRadius),
         )
     }
@@ -316,8 +324,8 @@ fun PlayerSheet(
 private fun Modifier.offsetY(offsetPx: Float): Modifier =
     this.then(
         Modifier.padding(top = 0.dp).then(
-            Modifier.offset { IntOffset(0, offsetPx.roundToInt()) }
-        )
+            Modifier.offset { IntOffset(0, offsetPx.roundToInt()) },
+        ),
     )
 
 @OptIn(ExperimentalAnimationApi::class)
@@ -356,15 +364,17 @@ private fun PlayerSurface(
     val track = playerState.currentTrack
     val artwork = track?.albumArtUri
     var artworkSeedColor by remember { mutableStateOf<Int?>(null) }
-    val defaultMiniAccent = MiniPlayerAccent(
-        container = MaterialTheme.colorScheme.primaryContainer,
-        onContainer = MaterialTheme.colorScheme.onPrimaryContainer,
-        fullscreen = MaterialTheme.colorScheme.background,
-        onFullscreen = MaterialTheme.colorScheme.onSurface,
-    )
-    val miniAccent = artworkSeedColor?.let { seed ->
-        miniPlayerAccentFromSeed(seed, darkTheme)
-    } ?: defaultMiniAccent
+    val defaultMiniAccent =
+        MiniPlayerAccent(
+            container = MaterialTheme.colorScheme.primaryContainer,
+            onContainer = MaterialTheme.colorScheme.onPrimaryContainer,
+            fullscreen = MaterialTheme.colorScheme.background,
+            onFullscreen = MaterialTheme.colorScheme.onSurface,
+        )
+    val miniAccent =
+        artworkSeedColor?.let { seed ->
+            miniPlayerAccentFromSeed(seed, darkTheme)
+        } ?: defaultMiniAccent
     val animatedMiniContainer by animateColorAsState(
         targetValue = miniAccent.container,
         animationSpec = tween(durationMillis = 450),
@@ -385,22 +395,25 @@ private fun PlayerSurface(
         animationSpec = tween(durationMillis = 450),
         label = "fullscreen-on-accent",
     )
-    val surfaceColor = lerp(
-        animatedMiniContainer,
-        animatedFullscreen,
-        progress,
-    )
-    val contentColor = lerp(
-        animatedMiniOnContainer,
-        animatedOnFullscreen,
-        progress,
-    )
-    val animatedMiniAccent = miniAccent.copy(
-        container = animatedMiniContainer,
-        onContainer = animatedMiniOnContainer,
-        fullscreen = animatedFullscreen,
-        onFullscreen = animatedOnFullscreen,
-    )
+    val surfaceColor =
+        lerp(
+            animatedMiniContainer,
+            animatedFullscreen,
+            progress,
+        )
+    val contentColor =
+        lerp(
+            animatedMiniOnContainer,
+            animatedOnFullscreen,
+            progress,
+        )
+    val animatedMiniAccent =
+        miniAccent.copy(
+            container = animatedMiniContainer,
+            onContainer = animatedMiniOnContainer,
+            fullscreen = animatedFullscreen,
+            onFullscreen = animatedOnFullscreen,
+        )
 
     LaunchedEffect(track?.id, artwork, track?.uri) {
         artworkSeedColor = track?.let { loadTrackSeedColor(context, it.albumArtUri, it.uri) }
@@ -520,34 +533,66 @@ private fun CollapsedPlayerContent(
 ) {
     val track = playerState.currentTrack
     Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(miniPlayerHeight)
-            .clickable(enabled = enabled, onClick = onExpand)
-            .padding(start = 68.dp, end = 12.dp)
-            .alpha(alpha),
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .height(miniPlayerHeight)
+                .clickable(enabled = enabled, onClick = onExpand)
+                .padding(start = 64.dp, end = 8.dp)
+                .alpha(alpha),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(
-            modifier = Modifier
-                .weight(1f)
-                .clickable(enabled = enabled, onClick = onExpand)
-                .padding(horizontal = 10.dp),
+            modifier =
+                Modifier
+                    .weight(1f),
         ) {
-            Text(track?.title ?: "No track selected", maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-            Text(track?.artist ?: "Choose music to play", maxLines = 1, overflow = TextOverflow.Ellipsis, color = accent.onContainer.copy(alpha = 0.75f), fontSize = 12.sp)
+            Text(
+                track?.title ?: "No track selected",
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp,
+            )
+            Text(
+                track?.artist ?: "Choose music to play",
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                color = accent.onContainer.copy(alpha = 0.75f),
+                fontSize = 11.sp,
+            )
         }
-        IconButton(onClick = onPrevious, enabled = enabled && track != null) {
-            Icon(Icons.Default.SkipPrevious, contentDescription = "Previous")
+        IconButton(
+            onClick = onPrevious,
+            modifier = Modifier.size(40.dp),
+            enabled = enabled && track != null,
+        ) {
+            Icon(Icons.Default.SkipPrevious, contentDescription = "Previous", modifier = Modifier.size(20.dp))
         }
-        IconButton(onClick = onPlayPause, enabled = enabled && track != null) {
-            Icon(if (playerState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, contentDescription = "Play or pause")
+        IconButton(
+            onClick = onPlayPause,
+            modifier = Modifier.size(40.dp),
+            enabled = enabled && track != null,
+        ) {
+            Icon(
+                if (playerState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                contentDescription = "Play or pause",
+                modifier = Modifier.size(20.dp),
+            )
         }
-        IconButton(onClick = onNext, enabled = enabled && track != null) {
-            Icon(Icons.Default.SkipNext, contentDescription = "Next")
+        IconButton(
+            onClick = onNext,
+            modifier = Modifier.size(40.dp),
+            enabled = enabled && track != null,
+        ) {
+            Icon(Icons.Default.SkipNext, contentDescription = "Next", modifier = Modifier.size(20.dp))
         }
-        IconButton(onClick = onPlaylist, enabled = enabled && track != null) {
-            Icon(Icons.Default.QueueMusic, contentDescription = "Queue")
+        IconButton(
+            onClick = onPlaylist,
+            modifier = Modifier.size(40.dp),
+            enabled = enabled && track != null,
+        ) {
+            Icon(Icons.Default.QueueMusic, contentDescription = "Queue", modifier = Modifier.size(20.dp))
         }
     }
 }
@@ -580,15 +625,16 @@ private fun AnchoredCoverArt(
     AlbumArt(
         artwork = artwork,
         contentScale = contentScale,
-        modifier = modifier
-            .padding(start = startX, top = top)
-            .size(size)
-            .clickable(
-                interactionSource = coverInteractionSource,
-                indication = null,
-                enabled = coverClickEnabled,
-                onClick = coverClick,
-            ),
+        modifier =
+            modifier
+                .padding(start = startX, top = top)
+                .size(size)
+                .clickable(
+                    interactionSource = coverInteractionSource,
+                    indication = null,
+                    enabled = coverClickEnabled,
+                    onClick = coverClick,
+                ),
         shape = RoundedCornerShape(radius),
     )
 }
@@ -621,81 +667,109 @@ private fun ExpandedPlayerContent(
     val track = playerState.currentTrack
 
     Column(
-        modifier = modifier
-            .fillMaxSize()
-            .windowInsetsPadding(WindowInsets.statusBars)
-            .windowInsetsPadding(WindowInsets.navigationBars)
-            .padding(horizontal = 24.dp)
-            .alpha(alpha),
-        ) {
+        modifier =
+            modifier
+                .fillMaxSize()
+                .windowInsetsPadding(WindowInsets.statusBars)
+                .windowInsetsPadding(WindowInsets.navigationBars)
+                .padding(horizontal = 24.dp)
+                .alpha(alpha),
+    ) {
         AnimatedContent(
             targetState = upperContent,
             transitionSpec = {
                 fadeIn(spring(stiffness = Spring.StiffnessLow)) togetherWith fadeOut() using SizeTransform(clip = false)
             },
             label = "player-upper-content",
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth(),
+            modifier =
+                Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
         ) { content ->
             when (content) {
-                PlayerUpperContent.Lyrics -> LyricsContent(
-                    track = track,
-                    enabled = enabled,
-                    onExit = onExitUpperContent,
-                    modifier = Modifier.fillMaxSize(),
-                )
+                PlayerUpperContent.Lyrics -> {
+                    LyricsContent(
+                        track = track,
+                        enabled = enabled,
+                        onExit = onExitUpperContent,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
 
-                PlayerUpperContent.Playlist -> PlaylistContent(
-                    playerState = playerState,
-                    enabled = enabled,
-                    onExit = onExitUpperContent,
-                    onQueueTrackClick = onQueueTrackClick,
-                    modifier = Modifier.fillMaxSize(),
-                )
+                PlayerUpperContent.Playlist -> {
+                    PlaylistContent(
+                        playerState = playerState,
+                        enabled = enabled,
+                        onExit = onExitUpperContent,
+                        onQueueTrackClick = onQueueTrackClick,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
 
-                PlayerUpperContent.Cover -> Column(modifier = Modifier.fillMaxSize()) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 18.dp, bottom = 28.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        IconButton(onClick = onMinimize, enabled = enabled) {
-                            Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Minimize", modifier = Modifier.size(34.dp))
+                PlayerUpperContent.Cover -> {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        Row(
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 18.dp, bottom = 28.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            IconButton(onClick = onMinimize, enabled = enabled) {
+                                Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Minimize", modifier = Modifier.size(34.dp))
+                            }
+                            Spacer(Modifier.weight(1f))
+                            IconButton(
+                                onClick = onSettings,
+                                enabled = enabled,
+                            ) { Icon(Icons.Default.MoreVert, contentDescription = "Settings") }
+                        }
+                        Box(
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .height(maxCoverSize),
+                            contentAlignment = Alignment.TopCenter,
+                        ) {}
+                        Column(
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 28.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Text(track?.title ?: "No track selected", fontSize = 30.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(
+                                track?.artist ?: "Choose music to play",
+                                fontSize = 18.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
                         }
                         Spacer(Modifier.weight(1f))
-                        IconButton(onClick = onSettings, enabled = enabled) { Icon(Icons.Default.MoreVert, contentDescription = "Settings") }
-                    }
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(maxCoverSize),
-                        contentAlignment = Alignment.TopCenter,
-                    ) {}
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 28.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        Text(track?.title ?: "No track selected", fontSize = 30.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(track?.artist ?: "Choose music to play", fontSize = 18.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                    Spacer(Modifier.weight(1f))
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 24.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        IconButton(onClick = onPlaylist, enabled = enabled && playerState.queue.isNotEmpty()) {
-                            Icon(Icons.Default.QueueMusic, contentDescription = "Queue", modifier = Modifier.size(32.dp))
+                        Row(
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 24.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            IconButton(onClick = onPlaylist, enabled = enabled && playerState.queue.isNotEmpty()) {
+                                Icon(Icons.Default.QueueMusic, contentDescription = "Queue", modifier = Modifier.size(32.dp))
+                            }
+                            IconButton(onClick = onToggleFavorite, enabled = enabled && track != null) {
+                                Icon(
+                                    if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                    contentDescription = "Favorite",
+                                    modifier = Modifier.size(34.dp),
+                                )
+                            }
+                            IconButton(
+                                onClick = { },
+                                enabled = enabled,
+                            ) { Icon(Icons.Default.Add, contentDescription = "Add to", modifier = Modifier.size(36.dp)) }
                         }
-                        IconButton(onClick = onToggleFavorite, enabled = enabled && track != null) {
-                            Icon(if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, contentDescription = "Favorite", modifier = Modifier.size(34.dp))
-                        }
-                        IconButton(onClick = { }, enabled = enabled) { Icon(Icons.Default.Add, contentDescription = "Add to", modifier = Modifier.size(36.dp)) }
                     }
                 }
             }
@@ -722,12 +796,18 @@ private fun ExpandedPlayerContent(
 }
 
 @Composable
-private fun LyricsContent(track: Track?, enabled: Boolean, onExit: () -> Unit, modifier: Modifier = Modifier) {
+private fun LyricsContent(
+    track: Track?,
+    enabled: Boolean,
+    onExit: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Column(modifier = modifier) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 18.dp),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(top = 18.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onExit, enabled = enabled) {
@@ -738,16 +818,22 @@ private fun LyricsContent(track: Track?, enabled: Boolean, onExit: () -> Unit, m
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(track?.title ?: "No track selected", fontSize = 28.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(track?.artist ?: "", color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    track?.artist ?: "",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
             Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceVariant) {
                 Text("x1", modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), fontWeight = FontWeight.Bold)
             }
         }
         Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(bottom = 28.dp),
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .padding(bottom = 28.dp),
             contentAlignment = Alignment.Center,
         ) {
             Text("No lyric found", fontSize = 28.sp, color = MaterialTheme.colorScheme.onSurface)
@@ -765,9 +851,10 @@ private fun PlaylistContent(
 ) {
     Column(modifier = modifier) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 18.dp, bottom = 18.dp),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(top = 18.dp, bottom = 18.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onExit, enabled = enabled) {
@@ -794,7 +881,9 @@ private fun PlaylistContent(
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 28.dp),
+                contentPadding =
+                    androidx.compose.foundation.layout
+                        .PaddingValues(bottom = 28.dp),
             ) {
                 itemsIndexed(playerState.queue, key = { _, track -> track.id }) { index, track ->
                     val selected = track.id == playerState.currentTrack?.id
@@ -826,10 +915,11 @@ private fun QueueTrackRow(
     onClick: () -> Unit,
 ) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(vertical = 10.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clickable(enabled = enabled, onClick = onClick)
+                .padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
@@ -841,9 +931,10 @@ private fun QueueTrackRow(
         )
         AlbumArt(track.albumArtUri, Modifier.size(48.dp), RoundedCornerShape(12.dp))
         Column(
-            modifier = Modifier
-                .weight(1f)
-                .padding(start = 12.dp),
+            modifier =
+                Modifier
+                    .weight(1f)
+                    .padding(start = 12.dp),
         ) {
             Text(
                 track.title,
@@ -871,7 +962,12 @@ private fun QueueTrackRow(
 }
 
 @Composable
-private fun SeekBar(positionMs: Long, durationMs: Long, enabled: Boolean, onSeek: (Long) -> Unit) {
+private fun SeekBar(
+    positionMs: Long,
+    durationMs: Long,
+    enabled: Boolean,
+    onSeek: (Long) -> Unit,
+) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Slider(
             value = if (durationMs > 0) positionMs.coerceIn(0L, durationMs).toFloat() else 0f,
@@ -901,26 +997,46 @@ private fun Controls(
     onRepeat: () -> Unit,
 ) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 22.dp, bottom = 28.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(top = 22.dp, bottom = 28.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         IconButton(onClick = onShuffle, enabled = enabled && hasTrack) {
-            Icon(Icons.Default.Shuffle, contentDescription = "Shuffle", tint = if (shuffle) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+            Icon(
+                Icons.Default.Shuffle,
+                contentDescription = "Shuffle",
+                tint = if (shuffle) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+            )
         }
         IconButton(onClick = onPrevious, enabled = enabled && hasTrack) {
             Icon(Icons.Default.SkipPrevious, contentDescription = "Previous", modifier = Modifier.size(38.dp))
         }
         IconButton(onClick = onPlayPause, enabled = enabled && hasTrack, modifier = Modifier.size(72.dp)) {
-            Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, contentDescription = "Play or pause", modifier = Modifier.size(54.dp))
+            Icon(
+                if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                contentDescription = "Play or pause",
+                modifier = Modifier.size(54.dp),
+            )
         }
         IconButton(onClick = onNext, enabled = enabled && hasTrack) {
             Icon(Icons.Default.SkipNext, contentDescription = "Next", modifier = Modifier.size(38.dp))
         }
         IconButton(onClick = onRepeat, enabled = enabled && hasTrack) {
-            Icon(Icons.Default.Repeat, contentDescription = "Repeat", tint = if (repeatMode != Player.REPEAT_MODE_OFF) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+            Icon(
+                Icons.Default.Repeat,
+                contentDescription = "Repeat",
+                tint =
+                    if (repeatMode !=
+                        Player.REPEAT_MODE_OFF
+                    ) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
+            )
         }
     }
 }
@@ -932,28 +1048,38 @@ private fun formatDuration(valueMs: Long): String {
     return "%d:%02d".format(minutes, seconds)
 }
 
-private suspend fun loadTrackSeedColor(context: Context, artwork: Uri, trackUri: Uri): Int? {
-    val cacheKey = "${artwork}|${trackUri}"
+private suspend fun loadTrackSeedColor(
+    context: Context,
+    artwork: Uri,
+    trackUri: Uri,
+): Int? {
+    val cacheKey = "$artwork|$trackUri"
     if (artworkSeedColorCache.containsKey(cacheKey)) {
         return artworkSeedColorCache[cacheKey]
     }
 
-    val seedColor = withContext(Dispatchers.IO) {
-        loadSeedColorWithCoil(context, artwork)
-            ?: loadSeedColorWithCoil(context, trackUri)
-            ?: loadEmbeddedSeedColor(context, trackUri)
-    }
+    val seedColor =
+        withContext(Dispatchers.IO) {
+            loadSeedColorWithCoil(context, artwork)
+                ?: loadSeedColorWithCoil(context, trackUri)
+                ?: loadEmbeddedSeedColor(context, trackUri)
+        }
 
     artworkSeedColorCache[cacheKey] = seedColor
     return seedColor
 }
 
-private suspend fun loadSeedColorWithCoil(context: Context, uri: Uri): Int? {
+private suspend fun loadSeedColorWithCoil(
+    context: Context,
+    uri: Uri,
+): Int? {
     return runCatching {
-        val request = ImageRequest.Builder(context)
-            .data(uri)
-            .size(192)
-            .build()
+        val request =
+            ImageRequest
+                .Builder(context)
+                .data(uri)
+                .size(192)
+                .build()
         val result = ImageLoader(context).execute(request) as? SuccessResult
         val image = result?.image ?: return@runCatching null
         val bitmap = image.toBitmap(image.width.coerceAtLeast(1), image.height.coerceAtLeast(1))
@@ -961,7 +1087,10 @@ private suspend fun loadSeedColorWithCoil(context: Context, uri: Uri): Int? {
     }.getOrNull()
 }
 
-private fun loadEmbeddedSeedColor(context: Context, trackUri: Uri): Int? {
+private fun loadEmbeddedSeedColor(
+    context: Context,
+    trackUri: Uri,
+): Int? {
     return runCatching {
         val retriever = MediaMetadataRetriever()
         try {
@@ -976,9 +1105,11 @@ private fun loadEmbeddedSeedColor(context: Context, trackUri: Uri): Int? {
 }
 
 private fun android.graphics.Bitmap.toPaletteSeedColor(): Int? {
-    val palette = Palette.from(this)
-        .maximumColorCount(24)
-        .generate()
+    val palette =
+        Palette
+            .from(this)
+            .maximumColorCount(24)
+            .generate()
     return palette.vibrantSwatch?.rgb
         ?: palette.lightVibrantSwatch?.rgb
         ?: palette.darkVibrantSwatch?.rgb
@@ -986,7 +1117,10 @@ private fun android.graphics.Bitmap.toPaletteSeedColor(): Int? {
         ?: palette.dominantSwatch?.rgb
 }
 
-private fun miniPlayerAccentFromSeed(seedColor: Int, darkTheme: Boolean): MiniPlayerAccent {
+private fun miniPlayerAccentFromSeed(
+    seedColor: Int,
+    darkTheme: Boolean,
+): MiniPlayerAccent {
     val palette = TonalPalette.fromInt(seedColor)
     return if (darkTheme) {
         MiniPlayerAccent(

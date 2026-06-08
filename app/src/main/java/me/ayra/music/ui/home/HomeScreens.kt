@@ -70,15 +70,15 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -100,7 +100,9 @@ import me.ayra.music.PlaylistGroup
 import me.ayra.music.Track
 import me.ayra.music.ui.player.AlbumArt
 
-enum class HomeTab(val label: String) {
+enum class HomeTab(
+    val label: String,
+) {
     Favorite("Favorite"),
     Playlist("Playlist"),
     Track("Track"),
@@ -109,24 +111,32 @@ enum class HomeTab(val label: String) {
     Folder("Folder"),
 }
 
-private enum class TrackSort(val label: String) {
+private enum class TrackSort(
+    val label: String,
+) {
     Name("Name"),
     DateAdded("Date added"),
     Artist("Artist"),
 }
 
-private enum class AlbumSort(val label: String) {
+private enum class AlbumSort(
+    val label: String,
+) {
     Release("Release"),
     Name("Name"),
     Artist("Artist"),
 }
 
-private enum class ArtistSort(val label: String) {
+private enum class ArtistSort(
+    val label: String,
+) {
     Name("Name"),
     DateAdded("Date added"),
 }
 
-private enum class FolderSort(val label: String) {
+private enum class FolderSort(
+    val label: String,
+) {
     Name("Name"),
     DateAdded("Date added"),
 }
@@ -155,10 +165,11 @@ fun MainScreen(
     }
 
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .windowInsetsPadding(WindowInsets.statusBars)
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+                .windowInsetsPadding(WindowInsets.statusBars),
     ) {
         AnimatedContent(
             targetState = route,
@@ -172,97 +183,112 @@ fun MainScreen(
             label = "content-nav",
         ) { currentRoute ->
             when (currentRoute) {
-                ROUTE_HOME -> HomeScreen(
-                    library = library,
-                    onRequestPermission = onRequestPermission,
-                    onSettings = onSettings,
-                    onTrackClick = onTrackClick,
-                    onToggleFavorite = onToggleFavorite,
-                    onToggleFavoriteItem = onToggleFavoriteItem,
-                    onFolderClick = { route = ROUTE_FOLDER_PREFIX + it.path },
-                    onAlbumClick = { route = ROUTE_ALBUM_PREFIX + it.id },
-                    onArtistClick = { route = ROUTE_ARTIST_PREFIX + it.name },
-                    onSearch = { route = ROUTE_SEARCH },
-                    initialTabIndex = initialTabIndex,
-                    onTabSelected = onTabSelected,
-                    modifier = Modifier.fillMaxSize(),
-                )
+                ROUTE_HOME -> {
+                    HomeScreen(
+                        library = library,
+                        onRequestPermission = onRequestPermission,
+                        onSettings = onSettings,
+                        onTrackClick = onTrackClick,
+                        onToggleFavorite = onToggleFavorite,
+                        onToggleFavoriteItem = onToggleFavoriteItem,
+                        onFolderClick = { route = ROUTE_FOLDER_PREFIX + it.path },
+                        onAlbumClick = { route = ROUTE_ALBUM_PREFIX + it.id },
+                        onArtistClick = { route = ROUTE_ARTIST_PREFIX + it.name },
+                        onSearch = { route = ROUTE_SEARCH },
+                        initialTabIndex = initialTabIndex,
+                        onTabSelected = onTabSelected,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
 
-                ROUTE_SEARCH -> SearchScreen(
-                    library = library,
-                    onBack = { route = ROUTE_HOME },
-                    onTrackClick = onTrackClick,
-                    modifier = Modifier.fillMaxSize(),
-                )
+                ROUTE_SEARCH -> {
+                    SearchScreen(
+                        library = library,
+                        onBack = { route = ROUTE_HOME },
+                        onTrackClick = onTrackClick,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
 
                 else -> {
-                    val albumId = currentRoute.takeIf { it.startsWith(ROUTE_ALBUM_PREFIX) }
-                        ?.removePrefix(ROUTE_ALBUM_PREFIX)
-                        ?.toLongOrNull()
+                    val albumId =
+                        currentRoute
+                            .takeIf { it.startsWith(ROUTE_ALBUM_PREFIX) }
+                            ?.removePrefix(ROUTE_ALBUM_PREFIX)
+                            ?.toLongOrNull()
                     val album = albumId?.let { id -> library.albums.firstOrNull { it.id == id } }
-                    val folderPath = currentRoute.takeIf { it.startsWith(ROUTE_FOLDER_PREFIX) }
-                        ?.removePrefix(ROUTE_FOLDER_PREFIX)
+                    val folderPath =
+                        currentRoute
+                            .takeIf { it.startsWith(ROUTE_FOLDER_PREFIX) }
+                            ?.removePrefix(ROUTE_FOLDER_PREFIX)
                     val folder = folderPath?.let { path -> library.folders.firstOrNull { it.path == path } }
-                    val artistName = currentRoute.takeIf { it.startsWith(ROUTE_ARTIST_PREFIX) }
-                        ?.removePrefix(ROUTE_ARTIST_PREFIX)
+                    val artistName =
+                        currentRoute
+                            .takeIf { it.startsWith(ROUTE_ARTIST_PREFIX) }
+                            ?.removePrefix(ROUTE_ARTIST_PREFIX)
                     val artist = artistName?.let { name -> library.artists.firstOrNull { it.name == name } }
                     when {
-                        album != null -> AlbumDetailScreen(
-                            album = album,
-                            onBack = { route = ROUTE_HOME },
-                            onSettings = onSettings,
-                            onSearch = { route = ROUTE_SEARCH },
-                            onTrackClick = onTrackClick,
-                            isFavorite = library.isFavoriteItem(FavoriteType.Album, album.id.toString()),
-                            onToggleFavorite = { onToggleFavoriteItem(FavoriteType.Album, album.id.toString()) },
-                            modifier = Modifier.fillMaxSize(),
-                        )
+                        album != null -> {
+                            AlbumDetailScreen(
+                                album = album,
+                                onBack = { route = ROUTE_HOME },
+                                onSettings = onSettings,
+                                onSearch = { route = ROUTE_SEARCH },
+                                onTrackClick = onTrackClick,
+                                isFavorite = library.isFavoriteItem(FavoriteType.Album, album.id.toString()),
+                                onToggleFavorite = { onToggleFavoriteItem(FavoriteType.Album, album.id.toString()) },
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
 
-                        artist != null -> ArtistDetailScreen(
-                            artist = artist,
-                            albums = library.albums
-                                .filter { albumGroup -> albumGroup.tracks.any { it.artist == artist.name } },
-                            onBack = { route = ROUTE_HOME },
-                            onSettings = onSettings,
-                            onSearch = { route = ROUTE_SEARCH },
-                            onTrackClick = onTrackClick,
-                            onAlbumClick = { route = ROUTE_ALBUM_PREFIX + it.id },
-                            isFavorite = library.isFavoriteItem(FavoriteType.Artist, artist.name),
-                            onToggleFavorite = { onToggleFavoriteItem(FavoriteType.Artist, artist.name) },
-                            modifier = Modifier.fillMaxSize(),
-                        )
+                        artist != null -> {
+                            ArtistDetailScreen(
+                                artist = artist,
+                                albums =
+                                    library.albums
+                                        .filter { albumGroup -> albumGroup.tracks.any { it.artist == artist.name } },
+                                onBack = { route = ROUTE_HOME },
+                                onSettings = onSettings,
+                                onSearch = { route = ROUTE_SEARCH },
+                                onTrackClick = onTrackClick,
+                                onAlbumClick = { route = ROUTE_ALBUM_PREFIX + it.id },
+                                isFavorite = library.isFavoriteItem(FavoriteType.Artist, artist.name),
+                                onToggleFavorite = { onToggleFavoriteItem(FavoriteType.Artist, artist.name) },
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
 
                         folder != null -> {
-                        FolderDetailScreen(
-                            folder = folder,
-                            favorites = library.favorites,
-                            onBack = { route = ROUTE_HOME },
-                            onSettings = onSettings,
-                            onSearch = { route = ROUTE_SEARCH },
-                            onTrackClick = onTrackClick,
-                            onToggleFavorite = onToggleFavorite,
-                            isFavorite = library.isFavoriteItem(FavoriteType.Folder, folder.path),
-                            onToggleFolderFavorite = { onToggleFavoriteItem(FavoriteType.Folder, folder.path) },
-                            modifier = Modifier.fillMaxSize(),
-                        )
+                            FolderDetailScreen(
+                                folder = folder,
+                                favorites = library.favorites,
+                                onBack = { route = ROUTE_HOME },
+                                onSettings = onSettings,
+                                onSearch = { route = ROUTE_SEARCH },
+                                onTrackClick = onTrackClick,
+                                onToggleFavorite = onToggleFavorite,
+                                isFavorite = library.isFavoriteItem(FavoriteType.Folder, folder.path),
+                                onToggleFolderFavorite = { onToggleFavoriteItem(FavoriteType.Folder, folder.path) },
+                                modifier = Modifier.fillMaxSize(),
+                            )
                         }
 
                         else -> {
-                        HomeScreen(
-                            library = library,
-                            onRequestPermission = onRequestPermission,
-                            onSettings = onSettings,
-                            onTrackClick = onTrackClick,
-                            onToggleFavorite = onToggleFavorite,
-                            onToggleFavoriteItem = onToggleFavoriteItem,
-                            onFolderClick = { route = ROUTE_FOLDER_PREFIX + it.path },
-                            onAlbumClick = { route = ROUTE_ALBUM_PREFIX + it.id },
-                            onArtistClick = { route = ROUTE_ARTIST_PREFIX + it.name },
-                            onSearch = { route = ROUTE_SEARCH },
-                            initialTabIndex = initialTabIndex,
-                            onTabSelected = onTabSelected,
-                            modifier = Modifier.fillMaxSize(),
-                        )
+                            HomeScreen(
+                                library = library,
+                                onRequestPermission = onRequestPermission,
+                                onSettings = onSettings,
+                                onTrackClick = onTrackClick,
+                                onToggleFavorite = onToggleFavorite,
+                                onToggleFavoriteItem = onToggleFavoriteItem,
+                                onFolderClick = { route = ROUTE_FOLDER_PREFIX + it.path },
+                                onAlbumClick = { route = ROUTE_ALBUM_PREFIX + it.id },
+                                onArtistClick = { route = ROUTE_ARTIST_PREFIX + it.name },
+                                onSearch = { route = ROUTE_SEARCH },
+                                initialTabIndex = initialTabIndex,
+                                onTabSelected = onTabSelected,
+                                modifier = Modifier.fillMaxSize(),
+                            )
                         }
                     }
                 }
@@ -298,9 +324,10 @@ private fun HomeScreen(
 
     Column(modifier = modifier) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 20.dp, top = 18.dp, end = 8.dp, bottom = 8.dp),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = 20.dp, top = 18.dp, end = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
@@ -348,26 +375,54 @@ private fun HomeScreen(
         }
 
         when {
-            !library.permissionGranted && library.tracks.isEmpty() -> PermissionState(onRequestPermission)
-            library.loading -> LoadingState()
-            library.error != null -> EmptyPanel(library.error)
-            else -> HorizontalPager(
-                state = pagerState,
-                modifier = Modifier.fillMaxSize(),
-            ) { page ->
-                when (tabs[page]) {
-                    HomeTab.Favorite -> FavoriteTab(
-                        library = library,
-                        onTrackClick = onTrackClick,
-                        onArtistClick = onArtistClick,
-                        onAlbumClick = onAlbumClick,
-                        onFolderClick = onFolderClick,
-                    )
-                    HomeTab.Playlist -> PlaylistTab(library, onTrackClick)
-                    HomeTab.Track -> TrackTab(library, onTrackClick)
-                    HomeTab.Album -> AlbumTab(library, onAlbumClick)
-                    HomeTab.Artist -> ArtistTab(library, onArtistClick)
-                    HomeTab.Folder -> FolderTab(library, onFolderClick)
+            !library.permissionGranted && library.tracks.isEmpty() -> {
+                PermissionState(onRequestPermission)
+            }
+
+            library.loading -> {
+                LoadingState()
+            }
+
+            library.error != null -> {
+                EmptyPanel(library.error)
+            }
+
+            else -> {
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.fillMaxSize(),
+                ) { page ->
+                    when (tabs[page]) {
+                        HomeTab.Favorite -> {
+                            FavoriteTab(
+                                library = library,
+                                onTrackClick = onTrackClick,
+                                onArtistClick = onArtistClick,
+                                onAlbumClick = onAlbumClick,
+                                onFolderClick = onFolderClick,
+                            )
+                        }
+
+                        HomeTab.Playlist -> {
+                            PlaylistTab(library, onTrackClick)
+                        }
+
+                        HomeTab.Track -> {
+                            TrackTab(library, onTrackClick)
+                        }
+
+                        HomeTab.Album -> {
+                            AlbumTab(library, onAlbumClick)
+                        }
+
+                        HomeTab.Artist -> {
+                            ArtistTab(library, onArtistClick)
+                        }
+
+                        HomeTab.Folder -> {
+                            FolderTab(library, onFolderClick)
+                        }
+                    }
                 }
             }
         }
@@ -383,38 +438,43 @@ private fun SearchScreen(
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     val normalizedQuery = query.trim()
-    val trackResults = if (normalizedQuery.isBlank()) {
-        emptyList()
-    } else {
-        library.tracks.filter {
-            it.title.contains(normalizedQuery, ignoreCase = true) ||
-                it.artist.contains(normalizedQuery, ignoreCase = true) ||
-                it.album.contains(normalizedQuery, ignoreCase = true)
+    val trackResults =
+        if (normalizedQuery.isBlank()) {
+            emptyList()
+        } else {
+            library.tracks.filter {
+                it.title.contains(normalizedQuery, ignoreCase = true) ||
+                    it.artist.contains(normalizedQuery, ignoreCase = true) ||
+                    it.album.contains(normalizedQuery, ignoreCase = true)
+            }
         }
-    }
-    val artistResults = if (normalizedQuery.isBlank()) {
-        emptyList()
-    } else {
-        library.artists.filter { it.name.contains(normalizedQuery, ignoreCase = true) }
-    }
-    val albumResults = if (normalizedQuery.isBlank()) {
-        emptyList()
-    } else {
-        library.albums.filter {
-            it.title.contains(normalizedQuery, ignoreCase = true) ||
-                it.artist.contains(normalizedQuery, ignoreCase = true)
+    val artistResults =
+        if (normalizedQuery.isBlank()) {
+            emptyList()
+        } else {
+            library.artists.filter { it.name.contains(normalizedQuery, ignoreCase = true) }
         }
-    }
+    val albumResults =
+        if (normalizedQuery.isBlank()) {
+            emptyList()
+        } else {
+            library.albums.filter {
+                it.title.contains(normalizedQuery, ignoreCase = true) ||
+                    it.artist.contains(normalizedQuery, ignoreCase = true)
+            }
+        }
 
     Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
+        modifier =
+            modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background),
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 8.dp, top = 18.dp, end = 8.dp, bottom = 10.dp),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = 8.dp, top = 18.dp, end = 8.dp, bottom = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onBack) {
@@ -425,19 +485,21 @@ private fun SearchScreen(
                 onValueChange = { query = it },
                 modifier = Modifier.weight(1f),
                 singleLine = true,
-                textStyle = MaterialTheme.typography.headlineSmall.copy(
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold,
-                ),
+                textStyle =
+                    MaterialTheme.typography.headlineSmall.copy(
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold,
+                    ),
                 placeholder = {
                     Text("Search", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 },
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Color.Transparent,
-                    unfocusedContainerColor = Color.Transparent,
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                ),
+                colors =
+                    TextFieldDefaults.colors(
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                    ),
             )
             IconButton(onClick = { if (query.isBlank()) onBack() else query = "" }) {
                 Icon(Icons.Default.Close, contentDescription = "Close", tint = MaterialTheme.colorScheme.primary)
@@ -465,9 +527,10 @@ private fun SearchScreen(
                             if (trackResults.size > 4) {
                                 Text(
                                     "Show all",
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 12.dp),
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 12.dp),
                                     textAlign = TextAlign.Center,
                                     fontWeight = FontWeight.Bold,
                                 )
@@ -519,9 +582,10 @@ private fun SearchScreen(
 @Composable
 private fun PermissionState(onRequestPermission: () -> Unit) {
     OutlinedCard(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(20.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
         colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
     ) {
@@ -529,7 +593,12 @@ private fun PermissionState(onRequestPermission: () -> Unit) {
             modifier = Modifier.padding(22.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Icon(Icons.Default.LibraryMusic, contentDescription = null, modifier = Modifier.size(38.dp), tint = MaterialTheme.colorScheme.primary)
+            Icon(
+                Icons.Default.LibraryMusic,
+                contentDescription = null,
+                modifier = Modifier.size(38.dp),
+                tint = MaterialTheme.colorScheme.primary,
+            )
             Text("Allow music access", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Text("Music needs audio permission to load tracks from your device.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             Button(onClick = onRequestPermission) {
@@ -542,9 +611,10 @@ private fun PermissionState(onRequestPermission: () -> Unit) {
 @Composable
 private fun LoadingState() {
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(20.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
@@ -560,20 +630,22 @@ private fun FavoriteTab(
     onAlbumClick: (AlbumGroup) -> Unit,
     onFolderClick: (FolderGroup) -> Unit,
 ) {
-    val favoriteCards = remember(library.favoriteItems, library.favoriteTracks, library.artists, library.albums, library.folders) {
-        library.favoriteCards()
-    }
+    val favoriteCards =
+        remember(library.favoriteItems, library.favoriteTracks, library.artists, library.albums, library.folders) {
+            library.favoriteCards()
+        }
     if (favoriteCards.isEmpty()) {
         EmptyPanel("Favorite tracks, artists, folders, and albums will appear here.")
         return
     }
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(top = 14.dp)
-            .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainer),
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .padding(top = 14.dp)
+                .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainer),
         contentPadding = PaddingValues(start = 20.dp, top = 18.dp, end = 20.dp, bottom = 116.dp),
         horizontalArrangement = Arrangement.spacedBy(14.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
@@ -582,35 +654,41 @@ private fun FavoriteTab(
         items(favoriteCards, key = { "${it.type}:${it.key}" }) { card ->
             FavoriteGridCard(
                 card = card,
-                modifier = Modifier.clickable {
-                    when (card.type) {
-                        FavoriteType.Track -> card.tracks.firstOrNull()?.let { onTrackClick(it, card.tracks) }
-                        FavoriteType.Artist -> card.artist?.let(onArtistClick)
-                        FavoriteType.Folder -> card.folder?.let(onFolderClick)
-                        FavoriteType.Album -> card.album?.let(onAlbumClick)
-                    }
-                },
+                modifier =
+                    Modifier.clickable {
+                        when (card.type) {
+                            FavoriteType.Track -> card.tracks.firstOrNull()?.let { onTrackClick(it, card.tracks) }
+                            FavoriteType.Artist -> card.artist?.let(onArtistClick)
+                            FavoriteType.Folder -> card.folder?.let(onFolderClick)
+                            FavoriteType.Album -> card.album?.let(onAlbumClick)
+                        }
+                    },
             )
         }
     }
 }
 
 @Composable
-private fun PlaylistTab(library: LibraryState, onTrackClick: (Track, List<Track>) -> Unit) {
+private fun PlaylistTab(
+    library: LibraryState,
+    onTrackClick: (Track, List<Track>) -> Unit,
+) {
     val smartPlaylists = remember(library.tracks, library.favoriteTracks) { library.smartPlaylists() }
-    val customPlaylists = library.playlists.filterNot { playlist ->
-        smartPlaylists.any { it.title == playlist.title }
-    }
+    val customPlaylists =
+        library.playlists.filterNot { playlist ->
+            smartPlaylists.any { it.title == playlist.title }
+        }
     if (library.tracks.isEmpty()) {
         EmptyPanel("Create playlists and they will appear here.")
         return
     }
     LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(top = 14.dp)
-            .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainer),
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .padding(top = 14.dp)
+                .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainer),
         contentPadding = PaddingValues(start = 20.dp, top = 18.dp, end = 20.dp, bottom = 116.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
@@ -622,9 +700,10 @@ private fun PlaylistTab(library: LibraryState, onTrackClick: (Track, List<Track>
                         title = playlist.title,
                         subtitle = "${playlist.tracks.size} tracks",
                         artwork = playlist.artwork,
-                        modifier = Modifier
-                            .width(150.dp)
-                            .clickable { playlist.tracks.firstOrNull()?.let { onTrackClick(it, playlist.tracks) } },
+                        modifier =
+                            Modifier
+                                .width(150.dp)
+                                .clickable { playlist.tracks.firstOrNull()?.let { onTrackClick(it, playlist.tracks) } },
                     )
                 }
             }
@@ -666,66 +745,79 @@ private data class FavoriteCardItem(
 
 private fun LibraryState.favoriteCards(): List<FavoriteCardItem> {
     val cards = mutableListOf<FavoriteCardItem>()
-    val trackAddedAt = favoriteItems
-        .filter { it.type == FavoriteType.Track }
-        .maxOfOrNull { it.addedAt }
+    val trackAddedAt =
+        favoriteItems
+            .filter { it.type == FavoriteType.Track }
+            .maxOfOrNull { it.addedAt }
     if (favoriteTracks.isNotEmpty()) {
-        cards += FavoriteCardItem(
-            type = FavoriteType.Track,
-            key = "favorite-tracks",
-            title = "Favorite track",
-            subtitle = "${favoriteTracks.size} tracks",
-            artwork = favoriteTracks.firstOrNull()?.albumArtUri,
-            tracks = favoriteTracks,
-            addedAt = trackAddedAt ?: 0L,
-        )
+        cards +=
+            FavoriteCardItem(
+                type = FavoriteType.Track,
+                key = "favorite-tracks",
+                title = "Favorite track",
+                subtitle = "${favoriteTracks.size} tracks",
+                artwork = favoriteTracks.firstOrNull()?.albumArtUri,
+                tracks = favoriteTracks,
+                addedAt = trackAddedAt ?: 0L,
+            )
     }
     favoriteItems.forEach { favorite ->
         when (favorite.type) {
-            FavoriteType.Artist -> artists.firstOrNull { it.name == favorite.key }?.let { artist ->
-                cards += FavoriteCardItem(
-                    type = FavoriteType.Artist,
-                    key = favorite.key,
-                    title = artist.name,
-                    subtitle = "${artist.albums} albums | ${artist.tracks.size} tracks",
-                    artwork = artist.tracks.firstOrNull()?.albumArtUri,
-                    artist = artist,
-                    addedAt = favorite.addedAt,
-                )
-            }
-
-            FavoriteType.Folder -> folders.firstOrNull { it.path == favorite.key }?.let { folder ->
-                cards += FavoriteCardItem(
-                    type = FavoriteType.Folder,
-                    key = favorite.key,
-                    title = folder.name,
-                    subtitle = folder.path,
-                    artwork = folder.tracks.firstOrNull()?.albumArtUri,
-                    folder = folder,
-                    addedAt = favorite.addedAt,
-                )
-            }
-
-            FavoriteType.Album -> favorite.key.toLongOrNull()
-                ?.let { albumId -> albums.firstOrNull { it.id == albumId } }
-                ?.let { album ->
-                    cards += FavoriteCardItem(
-                        type = FavoriteType.Album,
-                        key = favorite.key,
-                        title = album.title,
-                        subtitle = "${album.artist} | ${album.tracks.size} tracks",
-                        artwork = album.tracks.firstOrNull()?.albumArtUri,
-                        album = album,
-                        addedAt = favorite.addedAt,
-                    )
+            FavoriteType.Artist -> {
+                artists.firstOrNull { it.name == favorite.key }?.let { artist ->
+                    cards +=
+                        FavoriteCardItem(
+                            type = FavoriteType.Artist,
+                            key = favorite.key,
+                            title = artist.name,
+                            subtitle = "${artist.albums} albums | ${artist.tracks.size} tracks",
+                            artwork = artist.tracks.firstOrNull()?.albumArtUri,
+                            artist = artist,
+                            addedAt = favorite.addedAt,
+                        )
                 }
+            }
+
+            FavoriteType.Folder -> {
+                folders.firstOrNull { it.path == favorite.key }?.let { folder ->
+                    cards +=
+                        FavoriteCardItem(
+                            type = FavoriteType.Folder,
+                            key = favorite.key,
+                            title = folder.name,
+                            subtitle = folder.path,
+                            artwork = folder.tracks.firstOrNull()?.albumArtUri,
+                            folder = folder,
+                            addedAt = favorite.addedAt,
+                        )
+                }
+            }
+
+            FavoriteType.Album -> {
+                favorite.key
+                    .toLongOrNull()
+                    ?.let { albumId -> albums.firstOrNull { it.id == albumId } }
+                    ?.let { album ->
+                        cards +=
+                            FavoriteCardItem(
+                                type = FavoriteType.Album,
+                                key = favorite.key,
+                                title = album.title,
+                                subtitle = "${album.artist} | ${album.tracks.size} tracks",
+                                artwork = album.tracks.firstOrNull()?.albumArtUri,
+                                album = album,
+                                addedAt = favorite.addedAt,
+                            )
+                    }
+            }
         }
     }
     val distinctCards = cards.distinctBy { it.type to it.key }
     val favoriteTrackCard = distinctCards.firstOrNull { it.type == FavoriteType.Track }
-    val otherCards = distinctCards
-        .filterNot { it.type == FavoriteType.Track }
-        .sortedByDescending { it.addedAt }
+    val otherCards =
+        distinctCards
+            .filterNot { it.type == FavoriteType.Track }
+            .sortedByDescending { it.addedAt }
     return listOfNotNull(favoriteTrackCard) + otherCards
 }
 
@@ -767,7 +859,10 @@ private fun TrackTab(
 }
 
 @Composable
-private fun AlbumTab(library: LibraryState, onAlbumClick: (AlbumGroup) -> Unit) {
+private fun AlbumTab(
+    library: LibraryState,
+    onAlbumClick: (AlbumGroup) -> Unit,
+) {
     var sort by rememberSaveable { mutableStateOf(AlbumSort.Release) }
     val albums = remember(library.albums, sort) { library.albums.sortedBy(sort) }
     RoundedGridPanel {
@@ -826,9 +921,10 @@ private fun AlbumDetailScreen(
     }
 
     Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
+        modifier =
+            modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background),
     ) {
         LazyColumn(
             state = listState,
@@ -837,9 +933,10 @@ private fun AlbumDetailScreen(
         ) {
             item {
                 Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 28.dp, vertical = 8.dp),
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 28.dp, vertical = 8.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     AlbumArt(
@@ -879,9 +976,10 @@ private fun AlbumDetailScreen(
 
             item {
                 Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp),
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp),
                     shape = RoundedCornerShape(32.dp),
                     color = MaterialTheme.colorScheme.surfaceContainer,
                 ) {
@@ -925,9 +1023,10 @@ private fun AlbumDetailScreen(
                                     fontWeight = FontWeight.SemiBold,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(top = if (groupIndex == 0) 18.dp else 26.dp, bottom = 8.dp),
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .padding(top = if (groupIndex == 0) 18.dp else 26.dp, bottom = 8.dp),
                                 )
                             }
                             group.tracks.forEachIndexed { index, track ->
@@ -947,11 +1046,12 @@ private fun AlbumDetailScreen(
         }
 
         Row(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.background.copy(alpha = 0.96f))
-                .padding(start = 8.dp, top = 18.dp, end = 8.dp, bottom = 6.dp),
+            modifier =
+                Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.background.copy(alpha = 0.96f))
+                    .padding(start = 8.dp, top = 18.dp, end = 8.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onBack) {
@@ -964,9 +1064,10 @@ private fun AlbumDetailScreen(
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier
-                    .weight(1f)
-                    .alpha(if (showPinnedTitle) 1f else 0f),
+                modifier =
+                    Modifier
+                        .weight(1f)
+                        .alpha(if (showPinnedTitle) 1f else 0f),
             )
             IconButton(onClick = onToggleFavorite) {
                 Icon(
@@ -986,7 +1087,10 @@ private fun AlbumDetailScreen(
 }
 
 @Composable
-private fun ArtistTab(library: LibraryState, onArtistClick: (ArtistGroup) -> Unit) {
+private fun ArtistTab(
+    library: LibraryState,
+    onArtistClick: (ArtistGroup) -> Unit,
+) {
     val listState = rememberLazyListState()
     var sort by rememberSaveable { mutableStateOf(ArtistSort.Name) }
     val artists = remember(library.artists, sort) { library.artists.sortedBy(sort) }
@@ -1010,7 +1114,9 @@ private fun ArtistTab(library: LibraryState, onArtistClick: (ArtistGroup) -> Uni
     }
 }
 
-private enum class ArtistDetailTab(val label: String) {
+private enum class ArtistDetailTab(
+    val label: String,
+) {
     Track("Track"),
     Album("Album"),
 }
@@ -1032,19 +1138,28 @@ private fun ArtistDetailScreen(
     val pagerState = rememberPagerState(initialPage = 0) { tabs.size }
     val coroutineScope = rememberCoroutineScope()
     val artistTracks = remember(artist.tracks) { artist.tracks.sortedForArtistPlayback() }
-    val artistAlbums = remember(albums) {
-        albums.sortedWith(compareBy<AlbumGroup>({ it.releaseYear().takeIf { year -> year > 0 } ?: Int.MAX_VALUE }, { it.title.lowercase() }))
-    }
+    val artistAlbums =
+        remember(albums) {
+            albums.sortedWith(
+                compareBy<AlbumGroup>({
+                    it.releaseYear().takeIf { year ->
+                        year > 0
+                    } ?: Int.MAX_VALUE
+                }, { it.title.lowercase() }),
+            )
+        }
 
     Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
+        modifier =
+            modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background),
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 8.dp, top = 18.dp, end = 8.dp, bottom = 14.dp),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = 8.dp, top = 18.dp, end = 8.dp, bottom = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onBack) {
@@ -1053,7 +1168,7 @@ private fun ArtistDetailScreen(
             Text(
                 text = artist.name,
                 color = MaterialTheme.colorScheme.primary,
-                fontSize = 28.sp,
+                fontSize = 22.sp,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -1075,30 +1190,32 @@ private fun ArtistDetailScreen(
         }
 
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp, vertical = 10.dp),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             tabs.forEachIndexed { index, tab ->
                 val selected = pagerState.currentPage == index
                 Surface(
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(horizontal = 8.dp)
-                        .clickable {
-                            coroutineScope.launch { pagerState.animateScrollToPage(index) }
-                        },
-                    shape = RoundedCornerShape(28.dp),
+                    modifier =
+                        Modifier
+                            .weight(1f)
+                            .padding(horizontal = 8.dp)
+                            .clickable {
+                                coroutineScope.launch { pagerState.animateScrollToPage(index) }
+                            },
+                    shape = RoundedCornerShape(20.dp),
                     color = if (selected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent,
                 ) {
                     Text(
                         text = "${tab.label} (${if (tab == ArtistDetailTab.Track) artistTracks.size else artistAlbums.size})",
                         color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 18.sp,
+                        fontSize = 15.sp,
                         fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                         textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(vertical = 14.dp),
+                        modifier = Modifier.padding(vertical = 10.dp),
                     )
                 }
             }
@@ -1109,16 +1226,20 @@ private fun ArtistDetailScreen(
             modifier = Modifier.fillMaxSize(),
         ) { page ->
             when (tabs[page]) {
-                ArtistDetailTab.Track -> ArtistTrackTab(
-                    albums = artistAlbums,
-                    tracks = artistTracks,
-                    onTrackClick = onTrackClick,
-                )
+                ArtistDetailTab.Track -> {
+                    ArtistTrackTab(
+                        albums = artistAlbums,
+                        tracks = artistTracks,
+                        onTrackClick = onTrackClick,
+                    )
+                }
 
-                ArtistDetailTab.Album -> ArtistAlbumTab(
-                    albums = artistAlbums,
-                    onAlbumClick = onAlbumClick,
-                )
+                ArtistDetailTab.Album -> {
+                    ArtistAlbumTab(
+                        albums = artistAlbums,
+                        onAlbumClick = onAlbumClick,
+                    )
+                }
             }
         }
     }
@@ -1131,11 +1252,12 @@ private fun ArtistTrackTab(
     onTrackClick: (Track, List<Track>) -> Unit,
 ) {
     LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(top = 8.dp)
-            .clip(RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainer),
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .padding(top = 8.dp)
+                .clip(RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainer),
         contentPadding = PaddingValues(start = 20.dp, top = 18.dp, end = 20.dp, bottom = 116.dp),
     ) {
         item {
@@ -1149,7 +1271,7 @@ private fun ArtistTrackTab(
                             val shuffledTracks = tracks.shuffled()
                             shuffledTracks.firstOrNull()?.let { onTrackClick(it, shuffledTracks) }
                         },
-                        modifier = Modifier.size(48.dp),
+                        modifier = Modifier.size(42.dp),
                     ) {
                         Icon(Icons.Default.Shuffle, contentDescription = "Shuffle")
                     }
@@ -1161,7 +1283,7 @@ private fun ArtistTrackTab(
                 ) {
                     IconButton(
                         onClick = { tracks.firstOrNull()?.let { onTrackClick(it, tracks) } },
-                        modifier = Modifier.size(48.dp),
+                        modifier = Modifier.size(42.dp),
                     ) {
                         Icon(Icons.Default.PlayArrow, contentDescription = "Play", tint = MaterialTheme.colorScheme.onPrimary)
                     }
@@ -1185,17 +1307,19 @@ private fun ArtistTrackTab(
                             fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = if (groupIndex == 0) 12.dp else 24.dp, bottom = 8.dp),
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = if (groupIndex == 0) 12.dp else 24.dp, bottom = 8.dp),
                         )
                     }
                 }
                 items(group.tracks, key = { "artist-track-${album.id}-${it.id}" }) { track ->
                     val index = group.tracks.indexOf(track)
-                    val isLastTrack = album == albums.lastOrNull() &&
-                        groupIndex == albumGroups.lastIndex &&
-                        index == group.tracks.lastIndex
+                    val isLastTrack =
+                        album == albums.lastOrNull() &&
+                            groupIndex == albumGroups.lastIndex &&
+                            index == group.tracks.lastIndex
                     AlbumTrackRow(
                         index = index + 1,
                         track = track,
@@ -1213,29 +1337,31 @@ private fun ArtistTrackTab(
 @Composable
 private fun ArtistAlbumHeader(album: AlbumGroup) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 20.dp, bottom = 16.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(top = 20.dp, bottom = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        AlbumArt(album.tracks.firstOrNull()?.albumArtUri, Modifier.size(88.dp), RoundedCornerShape(16.dp))
+        AlbumArt(album.tracks.firstOrNull()?.albumArtUri, Modifier.size(64.dp), RoundedCornerShape(16.dp))
         Column(
-            modifier = Modifier
-                .weight(1f)
-                .padding(start = 16.dp),
+            modifier =
+                Modifier
+                    .weight(1f)
+                    .padding(start = 16.dp),
         ) {
             Text(
                 text = album.title,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                fontSize = 21.sp,
+                fontSize = 18.sp,
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Text(
                 text = album.yearLabel(),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                fontSize = 15.sp,
+                fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp),
             )
@@ -1250,11 +1376,12 @@ private fun ArtistAlbumTab(
 ) {
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(top = 8.dp)
-            .clip(RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainer),
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .padding(top = 8.dp)
+                .clip(RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainer),
         contentPadding = PaddingValues(start = 20.dp, top = 18.dp, end = 20.dp, bottom = 116.dp),
         horizontalArrangement = Arrangement.spacedBy(14.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
@@ -1275,7 +1402,10 @@ private fun ArtistAlbumTab(
 }
 
 @Composable
-private fun FolderTab(library: LibraryState, onFolderClick: (FolderGroup) -> Unit) {
+private fun FolderTab(
+    library: LibraryState,
+    onFolderClick: (FolderGroup) -> Unit,
+) {
     val listState = rememberLazyListState()
     var sort by rememberSaveable { mutableStateOf(FolderSort.Name) }
     val folders = remember(library.folders, sort) { library.folders.sortedBy(sort) }
@@ -1316,9 +1446,10 @@ private fun FolderDetailScreen(
     val listState = rememberLazyListState()
     Column(modifier = modifier) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 8.dp, top = 18.dp, end = 8.dp, bottom = 18.dp),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = 8.dp, top = 18.dp, end = 8.dp, bottom = 18.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onBack) {
@@ -1375,9 +1506,10 @@ private fun IndexedListWithRail(
     Box {
         RoundedPanelList(listState = listState, topPadding = topPadding, content = content)
         AlphabetRail(
-            modifier = Modifier
-                .padding(top = topPadding + 16.dp)
-                .align(Alignment.CenterEnd),
+            modifier =
+                Modifier
+                    .padding(top = topPadding + 16.dp)
+                    .align(Alignment.CenterEnd),
         )
     }
 }
@@ -1390,11 +1522,12 @@ private fun RoundedPanelList(
 ) {
     LazyColumn(
         state = listState,
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(top = topPadding)
-            .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainer),
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .padding(top = topPadding)
+                .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainer),
         contentPadding = PaddingValues(start = 20.dp, top = 14.dp, end = 46.dp, bottom = 116.dp),
         content = content,
     )
@@ -1404,11 +1537,12 @@ private fun RoundedPanelList(
 private fun RoundedGridPanel(content: LazyGridScope.() -> Unit) {
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(top = 14.dp)
-            .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainer),
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .padding(top = 14.dp)
+                .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainer),
         contentPadding = PaddingValues(start = 20.dp, top = 14.dp, end = 20.dp, bottom = 116.dp),
         horizontalArrangement = Arrangement.spacedBy(14.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
@@ -1424,14 +1558,16 @@ private fun SortHeader(
 ) {
     var expanded by remember { mutableStateOf(false) }
     Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(bottom = 14.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(bottom = 14.dp),
     ) {
         Row(
-            modifier = Modifier
-                .clickable(enabled = options.isNotEmpty()) { expanded = true }
-                .padding(vertical = 4.dp),
+            modifier =
+                Modifier
+                    .clickable(enabled = options.isNotEmpty()) { expanded = true }
+                    .padding(vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -1468,16 +1604,27 @@ private fun SortHeader(
 }
 
 @Composable
-private fun DetailSortHeader(label: String, onShuffle: () -> Unit, onPlay: () -> Unit) {
+private fun DetailSortHeader(
+    label: String,
+    onShuffle: () -> Unit,
+    onPlay: () -> Unit,
+) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(bottom = 14.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(bottom = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Icon(Icons.Default.Sort, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.weight(1f))
+        Text(
+            label,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontWeight = FontWeight.Bold,
+            fontSize = 16.sp,
+            modifier = Modifier.weight(1f),
+        )
         Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceVariant) {
             IconButton(onClick = onShuffle, modifier = Modifier.size(48.dp)) {
                 Icon(Icons.Default.Shuffle, contentDescription = "Shuffle")
@@ -1500,16 +1647,17 @@ private fun AlbumTrackRow(
 ) {
     Column {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(onClick = onClick)
-                .padding(vertical = 13.dp),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onClick)
+                    .padding(vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 text = index.toString(),
                 color = MaterialTheme.colorScheme.onSurface,
-                fontSize = 20.sp,
+                fontSize = 16.sp,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.width(34.dp),
             )
@@ -1517,10 +1665,11 @@ private fun AlbumTrackRow(
                 text = track.title,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                fontSize = 20.sp,
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(start = 16.dp, end = 10.dp),
+                fontSize = 16.sp,
+                modifier =
+                    Modifier
+                        .weight(1f)
+                        .padding(start = 16.dp, end = 10.dp),
             )
             Text(
                 text = track.durationMs.formatDuration(),
@@ -1547,8 +1696,7 @@ private data class AlbumTrackGroup(
     val discNumber: Int = 0,
 )
 
-private fun List<Track>.sortedForAlbumPlayback(): List<Track> =
-    groupForAlbumDetail().flatMap { it.tracks }
+private fun List<Track>.sortedForAlbumPlayback(): List<Track> = groupForAlbumDetail().flatMap { it.tracks }
 
 private fun List<Track>.sortedForArtistPlayback(): List<Track> =
     groupBy { it.albumId }
@@ -1556,16 +1704,19 @@ private fun List<Track>.sortedForArtistPlayback(): List<Track> =
         .sortedWith(
             compareBy<List<Track>>(
                 { tracks -> tracks.mapNotNull { it.year.takeIf { year -> year > 0 } }.minOrNull() ?: Int.MAX_VALUE },
-                { tracks -> tracks.firstOrNull()?.album?.lowercase().orEmpty() },
+                { tracks ->
+                    tracks
+                        .firstOrNull()
+                        ?.album
+                        ?.lowercase()
+                        .orEmpty()
+                },
             ),
-        )
-        .flatMap { it.sortedForAlbumPlayback() }
+        ).flatMap { it.sortedForAlbumPlayback() }
 
-private fun AlbumGroup.releaseYear(): Int =
-    tracks.mapNotNull { it.year.takeIf { year -> year > 0 } }.minOrNull() ?: 0
+private fun AlbumGroup.releaseYear(): Int = tracks.mapNotNull { it.year.takeIf { year -> year > 0 } }.minOrNull() ?: 0
 
-private fun AlbumGroup.yearLabel(): String =
-    releaseYear().takeIf { it > 0 }?.toString() ?: "${tracks.size} tracks"
+private fun AlbumGroup.yearLabel(): String = releaseYear().takeIf { it > 0 }?.toString() ?: "${tracks.size} tracks"
 
 private fun List<Track>.groupForAlbumDetail(): List<AlbumTrackGroup> {
     if (any { it.discNumber > 0 }) {
@@ -1576,8 +1727,7 @@ private fun List<Track>.groupForAlbumDetail(): List<AlbumTrackGroup> {
                     tracks = tracks.sortedWith(albumTrackComparator()),
                     discNumber = discNumber,
                 )
-            }
-            .sortedBy { it.discNumber }
+            }.sortedBy { it.discNumber }
     }
     return groupBy { it.folder.ifBlank { "Unknown folder" } }
         .map { (folder, tracks) ->
@@ -1585,8 +1735,7 @@ private fun List<Track>.groupForAlbumDetail(): List<AlbumTrackGroup> {
                 name = folder.displayFolderName(),
                 tracks = tracks.sortedWith(albumTrackComparator()),
             )
-        }
-        .sortedWith { first, second -> first.name.compareNaturally(second.name) }
+        }.sortedWith { first, second -> first.name.compareNaturally(second.name) }
 }
 
 private fun albumTrackComparator(): Comparator<Track> =
@@ -1606,39 +1755,78 @@ private fun albumTrackComparator(): Comparator<Track> =
         }
     }
 
-private fun String.displayFolderName(): String =
-    substringAfterLast('/').ifBlank { this }
+private fun String.displayFolderName(): String = substringAfterLast('/').ifBlank { this }
 
 private fun List<Track>.sortedBy(sort: TrackSort): List<Track> =
     when (sort) {
-        TrackSort.Name -> sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.title })
-        TrackSort.DateAdded -> sortedWith(compareByDescending<Track> { it.dateAddedMs }.thenBy(String.CASE_INSENSITIVE_ORDER) { it.title })
-        TrackSort.Artist -> sortedWith(
-            compareBy<Track, String>(String.CASE_INSENSITIVE_ORDER) { it.artist }
-                .thenBy(String.CASE_INSENSITIVE_ORDER) { it.title },
-        )
+        TrackSort.Name -> {
+            sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.title })
+        }
+
+        TrackSort.DateAdded -> {
+            sortedWith(compareByDescending<Track> { it.dateAddedMs }.thenBy(String.CASE_INSENSITIVE_ORDER) { it.title })
+        }
+
+        TrackSort.Artist -> {
+            sortedWith(
+                compareBy<Track, String>(String.CASE_INSENSITIVE_ORDER) { it.artist }
+                    .thenBy(String.CASE_INSENSITIVE_ORDER) { it.title },
+            )
+        }
     }
 
 private fun List<AlbumGroup>.sortedBy(sort: AlbumSort): List<AlbumGroup> =
     when (sort) {
-        AlbumSort.Release -> sortedWith(compareBy<AlbumGroup>({ it.releaseYear().takeIf { year -> year > 0 } ?: Int.MAX_VALUE }, { it.title.lowercase() }))
-        AlbumSort.Name -> sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.title })
-        AlbumSort.Artist -> sortedWith(
-            compareBy<AlbumGroup, String>(String.CASE_INSENSITIVE_ORDER) { it.artist }
-                .thenBy(String.CASE_INSENSITIVE_ORDER) { it.title },
-        )
+        AlbumSort.Release -> {
+            sortedWith(
+                compareBy<AlbumGroup>({
+                    it.releaseYear().takeIf { year ->
+                        year > 0
+                    } ?: Int.MAX_VALUE
+                }, { it.title.lowercase() }),
+            )
+        }
+
+        AlbumSort.Name -> {
+            sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.title })
+        }
+
+        AlbumSort.Artist -> {
+            sortedWith(
+                compareBy<AlbumGroup, String>(String.CASE_INSENSITIVE_ORDER) { it.artist }
+                    .thenBy(String.CASE_INSENSITIVE_ORDER) { it.title },
+            )
+        }
     }
 
 private fun List<ArtistGroup>.sortedBy(sort: ArtistSort): List<ArtistGroup> =
     when (sort) {
-        ArtistSort.Name -> sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
-        ArtistSort.DateAdded -> sortedWith(compareByDescending<ArtistGroup> { it.tracks.maxOfOrNull(Track::dateAddedMs) ?: 0L }.thenBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+        ArtistSort.Name -> {
+            sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+        }
+
+        ArtistSort.DateAdded -> {
+            sortedWith(
+                compareByDescending<ArtistGroup> {
+                    it.tracks.maxOfOrNull(Track::dateAddedMs) ?: 0L
+                }.thenBy(String.CASE_INSENSITIVE_ORDER) { it.name },
+            )
+        }
     }
 
 private fun List<FolderGroup>.sortedBy(sort: FolderSort): List<FolderGroup> =
     when (sort) {
-        FolderSort.Name -> sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
-        FolderSort.DateAdded -> sortedWith(compareByDescending<FolderGroup> { it.tracks.maxOfOrNull(Track::dateAddedMs) ?: 0L }.thenBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+        FolderSort.Name -> {
+            sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+        }
+
+        FolderSort.DateAdded -> {
+            sortedWith(
+                compareByDescending<FolderGroup> {
+                    it.tracks.maxOfOrNull(Track::dateAddedMs) ?: 0L
+                }.thenBy(String.CASE_INSENSITIVE_ORDER) { it.name },
+            )
+        }
     }
 
 private fun String.compareNaturally(other: String): Int {
@@ -1648,11 +1836,12 @@ private fun String.compareNaturally(other: String): Int {
     repeat(maxSize) { index ->
         val first = firstParts[index]
         val second = secondParts[index]
-        val result = if (first.all(Char::isDigit) && second.all(Char::isDigit)) {
-            first.toLongOrNull()?.compareTo(second.toLongOrNull() ?: 0L) ?: first.compareTo(second)
-        } else {
-            first.compareTo(second)
-        }
+        val result =
+            if (first.all(Char::isDigit) && second.all(Char::isDigit)) {
+                first.toLongOrNull()?.compareTo(second.toLongOrNull() ?: 0L) ?: first.compareTo(second)
+            } else {
+                first.compareTo(second)
+            }
         if (result != 0) return result
     }
     return firstParts.size.compareTo(secondParts.size)
@@ -1664,20 +1853,28 @@ private fun TrackRow(
     onClick: () -> Unit,
 ) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = 8.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onClick)
+                .padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        AlbumArt(track.albumArtUri, Modifier.size(52.dp), RoundedCornerShape(12.dp))
+        AlbumArt(track.albumArtUri, Modifier.size(48.dp), RoundedCornerShape(12.dp))
         Column(
-            modifier = Modifier
-                .weight(1f)
-                .padding(horizontal = 12.dp),
+            modifier =
+                Modifier
+                    .weight(1f)
+                    .padding(horizontal = 12.dp),
         ) {
-            Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 18.sp)
-            Text(track.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
+            Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 16.sp)
+            Text(
+                track.artist,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 13.sp,
+            )
         }
         IconButton(onClick = { }) {
             Icon(Icons.Default.MoreVert, contentDescription = "Track menu")
@@ -1706,10 +1903,11 @@ private fun MediaGroupRow(
     onClick: () -> Unit,
 ) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = 9.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onClick)
+                .padding(vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box {
@@ -1718,17 +1916,24 @@ private fun MediaGroupRow(
                 Icon(
                     Icons.Outlined.Folder,
                     contentDescription = null,
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(4.dp)
-                        .size(18.dp),
+                    modifier =
+                        Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(4.dp)
+                            .size(18.dp),
                     tint = MaterialTheme.colorScheme.onSurface,
                 )
             }
         }
         Column(modifier = Modifier.padding(start = 14.dp)) {
-            Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 19.sp)
-            Text(subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
+            Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 16.sp)
+            Text(
+                subtitle,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 13.sp,
+            )
         }
     }
 }
@@ -1739,17 +1944,19 @@ private fun PlaylistRow(
     onClick: () -> Unit,
 ) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = 8.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onClick)
+                .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         AlbumArt(playlist.artwork, Modifier.size(56.dp), RoundedCornerShape(13.dp))
         Column(
-            modifier = Modifier
-                .weight(1f)
-                .padding(start = 14.dp),
+            modifier =
+                Modifier
+                    .weight(1f)
+                    .padding(start = 14.dp),
         ) {
             Text(playlist.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 19.sp)
             Text(
@@ -1770,18 +1977,20 @@ private fun FavoriteGridCard(
 ) {
     Column(modifier = modifier) {
         Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(1f)
-                .clip(RoundedCornerShape(18.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(1f)
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.BottomStart,
         ) {
             AlbumArt(card.artwork, Modifier.fillMaxSize(), RoundedCornerShape(18.dp))
             Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.28f)),
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.28f)),
             )
             Column(modifier = Modifier.padding(12.dp)) {
                 Text(
@@ -1802,27 +2011,40 @@ private fun FavoriteGridCard(
             }
         }
         Text(card.title, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp), fontSize = 16.sp)
-        Text(card.subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+        Text(
+            card.subtitle,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 13.sp,
+        )
     }
 }
 
 @Composable
-private fun ArtworkCard(title: String, subtitle: String, artwork: Uri?, modifier: Modifier = Modifier) {
+private fun ArtworkCard(
+    title: String,
+    subtitle: String,
+    artwork: Uri?,
+    modifier: Modifier = Modifier,
+) {
     Column(modifier = modifier) {
         Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(1f)
-                .clip(RoundedCornerShape(18.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(1f)
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.Center,
         ) {
             AlbumArt(artwork, Modifier.fillMaxSize(), RoundedCornerShape(18.dp))
             if (title.contains("Favorite", ignoreCase = true)) {
                 Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.28f))
+                    modifier =
+                        Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.28f)),
                 )
                 Text(title, color = Color.White, fontSize = 20.sp, textAlign = TextAlign.Center)
             }
@@ -1835,9 +2057,10 @@ private fun ArtworkCard(title: String, subtitle: String, artwork: Uri?, modifier
 @Composable
 private fun AlphabetRail(modifier: Modifier = Modifier) {
     Surface(
-        modifier = modifier
-            .padding(end = 8.dp, bottom = 96.dp)
-            .width(24.dp),
+        modifier =
+            modifier
+                .padding(end = 8.dp, bottom = 96.dp)
+                .width(24.dp),
         shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f),
     ) {
@@ -1896,9 +2119,10 @@ private fun SearchEmpty(message: String) {
 @Composable
 private fun EmptyPanel(message: String?) {
     OutlinedCard(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(20.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
         border = BorderStroke(0.dp, Color.Transparent),
@@ -1910,9 +2134,10 @@ private fun EmptyPanel(message: String?) {
 @Composable
 private fun EmptyInline(message: String) {
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(22.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(22.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
