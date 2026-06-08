@@ -1,15 +1,21 @@
 package me.ayra.music.ui.player
 
+import android.content.Context
+import android.graphics.BitmapFactory
+import android.media.MediaMetadataRetriever
 import android.net.Uri
-import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.AnchoredDraggableState
@@ -59,6 +65,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -66,12 +73,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -81,10 +91,21 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.Player
+import androidx.palette.graphics.Palette
+import coil3.ImageLoader
+import coil3.request.ImageRequest
+import coil3.request.SuccessResult
 import coil3.compose.AsyncImage
+import coil3.toBitmap
+import com.google.android.material.color.utilities.TonalPalette
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import me.ayra.music.PlayerState
 import me.ayra.music.Track
+import java.util.Collections
+import java.util.LinkedHashMap
 import kotlin.math.roundToInt
 
 data class PlayerSheetState(val progress: Float)
@@ -93,6 +114,19 @@ private enum class PlayerSheetAnchor {
     Expanded,
     Collapsed,
 }
+
+private data class MiniPlayerAccent(
+    val container: Color,
+    val onContainer: Color,
+    val fullscreen: Color,
+    val onFullscreen: Color,
+)
+
+private val artworkSeedColorCache = Collections.synchronizedMap(
+    object : LinkedHashMap<String, Int?>(40, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Int?>): Boolean = size > 40
+    }
+)
 
 @Composable
 fun AlbumArt(
@@ -130,6 +164,7 @@ fun AlbumArt(
 fun PlayerSheet(
     playerState: PlayerState,
     isFavorite: Boolean,
+    expandRequest: Int,
     onSettings: () -> Unit,
     onToggleFavorite: () -> Unit,
     onPlayPause: () -> Unit,
@@ -150,16 +185,11 @@ fun PlayerSheet(
         )
     }
 
-    BackHandler(enabled = draggableState.currentValue == PlayerSheetAnchor.Expanded) {
-        if (lyricsVisible) {
-            lyricsVisible = false
-        } else {
-            coroutineScope.launch { draggableState.animateTo(PlayerSheetAnchor.Collapsed) }
-        }
-    }
-
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
-        val collapsedOffsetPx = with(density) { (maxHeight - miniPlayerHeight).toPx() }
+        val navigationBarBottom = with(density) { WindowInsets.navigationBars.getBottom(this).toDp() }
+        val collapsedOffsetPx = with(density) {
+            (maxHeight - miniPlayerHeight - navigationBarBottom).toPx().coerceAtLeast(0f)
+        }
         val miniHorizontalPadding = 10.dp
         val maxCoverSize = maxWidth - 48.dp
 
@@ -170,6 +200,31 @@ fun PlayerSheet(
                     PlayerSheetAnchor.Collapsed at collapsedOffsetPx
                 }
             )
+        }
+
+        LaunchedEffect(expandRequest, collapsedOffsetPx) {
+            if (expandRequest > 0) {
+                lyricsVisible = false
+                draggableState.animateTo(PlayerSheetAnchor.Expanded)
+            }
+        }
+
+        PredictiveBackHandler(enabled = draggableState.currentValue == PlayerSheetAnchor.Expanded) { backProgress ->
+            if (lyricsVisible) {
+                backProgress.collect { }
+                lyricsVisible = false
+            } else {
+                try {
+                    backProgress.collect { event ->
+                        val targetOffset = collapsedOffsetPx * event.progress.coerceIn(0f, 1f)
+                        val currentOffset = draggableState.offset.takeIf { !it.isNaN() } ?: 0f
+                        draggableState.dispatchRawDelta(targetOffset - currentOffset)
+                    }
+                    draggableState.animateTo(PlayerSheetAnchor.Collapsed)
+                } catch (_: CancellationException) {
+                    draggableState.animateTo(PlayerSheetAnchor.Expanded)
+                }
+            }
         }
 
         val offsetPx = draggableState.offset.takeIf { !it.isNaN() } ?: collapsedOffsetPx
@@ -249,57 +304,143 @@ private fun PlayerSurface(
     modifier: Modifier,
     shape: RoundedCornerShape,
 ) {
+    val context = LocalContext.current
+    val darkTheme = isSystemInDarkTheme()
     val progress = sheetState.progress
     val collapsedVisible = 1f - progress
     val expandedVisible = progress
     val collapsedInteractive = collapsedVisible >= 0.5f
     val expandedInteractive = expandedVisible >= 0.5f
+    val track = playerState.currentTrack
+    val artwork = track?.albumArtUri
+    var artworkSeedColor by remember { mutableStateOf<Int?>(null) }
+    val defaultMiniAccent = MiniPlayerAccent(
+        container = MaterialTheme.colorScheme.primaryContainer,
+        onContainer = MaterialTheme.colorScheme.onPrimaryContainer,
+        fullscreen = MaterialTheme.colorScheme.background,
+        onFullscreen = MaterialTheme.colorScheme.onSurface,
+    )
+    val miniAccent = artworkSeedColor?.let { seed ->
+        miniPlayerAccentFromSeed(seed, darkTheme)
+    } ?: defaultMiniAccent
+    val animatedMiniContainer by animateColorAsState(
+        targetValue = miniAccent.container,
+        animationSpec = tween(durationMillis = 450),
+        label = "mini-container-accent",
+    )
+    val animatedMiniOnContainer by animateColorAsState(
+        targetValue = miniAccent.onContainer,
+        animationSpec = tween(durationMillis = 450),
+        label = "mini-on-container-accent",
+    )
+    val animatedFullscreen by animateColorAsState(
+        targetValue = miniAccent.fullscreen,
+        animationSpec = tween(durationMillis = 450),
+        label = "fullscreen-accent",
+    )
+    val animatedOnFullscreen by animateColorAsState(
+        targetValue = miniAccent.onFullscreen,
+        animationSpec = tween(durationMillis = 450),
+        label = "fullscreen-on-accent",
+    )
     val surfaceColor = lerp(
-        MaterialTheme.colorScheme.primaryContainer,
-        MaterialTheme.colorScheme.background,
+        animatedMiniContainer,
+        animatedFullscreen,
         progress,
     )
+    val contentColor = lerp(
+        animatedMiniOnContainer,
+        animatedOnFullscreen,
+        progress,
+    )
+    val animatedMiniAccent = miniAccent.copy(
+        container = animatedMiniContainer,
+        onContainer = animatedMiniOnContainer,
+        fullscreen = animatedFullscreen,
+        onFullscreen = animatedOnFullscreen,
+    )
+
+    LaunchedEffect(track?.id, artwork, track?.uri) {
+        artworkSeedColor = track?.let { loadTrackSeedColor(context, it.albumArtUri, it.uri) }
+    }
 
     Surface(
         modifier = modifier,
         shape = shape,
         color = surfaceColor,
+        contentColor = contentColor,
         tonalElevation = 4.dp,
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
-            CollapsedPlayerContent(
-                playerState = playerState,
-                alpha = collapsedVisible,
-                enabled = collapsedInteractive,
-                miniPlayerHeight = miniPlayerHeight,
-                onExpand = onExpand,
-                onPlayPause = onPlayPause,
-                onPrevious = onPrevious,
-                onNext = onNext,
-                modifier = Modifier.align(Alignment.TopCenter),
-            )
-
-            ExpandedPlayerContent(
-                playerState = playerState,
-                isFavorite = isFavorite,
-                lyricsVisible = lyricsVisible,
-                alpha = expandedVisible,
-                enabled = expandedInteractive,
-                progress = progress,
-                maxCoverSize = maxCoverSize,
-                onMinimize = onMinimize,
-                onSettings = onSettings,
-                onToggleFavorite = onToggleFavorite,
-                onLyrics = onLyrics,
-                onExitLyrics = onExitLyrics,
-                onSeek = onSeek,
-                onShuffle = onShuffle,
-                onPrevious = onPrevious,
-                onPlayPause = onPlayPause,
-                onNext = onNext,
-                onRepeat = onRepeat,
-                modifier = Modifier.fillMaxSize(),
-            )
+            if (progress < 0.5f) {
+                ExpandedPlayerContent(
+                    playerState = playerState,
+                    isFavorite = isFavorite,
+                    lyricsVisible = lyricsVisible,
+                    alpha = expandedVisible,
+                    enabled = expandedInteractive,
+                    progress = progress,
+                    maxCoverSize = maxCoverSize,
+                    onMinimize = onMinimize,
+                    onSettings = onSettings,
+                    onToggleFavorite = onToggleFavorite,
+                    onLyrics = onLyrics,
+                    onExitLyrics = onExitLyrics,
+                    onSeek = onSeek,
+                    onShuffle = onShuffle,
+                    onPrevious = onPrevious,
+                    onPlayPause = onPlayPause,
+                    onNext = onNext,
+                    onRepeat = onRepeat,
+                    modifier = Modifier.fillMaxSize(),
+                )
+                CollapsedPlayerContent(
+                    playerState = playerState,
+                    alpha = collapsedVisible,
+                    enabled = collapsedInteractive,
+                    accent = animatedMiniAccent,
+                    miniPlayerHeight = miniPlayerHeight,
+                    onExpand = onExpand,
+                    onPlayPause = onPlayPause,
+                    onPrevious = onPrevious,
+                    onNext = onNext,
+                    modifier = Modifier.align(Alignment.TopCenter),
+                )
+            } else {
+                CollapsedPlayerContent(
+                    playerState = playerState,
+                    alpha = collapsedVisible,
+                    enabled = collapsedInteractive,
+                    accent = animatedMiniAccent,
+                    miniPlayerHeight = miniPlayerHeight,
+                    onExpand = onExpand,
+                    onPlayPause = onPlayPause,
+                    onPrevious = onPrevious,
+                    onNext = onNext,
+                    modifier = Modifier.align(Alignment.TopCenter),
+                )
+                ExpandedPlayerContent(
+                    playerState = playerState,
+                    isFavorite = isFavorite,
+                    lyricsVisible = lyricsVisible,
+                    alpha = expandedVisible,
+                    enabled = expandedInteractive,
+                    progress = progress,
+                    maxCoverSize = maxCoverSize,
+                    onMinimize = onMinimize,
+                    onSettings = onSettings,
+                    onToggleFavorite = onToggleFavorite,
+                    onLyrics = onLyrics,
+                    onExitLyrics = onExitLyrics,
+                    onSeek = onSeek,
+                    onShuffle = onShuffle,
+                    onPrevious = onPrevious,
+                    onPlayPause = onPlayPause,
+                    onNext = onNext,
+                    onRepeat = onRepeat,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
 
             AnchoredCoverArt(
                 artwork = playerState.currentTrack?.albumArtUri,
@@ -320,6 +461,7 @@ private fun CollapsedPlayerContent(
     playerState: PlayerState,
     alpha: Float,
     enabled: Boolean,
+    accent: MiniPlayerAccent,
     miniPlayerHeight: Dp,
     onExpand: () -> Unit,
     onPlayPause: () -> Unit,
@@ -340,10 +482,11 @@ private fun CollapsedPlayerContent(
         Column(
             modifier = Modifier
                 .weight(1f)
+                .clickable(enabled = enabled, onClick = onExpand)
                 .padding(horizontal = 10.dp),
         ) {
             Text(track?.title ?: "No track selected", maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-            Text(track?.artist ?: "Choose music to play", maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f), fontSize = 12.sp)
+            Text(track?.artist ?: "Choose music to play", maxLines = 1, overflow = TextOverflow.Ellipsis, color = accent.onContainer.copy(alpha = 0.75f), fontSize = 12.sp)
         }
         IconButton(onClick = onPrevious, enabled = enabled && track != null) {
             Icon(Icons.Default.SkipPrevious, contentDescription = "Previous")
@@ -383,6 +526,7 @@ private fun AnchoredCoverArt(
     val contentScale = if (anchoredToFullscreen) ContentScale.Fit else ContentScale.Crop
     val coverClick = if (progress < 0.5f) onExpand else onLyrics
     val coverClickEnabled = progress < 0.5f || progress > 0.85f
+    val coverInteractionSource = remember { MutableInteractionSource() }
 
     AlbumArt(
         artwork = artwork,
@@ -390,7 +534,12 @@ private fun AnchoredCoverArt(
         modifier = modifier
             .padding(start = startX, top = top)
             .size(size)
-            .clickable(enabled = coverClickEnabled, onClick = coverClick),
+            .clickable(
+                interactionSource = coverInteractionSource,
+                indication = null,
+                enabled = coverClickEnabled,
+                onClick = coverClick,
+            ),
         shape = RoundedCornerShape(radius),
     )
 }
@@ -605,4 +754,77 @@ private fun formatDuration(valueMs: Long): String {
     val minutes = totalSeconds / 60
     val seconds = totalSeconds % 60
     return "%d:%02d".format(minutes, seconds)
+}
+
+private suspend fun loadTrackSeedColor(context: Context, artwork: Uri, trackUri: Uri): Int? {
+    val cacheKey = "${artwork}|${trackUri}"
+    if (artworkSeedColorCache.containsKey(cacheKey)) {
+        return artworkSeedColorCache[cacheKey]
+    }
+
+    val seedColor = withContext(Dispatchers.IO) {
+        loadSeedColorWithCoil(context, artwork)
+            ?: loadSeedColorWithCoil(context, trackUri)
+            ?: loadEmbeddedSeedColor(context, trackUri)
+    }
+
+    artworkSeedColorCache[cacheKey] = seedColor
+    return seedColor
+}
+
+private suspend fun loadSeedColorWithCoil(context: Context, uri: Uri): Int? {
+    return runCatching {
+        val request = ImageRequest.Builder(context)
+            .data(uri)
+            .size(192)
+            .build()
+        val result = ImageLoader(context).execute(request) as? SuccessResult
+        val image = result?.image ?: return@runCatching null
+        val bitmap = image.toBitmap(image.width.coerceAtLeast(1), image.height.coerceAtLeast(1))
+        bitmap.toPaletteSeedColor()
+    }.getOrNull()
+}
+
+private fun loadEmbeddedSeedColor(context: Context, trackUri: Uri): Int? {
+    return runCatching {
+        val retriever = MediaMetadataRetriever()
+        try {
+            retriever.setDataSource(context, trackUri)
+            val bytes = retriever.embeddedPicture ?: return@runCatching null
+            val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return@runCatching null
+            bitmap.toPaletteSeedColor()
+        } finally {
+            retriever.release()
+        }
+    }.getOrNull()
+}
+
+private fun android.graphics.Bitmap.toPaletteSeedColor(): Int? {
+    val palette = Palette.from(this)
+        .maximumColorCount(24)
+        .generate()
+    return palette.vibrantSwatch?.rgb
+        ?: palette.lightVibrantSwatch?.rgb
+        ?: palette.darkVibrantSwatch?.rgb
+        ?: palette.mutedSwatch?.rgb
+        ?: palette.dominantSwatch?.rgb
+}
+
+private fun miniPlayerAccentFromSeed(seedColor: Int, darkTheme: Boolean): MiniPlayerAccent {
+    val palette = TonalPalette.fromInt(seedColor)
+    return if (darkTheme) {
+        MiniPlayerAccent(
+            container = Color(palette.tone(35)),
+            onContainer = Color(palette.tone(90)),
+            fullscreen = Color(palette.tone(10)),
+            onFullscreen = Color(palette.tone(90)),
+        )
+    } else {
+        MiniPlayerAccent(
+            container = Color(palette.tone(85)),
+            onContainer = Color(palette.tone(10)),
+            fullscreen = Color(palette.tone(96)),
+            onFullscreen = Color(palette.tone(10)),
+        )
+    }
 }

@@ -2,8 +2,10 @@ package me.ayra.music
 
 import android.Manifest
 import android.app.Application
+import android.content.ComponentName
 import android.content.ContentUris
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -26,6 +28,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -39,7 +42,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
-import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
+import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -60,14 +65,32 @@ import me.ayra.music.ui.theme.MusicTheme
 import me.ayra.music.util.MusicPreferences
 import java.util.Locale
 
+const val EXTRA_OPEN_FULLSCREEN_PLAYER = "me.ayra.music.extra.OPEN_FULLSCREEN_PLAYER"
+
 class MainActivity : ComponentActivity() {
+    private var openPlayerRequest by mutableIntStateOf(0)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        consumeOpenPlayerIntent(intent)
         enableEdgeToEdge()
         setContent {
             MusicTheme {
-                MusicApp()
+                MusicApp(openPlayerRequest = openPlayerRequest)
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        consumeOpenPlayerIntent(intent)
+    }
+
+    private fun consumeOpenPlayerIntent(intent: Intent?) {
+        if (intent?.getBooleanExtra(EXTRA_OPEN_FULLSCREEN_PLAYER, false) == true) {
+            openPlayerRequest += 1
+            intent.removeExtra(EXTRA_OPEN_FULLSCREEN_PLAYER)
         }
     }
 }
@@ -127,7 +150,8 @@ data class PlayerState(
 class MusicViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = MediaStoreRepository(application)
     private val preferences = MusicPreferences(application)
-    private val player = ExoPlayer.Builder(application).build()
+    private var controllerFuture: ListenableFuture<MediaController>? = null
+    private var controller: MediaController? = null
     private var restoredTrack = false
     private var lastSavedTrackId = -1L
 
@@ -138,18 +162,35 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     val playerState: StateFlow<PlayerState> = _playerState.asStateFlow()
 
     init {
-        player.addListener(object : Player.Listener {
-            override fun onIsPlayingChanged(isPlaying: Boolean) = publishPlayerState()
-            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) = publishPlayerState()
-            override fun onPlaybackStateChanged(playbackState: Int) = publishPlayerState()
-            override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) = publishPlayerState()
-            override fun onRepeatModeChanged(repeatMode: Int) = publishPlayerState()
-        })
+        connectController(application)
         viewModelScope.launch {
             while (true) {
                 publishPlayerState()
                 delay(500)
             }
+        }
+    }
+
+    private fun connectController(context: Context) {
+        val sessionToken = SessionToken(context, ComponentName(context, MusicPlaybackService::class.java))
+        controllerFuture = MediaController.Builder(context, sessionToken).buildAsync().also { future ->
+            future.addListener(
+                {
+                    val connectedController = runCatching { future.get() }.getOrNull() ?: return@addListener
+                    controller = connectedController.also { mediaController ->
+                        mediaController.addListener(object : Player.Listener {
+                            override fun onIsPlayingChanged(isPlaying: Boolean) = publishPlayerState()
+                            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) = publishPlayerState()
+                            override fun onPlaybackStateChanged(playbackState: Int) = publishPlayerState()
+                            override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) = publishPlayerState()
+                            override fun onRepeatModeChanged(repeatMode: Int) = publishPlayerState()
+                        })
+                    }
+                    restoreLastTrack(_library.value.tracks)
+                    publishPlayerState()
+                },
+                ContextCompat.getMainExecutor(context),
+            )
         }
     }
 
@@ -176,6 +217,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun playTrack(track: Track, queue: List<Track>) {
+        val player = controller ?: return
         if (queue.isEmpty()) return
         preferences.saveLastTrackId(track.id)
         lastSavedTrackId = track.id
@@ -188,31 +230,37 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun togglePlayPause() {
+        val player = controller ?: return
         if (player.mediaItemCount == 0) return
         if (player.isPlaying) player.pause() else player.play()
         publishPlayerState()
     }
 
     fun previous() {
+        val player = controller ?: return
         if (player.hasPreviousMediaItem()) player.seekToPreviousMediaItem() else player.seekTo(0)
         publishPlayerState()
     }
 
     fun next() {
+        val player = controller ?: return
         if (player.hasNextMediaItem()) player.seekToNextMediaItem()
         publishPlayerState()
     }
 
     fun seekTo(positionMs: Long) {
+        val player = controller ?: return
         player.seekTo(positionMs)
         publishPlayerState()
     }
 
     fun toggleShuffle() {
+        val player = controller ?: return
         player.shuffleModeEnabled = !player.shuffleModeEnabled
     }
 
     fun toggleRepeat() {
+        val player = controller ?: return
         player.repeatMode = when (player.repeatMode) {
             Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
             Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
@@ -228,6 +276,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun publishPlayerState() {
+        val player = controller ?: return
         val queue = _playerState.value.queue
         val currentTrack = queue.getOrNull(player.currentMediaItemIndex)
         if (currentTrack != null && currentTrack.id != lastSavedTrackId) {
@@ -247,6 +296,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun restoreLastTrack(tracks: List<Track>) {
+        val player = controller ?: return
         if (restoredTrack || tracks.isEmpty() || player.mediaItemCount > 0) return
         val trackId = preferences.loadLastTrackId()
         val startIndex = tracks.indexOfFirst { it.id == trackId }
@@ -261,7 +311,10 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     override fun onCleared() {
-        player.release()
+        controller?.release()
+        controller = null
+        controllerFuture?.let(MediaController::releaseFuture)
+        controllerFuture = null
         super.onCleared()
     }
 }
@@ -357,7 +410,7 @@ private enum class RootRoute { Main, Settings }
 
 @OptIn(ExperimentalAnimationApi::class)
 @Composable
-fun MusicApp(viewModel: MusicViewModel = viewModel()) {
+fun MusicApp(openPlayerRequest: Int = 0, viewModel: MusicViewModel = viewModel()) {
     val context = LocalContext.current
     var rootRoute by rememberSaveable { mutableStateOf(RootRoute.Main) }
     val permission = remember { audioPermission() }
@@ -368,15 +421,36 @@ fun MusicApp(viewModel: MusicViewModel = viewModel()) {
         permissionGranted = granted
         viewModel.loadLibrary(granted)
     }
+    val notificationPermission = remember { notificationPermission() }
+    var notificationPermissionRequested by rememberSaveable { mutableStateOf(false) }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
     LaunchedEffect(permissionGranted) {
         viewModel.loadLibrary(permissionGranted)
+    }
+
+    LaunchedEffect(permissionGranted, notificationPermission) {
+        if (
+            permissionGranted &&
+            notificationPermission != null &&
+            !notificationPermissionRequested &&
+            ContextCompat.checkSelfPermission(context, notificationPermission) != PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermissionRequested = true
+            notificationPermissionLauncher.launch(notificationPermission)
+        }
     }
 
     val library by viewModel.library.collectAsState()
     val playerState by viewModel.playerState.collectAsState()
     val preferences = remember(context) { MusicPreferences(context) }
     var lastHomeTab by rememberSaveable { mutableStateOf(preferences.loadLastTab(HomeTab.Track.ordinal)) }
+
+    LaunchedEffect(openPlayerRequest) {
+        if (openPlayerRequest > 0) {
+            rootRoute = RootRoute.Main
+        }
+    }
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -415,6 +489,7 @@ fun MusicApp(viewModel: MusicViewModel = viewModel()) {
             PlayerSheet(
                 playerState = playerState,
                 isFavorite = playerState.currentTrack?.id in library.favorites,
+                expandRequest = openPlayerRequest,
                 onSettings = { rootRoute = RootRoute.Settings },
                 onToggleFavorite = { playerState.currentTrack?.id?.let(viewModel::toggleFavorite) },
                 onPlayPause = viewModel::togglePlayPause,
@@ -433,5 +508,13 @@ private fun audioPermission(): String {
         Manifest.permission.READ_MEDIA_AUDIO
     } else {
         Manifest.permission.READ_EXTERNAL_STORAGE
+    }
+}
+
+private fun notificationPermission(): String? {
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        Manifest.permission.POST_NOTIFICATIONS
+    } else {
+        null
     }
 }
