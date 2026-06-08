@@ -41,6 +41,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
@@ -55,6 +56,8 @@ import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material3.Button
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -104,6 +107,28 @@ enum class HomeTab(val label: String) {
     Album("Album"),
     Artist("Artist"),
     Folder("Folder"),
+}
+
+private enum class TrackSort(val label: String) {
+    Name("Name"),
+    DateAdded("Date added"),
+    Artist("Artist"),
+}
+
+private enum class AlbumSort(val label: String) {
+    Release("Release"),
+    Name("Name"),
+    Artist("Artist"),
+}
+
+private enum class ArtistSort(val label: String) {
+    Name("Name"),
+    DateAdded("Date added"),
+}
+
+private enum class FolderSort(val label: String) {
+    Name("Name"),
+    DateAdded("Date added"),
 }
 
 private const val ROUTE_HOME = "home"
@@ -696,7 +721,12 @@ private fun LibraryState.favoriteCards(): List<FavoriteCardItem> {
                 }
         }
     }
-    return cards.distinctBy { it.type to it.key }.sortedByDescending { it.addedAt }
+    val distinctCards = cards.distinctBy { it.type to it.key }
+    val favoriteTrackCard = distinctCards.firstOrNull { it.type == FavoriteType.Track }
+    val otherCards = distinctCards
+        .filterNot { it.type == FavoriteType.Track }
+        .sortedByDescending { it.addedAt }
+    return listOfNotNull(favoriteTrackCard) + otherCards
 }
 
 private fun LibraryState.smartPlaylists(): List<PlaylistGroup> {
@@ -716,23 +746,39 @@ private fun TrackTab(
     onTrackClick: (Track, List<Track>) -> Unit,
 ) {
     val listState = rememberLazyListState()
+    var sort by rememberSaveable { mutableStateOf(TrackSort.Name) }
+    val tracks = remember(library.tracks, sort) { library.tracks.sortedBy(sort) }
     IndexedListWithRail(listState = listState) {
-        item { SortHeader("Name") }
-        items(library.tracks, key = { it.id }) { track ->
-            TrackRow(
-                track = track,
-                onClick = { onTrackClick(track, library.tracks) },
+        item {
+            SortHeader(
+                label = sort.label,
+                options = TrackSort.entries.map { it.label },
+                onOptionSelected = { label -> TrackSort.entries.firstOrNull { it.label == label }?.let { sort = it } },
             )
         }
-        if (library.tracks.isEmpty()) item { EmptyInline("No tracks found") }
+        items(tracks, key = { it.id }) { track ->
+            TrackRow(
+                track = track,
+                onClick = { onTrackClick(track, tracks) },
+            )
+        }
+        if (tracks.isEmpty()) item { EmptyInline("No tracks found") }
     }
 }
 
 @Composable
 private fun AlbumTab(library: LibraryState, onAlbumClick: (AlbumGroup) -> Unit) {
+    var sort by rememberSaveable { mutableStateOf(AlbumSort.Release) }
+    val albums = remember(library.albums, sort) { library.albums.sortedBy(sort) }
     RoundedGridPanel {
-        item(span = { GridItemSpan(maxLineSpan) }) { SortHeader("Release") }
-        items(library.albums, key = { it.id }) { album ->
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            SortHeader(
+                label = sort.label,
+                options = AlbumSort.entries.map { it.label },
+                onOptionSelected = { label -> AlbumSort.entries.firstOrNull { it.label == label }?.let { sort = it } },
+            )
+        }
+        items(albums, key = { it.id }) { album ->
             ArtworkCard(
                 title = album.title,
                 subtitle = "${album.artist} | ${album.tracks.size} tracks",
@@ -740,7 +786,7 @@ private fun AlbumTab(library: LibraryState, onAlbumClick: (AlbumGroup) -> Unit) 
                 modifier = Modifier.clickable { onAlbumClick(album) },
             )
         }
-        if (library.albums.isEmpty()) {
+        if (albums.isEmpty()) {
             item(span = { GridItemSpan(maxLineSpan) }) { EmptyInline("No albums found") }
         }
     }
@@ -942,9 +988,17 @@ private fun AlbumDetailScreen(
 @Composable
 private fun ArtistTab(library: LibraryState, onArtistClick: (ArtistGroup) -> Unit) {
     val listState = rememberLazyListState()
+    var sort by rememberSaveable { mutableStateOf(ArtistSort.Name) }
+    val artists = remember(library.artists, sort) { library.artists.sortedBy(sort) }
     IndexedListWithRail(listState = listState) {
-        item { SortHeader("Name") }
-        items(library.artists, key = { it.name }) { artist ->
+        item {
+            SortHeader(
+                label = sort.label,
+                options = ArtistSort.entries.map { it.label },
+                onOptionSelected = { label -> ArtistSort.entries.firstOrNull { it.label == label }?.let { sort = it } },
+            )
+        }
+        items(artists, key = { it.name }) { artist ->
             MediaGroupRow(
                 artwork = artist.tracks.firstOrNull()?.albumArtUri,
                 title = artist.name,
@@ -952,7 +1006,7 @@ private fun ArtistTab(library: LibraryState, onArtistClick: (ArtistGroup) -> Uni
                 onClick = { onArtistClick(artist) },
             )
         }
-        if (library.artists.isEmpty()) item { EmptyInline("No artists found") }
+        if (artists.isEmpty()) item { EmptyInline("No artists found") }
     }
 }
 
@@ -1223,9 +1277,17 @@ private fun ArtistAlbumTab(
 @Composable
 private fun FolderTab(library: LibraryState, onFolderClick: (FolderGroup) -> Unit) {
     val listState = rememberLazyListState()
+    var sort by rememberSaveable { mutableStateOf(FolderSort.Name) }
+    val folders = remember(library.folders, sort) { library.folders.sortedBy(sort) }
     IndexedListWithRail(listState = listState) {
-        item { SortHeader("Name") }
-        items(library.folders, key = { it.path }) { folder ->
+        item {
+            SortHeader(
+                label = sort.label,
+                options = FolderSort.entries.map { it.label },
+                onOptionSelected = { label -> FolderSort.entries.firstOrNull { it.label == label }?.let { sort = it } },
+            )
+        }
+        items(folders, key = { it.path }) { folder ->
             MediaGroupRow(
                 artwork = folder.tracks.firstOrNull()?.albumArtUri,
                 title = folder.name,
@@ -1234,7 +1296,7 @@ private fun FolderTab(library: LibraryState, onFolderClick: (FolderGroup) -> Uni
                 onClick = { onFolderClick(folder) },
             )
         }
-        if (library.folders.isEmpty()) item { EmptyInline("No folders found") }
+        if (folders.isEmpty()) item { EmptyInline("No folders found") }
     }
 }
 
@@ -1355,16 +1417,53 @@ private fun RoundedGridPanel(content: LazyGridScope.() -> Unit) {
 }
 
 @Composable
-private fun SortHeader(label: String) {
-    Row(
+private fun SortHeader(
+    label: String,
+    options: List<String> = emptyList(),
+    onOptionSelected: (String) -> Unit = {},
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box(
         modifier = Modifier
             .fillMaxWidth()
             .padding(bottom = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Icon(Icons.Default.Sort, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+        Row(
+            modifier = Modifier
+                .clickable(enabled = options.isNotEmpty()) { expanded = true }
+                .padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(Icons.Default.Sort, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            if (options.isNotEmpty()) {
+                Icon(
+                    Icons.Default.ArrowDropDown,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            options.forEach { option ->
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            option,
+                            fontWeight = if (option == label) FontWeight.SemiBold else FontWeight.Normal,
+                        )
+                    },
+                    onClick = {
+                        expanded = false
+                        onOptionSelected(option)
+                    },
+                )
+            }
+        }
     }
 }
 
@@ -1509,6 +1608,38 @@ private fun albumTrackComparator(): Comparator<Track> =
 
 private fun String.displayFolderName(): String =
     substringAfterLast('/').ifBlank { this }
+
+private fun List<Track>.sortedBy(sort: TrackSort): List<Track> =
+    when (sort) {
+        TrackSort.Name -> sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.title })
+        TrackSort.DateAdded -> sortedWith(compareByDescending<Track> { it.dateAddedMs }.thenBy(String.CASE_INSENSITIVE_ORDER) { it.title })
+        TrackSort.Artist -> sortedWith(
+            compareBy<Track, String>(String.CASE_INSENSITIVE_ORDER) { it.artist }
+                .thenBy(String.CASE_INSENSITIVE_ORDER) { it.title },
+        )
+    }
+
+private fun List<AlbumGroup>.sortedBy(sort: AlbumSort): List<AlbumGroup> =
+    when (sort) {
+        AlbumSort.Release -> sortedWith(compareBy<AlbumGroup>({ it.releaseYear().takeIf { year -> year > 0 } ?: Int.MAX_VALUE }, { it.title.lowercase() }))
+        AlbumSort.Name -> sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.title })
+        AlbumSort.Artist -> sortedWith(
+            compareBy<AlbumGroup, String>(String.CASE_INSENSITIVE_ORDER) { it.artist }
+                .thenBy(String.CASE_INSENSITIVE_ORDER) { it.title },
+        )
+    }
+
+private fun List<ArtistGroup>.sortedBy(sort: ArtistSort): List<ArtistGroup> =
+    when (sort) {
+        ArtistSort.Name -> sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+        ArtistSort.DateAdded -> sortedWith(compareByDescending<ArtistGroup> { it.tracks.maxOfOrNull(Track::dateAddedMs) ?: 0L }.thenBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+    }
+
+private fun List<FolderGroup>.sortedBy(sort: FolderSort): List<FolderGroup> =
+    when (sort) {
+        FolderSort.Name -> sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+        FolderSort.DateAdded -> sortedWith(compareByDescending<FolderGroup> { it.tracks.maxOfOrNull(Track::dateAddedMs) ?: 0L }.thenBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+    }
 
 private fun String.compareNaturally(other: String): Int {
     val firstParts = Regex("\\d+|\\D+").findAll(lowercase()).map { it.value }.toList()

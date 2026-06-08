@@ -37,6 +37,8 @@ data class TrackEntity(
     val discNumber: Int,
     @ColumnInfo(name = "year", defaultValue = "0")
     val year: Int,
+    @ColumnInfo(name = "date_added_ms", defaultValue = "0")
+    val dateAddedMs: Long,
     val source: String,
     @ColumnInfo(name = "last_modified_ms")
     val lastModifiedMs: Long,

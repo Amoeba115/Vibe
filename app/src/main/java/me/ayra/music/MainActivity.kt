@@ -121,6 +121,7 @@ data class Track(
     val trackNumber: Int = 0,
     val discNumber: Int = 0,
     val year: Int = 0,
+    val dateAddedMs: Long = 0L,
 ) {
     val albumArtUri: Uri
         get() = ContentUris.withAppendedId(Uri.parse("content://media/external/audio/albumart"), albumId)
@@ -609,6 +610,7 @@ class MediaStoreScanner(private val context: Context) {
             add(MediaStore.Audio.Media.TRACK)
             add(MediaStore.Audio.Media.YEAR)
             add(MediaStore.Audio.Media.DISPLAY_NAME)
+            add(MediaStore.Audio.Media.DATE_ADDED)
             add(MediaStore.Audio.Media.DATE_MODIFIED)
             add(MediaStore.Audio.Media.SIZE)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) add(MediaStore.Audio.Media.RELATIVE_PATH)
@@ -632,6 +634,7 @@ class MediaStoreScanner(private val context: Context) {
             val albumIdColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
             val trackNumberColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TRACK)
             val yearColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.YEAR)
+            val dateAddedColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
             val dateModifiedColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_MODIFIED)
             val sizeColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE)
             val relativePathColumn = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -662,6 +665,7 @@ class MediaStoreScanner(private val context: Context) {
                         trackNumber = trackMetadata.trackNumber,
                         discNumber = trackMetadata.discNumber,
                         year = cursor.getInt(yearColumn).takeIf { it > 0 } ?: 0,
+                        dateAddedMs = cursor.getLong(dateAddedColumn).coerceAtLeast(0L) * 1_000L,
                     ),
                     cacheKey = uri.toString(),
                     source = LibrarySource.MediaStore,
@@ -688,7 +692,8 @@ class MediaStoreScanner(private val context: Context) {
                 cachedTrack.lastModifiedMs == scanned.lastModifiedMs &&
                 cachedTrack.sizeBytes == scanned.sizeBytes &&
                 cachedTrack.trackNumber == scanned.track.trackNumber &&
-                cachedTrack.discNumber == scanned.track.discNumber
+                cachedTrack.discNumber == scanned.track.discNumber &&
+                cachedTrack.dateAddedMs == scanned.track.dateAddedMs
             ) {
                 scanned.copy(track = cachedTrack.toTrack())
             } else {
@@ -756,6 +761,7 @@ class VgmFileScanner(private val context: Context) {
                 uri = Uri.fromFile(this),
                 albumId = 0L,
                 folder = cachedMetadata.folder,
+                dateAddedMs = lastModifiedMs,
             )
         } else {
             toVgmTrack()
@@ -830,6 +836,7 @@ class VgmFileScanner(private val context: Context) {
             uri = Uri.fromFile(this),
             albumId = 0L,
             folder = folderPath,
+            dateAddedMs = lastModified().coerceAtLeast(0L),
         )
     }
 

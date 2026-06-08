@@ -16,7 +16,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ArtistCacheEntity::class,
         VgmMetadataEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 abstract class LibraryDatabase : RoomDatabase() {
@@ -33,7 +33,7 @@ abstract class LibraryDatabase : RoomDatabase() {
                     LibraryDatabase::class.java,
                     "music_library.db",
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                     .fallbackToDestructiveMigration(false)
                     .build()
                     .also { instance = it }
@@ -70,6 +70,12 @@ abstract class LibraryDatabase : RoomDatabase() {
                     )
                     """.trimIndent(),
                 )
+            }
+        }
+
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE tracks ADD COLUMN date_added_ms INTEGER NOT NULL DEFAULT 0")
             }
         }
     }

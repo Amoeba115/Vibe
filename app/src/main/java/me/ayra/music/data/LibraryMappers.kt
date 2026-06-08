@@ -19,6 +19,7 @@ data class TrackSnapshot(
     val trackNumber: Int,
     val discNumber: Int,
     val year: Int,
+    val dateAddedMs: Long,
 )
 
 fun TrackEntity.toSnapshot(): TrackSnapshot =
@@ -30,6 +31,7 @@ fun TrackEntity.toSnapshot(): TrackSnapshot =
         trackNumber = trackNumber,
         discNumber = discNumber,
         year = year,
+        dateAddedMs = dateAddedMs,
     )
 
 fun ScannedTrack.toSnapshot(): TrackSnapshot =
@@ -41,6 +43,7 @@ fun ScannedTrack.toSnapshot(): TrackSnapshot =
         trackNumber = track.trackNumber,
         discNumber = track.discNumber,
         year = track.year,
+        dateAddedMs = track.dateAddedMs,
     )
 
 fun TrackEntity.toTrack(): Track =
@@ -56,6 +59,7 @@ fun TrackEntity.toTrack(): Track =
         trackNumber = trackNumber,
         discNumber = discNumber,
         year = year,
+        dateAddedMs = dateAddedMs,
     )
 
 fun ScannedTrack.toEntity(): TrackEntity =
@@ -72,6 +76,7 @@ fun ScannedTrack.toEntity(): TrackEntity =
         trackNumber = track.trackNumber,
         discNumber = track.discNumber,
         year = track.year,
+        dateAddedMs = track.dateAddedMs,
         source = source,
         lastModifiedMs = lastModifiedMs,
         sizeBytes = sizeBytes,
@@ -103,6 +108,7 @@ fun VgmMetadataEntity.toEntity(uriString: String, trackId: Long): TrackEntity =
         trackNumber = 0,
         discNumber = 0,
         year = 0,
+        dateAddedMs = lastModifiedMs,
         source = LibrarySource.Vgm,
         lastModifiedMs = lastModifiedMs,
         sizeBytes = sizeBytes,
