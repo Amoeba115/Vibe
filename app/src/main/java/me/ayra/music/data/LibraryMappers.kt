@@ -16,6 +16,8 @@ data class TrackSnapshot(
     val source: String,
     val lastModifiedMs: Long,
     val sizeBytes: Long,
+    val trackNumber: Int,
+    val discNumber: Int,
 )
 
 fun TrackEntity.toSnapshot(): TrackSnapshot =
@@ -24,6 +26,8 @@ fun TrackEntity.toSnapshot(): TrackSnapshot =
         source = source,
         lastModifiedMs = lastModifiedMs,
         sizeBytes = sizeBytes,
+        trackNumber = trackNumber,
+        discNumber = discNumber,
     )
 
 fun ScannedTrack.toSnapshot(): TrackSnapshot =
@@ -32,6 +36,8 @@ fun ScannedTrack.toSnapshot(): TrackSnapshot =
         source = source,
         lastModifiedMs = lastModifiedMs,
         sizeBytes = sizeBytes,
+        trackNumber = track.trackNumber,
+        discNumber = track.discNumber,
     )
 
 fun TrackEntity.toTrack(): Track =
@@ -44,6 +50,8 @@ fun TrackEntity.toTrack(): Track =
         uri = Uri.parse(uriString),
         albumId = albumId,
         folder = folder,
+        trackNumber = trackNumber,
+        discNumber = discNumber,
     )
 
 fun ScannedTrack.toEntity(): TrackEntity =
@@ -57,6 +65,8 @@ fun ScannedTrack.toEntity(): TrackEntity =
         uriString = track.uri.toString(),
         albumId = track.albumId,
         folder = track.folder,
+        trackNumber = track.trackNumber,
+        discNumber = track.discNumber,
         source = source,
         lastModifiedMs = lastModifiedMs,
         sizeBytes = sizeBytes,
@@ -85,6 +95,8 @@ fun VgmMetadataEntity.toEntity(uriString: String, trackId: Long): TrackEntity =
         uriString = uriString,
         albumId = 0L,
         folder = folder,
+        trackNumber = 0,
+        discNumber = 0,
         source = LibrarySource.Vgm,
         lastModifiedMs = lastModifiedMs,
         sizeBytes = sizeBytes,

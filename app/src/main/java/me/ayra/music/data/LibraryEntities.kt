@@ -31,6 +31,10 @@ data class TrackEntity(
     @ColumnInfo(name = "album_id")
     val albumId: Long,
     val folder: String,
+    @ColumnInfo(name = "track_number", defaultValue = "0")
+    val trackNumber: Int,
+    @ColumnInfo(name = "disc_number", defaultValue = "0")
+    val discNumber: Int,
     val source: String,
     @ColumnInfo(name = "last_modified_ms")
     val lastModifiedMs: Long,

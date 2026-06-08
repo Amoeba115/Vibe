@@ -117,6 +117,8 @@ data class Track(
     val uri: Uri,
     val albumId: Long,
     val folder: String,
+    val trackNumber: Int = 0,
+    val discNumber: Int = 0,
 ) {
     val albumArtUri: Uri
         get() = ContentUris.withAppendedId(Uri.parse("content://media/external/audio/albumart"), albumId)
@@ -520,6 +522,7 @@ class MediaStoreScanner(private val context: Context) {
             add(MediaStore.Audio.Media.ALBUM)
             add(MediaStore.Audio.Media.DURATION)
             add(MediaStore.Audio.Media.ALBUM_ID)
+            add(MediaStore.Audio.Media.TRACK)
             add(MediaStore.Audio.Media.DISPLAY_NAME)
             add(MediaStore.Audio.Media.DATE_MODIFIED)
             add(MediaStore.Audio.Media.SIZE)
@@ -542,6 +545,7 @@ class MediaStoreScanner(private val context: Context) {
             val albumColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
             val durationColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
             val albumIdColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
+            val trackNumberColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TRACK)
             val dateModifiedColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_MODIFIED)
             val sizeColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE)
             val relativePathColumn = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -558,6 +562,7 @@ class MediaStoreScanner(private val context: Context) {
                 val artist = cursor.getString(artistColumn)?.takeIf { it.isNotBlank() } ?: "Unknown artist"
                 val album = cursor.getString(albumColumn)?.takeIf { it.isNotBlank() } ?: "Unknown album"
                 val folder = cursor.getStringOrNull(relativePathColumn)?.trimEnd('/') ?: "Music"
+                val trackMetadata = cursor.getInt(trackNumberColumn).toTrackMetadata()
                 scanned += ScannedTrack(
                     track = Track(
                         id = id,
@@ -568,6 +573,8 @@ class MediaStoreScanner(private val context: Context) {
                         uri = uri,
                         albumId = cursor.getLong(albumIdColumn),
                         folder = folder,
+                        trackNumber = trackMetadata.trackNumber,
+                        discNumber = trackMetadata.discNumber,
                     ),
                     cacheKey = uri.toString(),
                     source = LibrarySource.MediaStore,
@@ -592,7 +599,9 @@ class MediaStoreScanner(private val context: Context) {
             if (
                 cachedTrack != null &&
                 cachedTrack.lastModifiedMs == scanned.lastModifiedMs &&
-                cachedTrack.sizeBytes == scanned.sizeBytes
+                cachedTrack.sizeBytes == scanned.sizeBytes &&
+                cachedTrack.trackNumber == scanned.track.trackNumber &&
+                cachedTrack.discNumber == scanned.track.discNumber
             ) {
                 scanned.copy(track = cachedTrack.toTrack())
             } else {
@@ -600,6 +609,15 @@ class MediaStoreScanner(private val context: Context) {
             }
         }
     }
+}
+
+private data class TrackMetadata(val discNumber: Int, val trackNumber: Int)
+
+private fun Int.toTrackMetadata(): TrackMetadata {
+    val normalized = this % 1_000
+    val disc = (this / 1_000).takeIf { it > 0 } ?: 0
+    val track = normalized.takeIf { it > 0 } ?: takeIf { it > 0 } ?: 0
+    return TrackMetadata(discNumber = disc, trackNumber = track)
 }
 
 private fun List<ScannedTrack>.sortedForLibrary(): List<ScannedTrack> =

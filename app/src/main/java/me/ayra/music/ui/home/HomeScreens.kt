@@ -593,8 +593,9 @@ private fun AlbumDetailScreen(
     onTrackClick: (Track, List<Track>) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val totalDurationMs = album.tracks.sumOf { it.durationMs.coerceAtLeast(0L) }
-    val albumTrackGroups = remember(album.tracks) { album.tracks.groupForAlbumDetail() }
+    val albumTracks = remember(album.tracks) { album.tracks.sortedForAlbumPlayback() }
+    val totalDurationMs = albumTracks.sumOf { it.durationMs.coerceAtLeast(0L) }
+    val albumTrackGroups = remember(albumTracks) { albumTracks.groupForAlbumDetail() }
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     val showPinnedTitle by remember {
@@ -632,7 +633,7 @@ private fun AlbumDetailScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     AlbumArt(
-                        album.tracks.firstOrNull()?.albumArtUri,
+                        albumTracks.firstOrNull()?.albumArtUri,
                         Modifier
                             .fillMaxWidth(0.46f)
                             .aspectRatio(1f),
@@ -658,7 +659,7 @@ private fun AlbumDetailScreen(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        text = "${album.tracks.size} tracks | ${totalDurationMs.formatDuration()}",
+                        text = "${albumTracks.size} tracks | ${totalDurationMs.formatDuration()}",
                         modifier = Modifier.padding(top = 8.dp, bottom = 26.dp),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 15.sp,
@@ -683,7 +684,10 @@ private fun AlbumDetailScreen(
                         ) {
                             Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceVariant) {
                                 IconButton(
-                                    onClick = { album.tracks.firstOrNull()?.let { onTrackClick(it, album.tracks.shuffled()) } },
+                                    onClick = {
+                                        val shuffledTracks = albumTracks.shuffled()
+                                        shuffledTracks.firstOrNull()?.let { onTrackClick(it, shuffledTracks) }
+                                    },
                                     modifier = Modifier.size(48.dp),
                                 ) {
                                     Icon(Icons.Default.Shuffle, contentDescription = "Shuffle")
@@ -695,7 +699,7 @@ private fun AlbumDetailScreen(
                                 modifier = Modifier.padding(start = 12.dp),
                             ) {
                                 IconButton(
-                                    onClick = { album.tracks.firstOrNull()?.let { onTrackClick(it, album.tracks) } },
+                                    onClick = { albumTracks.firstOrNull()?.let { onTrackClick(it, albumTracks) } },
                                     modifier = Modifier.size(48.dp),
                                 ) {
                                     Icon(Icons.Default.PlayArrow, contentDescription = "Play", tint = MaterialTheme.colorScheme.onPrimary)
@@ -722,11 +726,11 @@ private fun AlbumDetailScreen(
                                     index = index + 1,
                                     track = track,
                                     showDivider = !isLastTrack,
-                                    onClick = { onTrackClick(track, album.tracks) },
+                                    onClick = { onTrackClick(track, albumTracks) },
                                 )
                             }
                         }
-                        if (album.tracks.isEmpty()) EmptyInline("No tracks found")
+                        if (albumTracks.isEmpty()) EmptyInline("No tracks found")
                     }
                 }
             }
@@ -1003,19 +1007,53 @@ private fun AlbumTrackRow(
 private data class AlbumTrackGroup(
     val name: String,
     val tracks: List<Track>,
+    val discNumber: Int = 0,
 )
 
+private fun List<Track>.sortedForAlbumPlayback(): List<Track> =
+    groupForAlbumDetail().flatMap { it.tracks }
+
 private fun List<Track>.groupForAlbumDetail(): List<AlbumTrackGroup> {
+    if (any { it.discNumber > 0 }) {
+        return groupBy { it.discNumber.takeIf { disc -> disc > 0 } ?: 1 }
+            .map { (discNumber, tracks) ->
+                AlbumTrackGroup(
+                    name = "Disc $discNumber",
+                    tracks = tracks.sortedWith(albumTrackComparator()),
+                    discNumber = discNumber,
+                )
+            }
+            .sortedBy { it.discNumber }
+    }
     return groupBy { it.folder.ifBlank { "Unknown folder" } }
         .map { (folder, tracks) ->
-            val name = folder.substringAfterLast('/').ifBlank { folder }
             AlbumTrackGroup(
-                name = name,
-                tracks = tracks,
+                name = folder.displayFolderName(),
+                tracks = tracks.sortedWith(albumTrackComparator()),
             )
         }
         .sortedWith { first, second -> first.name.compareNaturally(second.name) }
 }
+
+private fun albumTrackComparator(): Comparator<Track> =
+    Comparator { first, second ->
+        val firstDisc = first.discNumber.takeIf { it > 0 }
+        val secondDisc = second.discNumber.takeIf { it > 0 }
+        val firstNumber = first.trackNumber.takeIf { it > 0 }
+        val secondNumber = second.trackNumber.takeIf { it > 0 }
+        when {
+            firstDisc != null && secondDisc != null && firstDisc != secondDisc -> firstDisc.compareTo(secondDisc)
+            firstDisc != null && secondDisc == null -> -1
+            firstDisc == null && secondDisc != null -> 1
+            firstNumber != null && secondNumber != null && firstNumber != secondNumber -> firstNumber.compareTo(secondNumber)
+            firstNumber != null && secondNumber == null -> -1
+            firstNumber == null && secondNumber != null -> 1
+            else -> first.title.compareTo(second.title, ignoreCase = true)
+        }
+    }
+
+private fun String.displayFolderName(): String =
+    substringAfterLast('/').ifBlank { this }
 
 private fun String.compareNaturally(other: String): Int {
     val firstParts = Regex("\\d+|\\D+").findAll(lowercase()).map { it.value }.toList()
