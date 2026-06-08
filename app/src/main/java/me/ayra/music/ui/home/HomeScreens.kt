@@ -51,6 +51,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.Sort
+import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material3.Button
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -262,7 +263,7 @@ private fun HomeScreen(
         }
 
         when {
-            !library.permissionGranted -> PermissionState(onRequestPermission)
+            !library.permissionGranted && library.tracks.isEmpty() -> PermissionState(onRequestPermission)
             library.loading -> LoadingState()
             library.error != null -> EmptyPanel(library.error)
             else -> HorizontalPager(
@@ -785,12 +786,13 @@ private fun MediaGroupRow(
             AlbumArt(artwork, Modifier.size(56.dp), RoundedCornerShape(13.dp))
             if (folder) {
                 Icon(
-                    Icons.Default.Folder,
+                    Icons.Outlined.Folder,
                     contentDescription = null,
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
+                        .padding(4.dp)
                         .size(18.dp),
-                    tint = MaterialTheme.colorScheme.onPrimary,
+                    tint = MaterialTheme.colorScheme.onSurface,
                 )
             }
         }
@@ -832,16 +834,16 @@ private fun AlphabetRail(modifier: Modifier = Modifier) {
     Surface(
         modifier = modifier
             .padding(end = 8.dp, bottom = 96.dp)
-            .width(28.dp),
+            .width(24.dp),
         shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f),
     ) {
         Column(
-            modifier = Modifier.padding(vertical = 6.dp),
+            modifier = Modifier,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             ('A'..'Z').forEach {
-                Text(it.toString(), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(it.toString(), fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

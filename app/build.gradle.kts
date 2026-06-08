@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.ksp)
 }
 
 android {
@@ -77,6 +78,9 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.google.material)
     implementation(libs.androidx.palette.ktx)
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    ksp(libs.androidx.room.compiler)
     add("debugVGMImplementation", project(":vgmstream-core"))
     add("debugVGMImplementation", project(":vgmstream-media3"))
     add("releaseVGMImplementation", project(":vgmstream-core"))

@@ -55,6 +55,16 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import me.ayra.music.data.FavoriteEntity
+import me.ayra.music.data.LibraryDao
+import me.ayra.music.data.LibraryDatabase
+import me.ayra.music.data.LibrarySource
+import me.ayra.music.data.ScannedTrack
+import me.ayra.music.data.TrackSnapshot
+import me.ayra.music.data.toEntity
+import me.ayra.music.data.toSnapshot
+import me.ayra.music.data.toTrack
+import me.ayra.music.data.toVgmMetadata
 import me.ayra.music.ui.home.MainScreen
 import me.ayra.music.ui.home.HomeTab
 import me.ayra.music.ui.home.modernEnter
@@ -189,7 +199,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                             override fun onRepeatModeChanged(repeatMode: Int) = publishPlayerState()
                         })
                     }
-                    restoreLastTrack(_library.value.tracks)
+                    restoreOrSyncPlayerQueue(_library.value.tracks)
                     publishPlayerState()
                 },
                 ContextCompat.getMainExecutor(context),
@@ -199,19 +209,63 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     fun loadLibrary(permissionGranted: Boolean) {
         _library.update { it.copy(permissionGranted = permissionGranted, loading = permissionGranted, error = null) }
-        if (!permissionGranted) return
         viewModelScope.launch {
-            runCatching { libraryScanner.loadTracks() }
-                .onSuccess { tracks ->
+            var activeSnapshot = emptyList<TrackSnapshot>()
+            runCatching { libraryScanner.loadCachedLibrary() }
+                .onSuccess { cached ->
+                    activeSnapshot = cached.snapshot
                     _library.update {
                         it.copy(
-                            loading = false,
-                            tracks = tracks,
-                            playlists = libraryScanner.buildPlaylists(tracks),
+                            loading = permissionGranted && cached.tracks.isEmpty(),
+                            tracks = cached.tracks,
+                            favorites = cached.favorites,
+                            playlists = libraryScanner.buildPlaylists(cached.tracks),
                             error = null,
                         )
                     }
-                    restoreLastTrack(tracks)
+                    restoreOrSyncPlayerQueue(cached.tracks)
+                }
+            if (!permissionGranted) {
+                _library.update { it.copy(loading = false) }
+                return@launch
+            }
+
+            runCatching {
+                libraryScanner.refreshLibrary { partial ->
+                    if (partial.tracks.isNotEmpty()) {
+                        withContext(Dispatchers.Main.immediate) {
+                            if (activeSnapshot.isNotEmpty()) return@withContext
+                            if (partial.snapshot == activeSnapshot) return@withContext
+                            activeSnapshot = partial.snapshot
+                            _library.update {
+                                it.copy(
+                                    loading = false,
+                                    tracks = partial.tracks,
+                                    favorites = partial.favorites,
+                                    playlists = libraryScanner.buildPlaylists(partial.tracks),
+                                    error = null,
+                                )
+                            }
+                            restoreOrSyncPlayerQueue(partial.tracks)
+                        }
+                    }
+                }
+            }
+                .onSuccess { refreshed ->
+                    if (refreshed.snapshot == activeSnapshot) {
+                        _library.update { it.copy(loading = false, error = null) }
+                        return@onSuccess
+                    }
+                    _library.update {
+                        it.copy(
+                            loading = false,
+                            tracks = refreshed.tracks,
+                            favorites = refreshed.favorites,
+                            playlists = libraryScanner.buildPlaylists(refreshed.tracks),
+                            error = null,
+                        )
+                    }
+                    restoreOrSyncPlayerQueue(refreshed.tracks)
                 }
                 .onFailure { throwable ->
                     _library.update { it.copy(loading = false, error = throwable.message ?: "Unable to load music") }
@@ -272,16 +326,27 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun toggleFavorite(trackId: Long) {
+        var favoriteNow = false
         _library.update { state ->
             val favorites = if (trackId in state.favorites) state.favorites - trackId else state.favorites + trackId
+            favoriteNow = trackId in favorites
             state.copy(favorites = favorites)
+        }
+        viewModelScope.launch {
+            libraryScanner.setFavorite(trackId, favoriteNow)
         }
     }
 
     private fun publishPlayerState() {
         val player = controller ?: return
         val queue = _playerState.value.queue
+            .takeIf { it.isNotEmpty() }
+            ?: controllerQueueFromLibrary(_library.value.tracks)
         val currentTrack = queue.getOrNull(player.currentMediaItemIndex)
+            ?: player.currentMediaItem
+                ?.mediaId
+                ?.toLongOrNull()
+                ?.let { mediaId -> _library.value.tracks.firstOrNull { it.id == mediaId } }
         if (currentTrack != null && currentTrack.id != lastSavedTrackId) {
             preferences.saveLastTrackId(currentTrack.id)
             lastSavedTrackId = currentTrack.id
@@ -294,13 +359,24 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 positionMs = player.currentPosition.coerceAtLeast(0L),
                 shuffle = player.shuffleModeEnabled,
                 repeatMode = player.repeatMode,
+                queue = queue,
             )
         }
     }
 
-    private fun restoreLastTrack(tracks: List<Track>) {
+    private fun restoreOrSyncPlayerQueue(tracks: List<Track>) {
         val player = controller ?: return
-        if (restoredTrack || tracks.isEmpty() || player.mediaItemCount > 0) return
+        if (tracks.isEmpty()) return
+        if (player.mediaItemCount > 0) {
+            val queue = controllerQueueFromLibrary(tracks)
+            if (queue.isNotEmpty()) {
+                restoredTrack = true
+                _playerState.update { it.copy(queue = queue) }
+            }
+            publishPlayerState()
+            return
+        }
+        if (restoredTrack) return
         val trackId = preferences.loadLastTrackId()
         val startIndex = tracks.indexOfFirst { it.id == trackId }
         if (startIndex < 0) return
@@ -311,6 +387,16 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         player.prepare()
         _playerState.update { it.copy(queue = tracks) }
         publishPlayerState()
+    }
+
+    private fun controllerQueueFromLibrary(tracks: List<Track>): List<Track> {
+        val player = controller ?: return emptyList()
+        if (tracks.isEmpty() || player.mediaItemCount == 0) return emptyList()
+        val tracksById = tracks.associateBy { it.id }
+        return (0 until player.mediaItemCount)
+            .mapNotNull { index ->
+                player.getMediaItemAt(index).mediaId.toLongOrNull()?.let(tracksById::get)
+            }
     }
 
     override fun onCleared() {
@@ -337,16 +423,78 @@ private fun Track.toMediaItem(): MediaItem {
         .build()
 }
 
+data class CachedLibrary(
+    val tracks: List<Track>,
+    val favorites: Set<Long>,
+    val snapshot: List<TrackSnapshot> = emptyList(),
+)
+
 class LibraryScanner(context: Context) {
+    private val dao = LibraryDatabase.get(context).libraryDao()
     private val mediaStoreScanner = MediaStoreScanner(context)
     private val vgmFileScanner = VgmFileScanner(context)
 
-    suspend fun loadTracks(): List<Track> = withContext(Dispatchers.IO) {
-        val audioTracks = mediaStoreScanner.loadTracks()
-        if (BuildConfig.IS_VGM_BUILD) {
-            (audioTracks + vgmFileScanner.loadTracks()).distinctBy { it.uri }
+    suspend fun loadCachedLibrary(): CachedLibrary = withContext(Dispatchers.IO) {
+        val cachedTracks = dao.loadTracks()
+        CachedLibrary(
+            tracks = cachedTracks.map { it.toTrack() },
+            favorites = dao.loadFavoriteIds().toSet(),
+            snapshot = cachedTracks.map { it.toSnapshot() },
+        )
+    }
+
+    suspend fun refreshLibrary(onPartial: suspend (CachedLibrary) -> Unit = {}): CachedLibrary = withContext(Dispatchers.IO) {
+        val favorites = dao.loadFavoriteIds().toSet()
+        val audioTracks = mediaStoreScanner.loadTracks(dao) { partialTracks ->
+            val sortedPartial = partialTracks.sortedForLibrary()
+            onPartial(
+                CachedLibrary(
+                    tracks = sortedPartial.map { it.track },
+                    favorites = favorites,
+                    snapshot = sortedPartial.map { it.toSnapshot() },
+                ),
+            )
+        }
+        val vgmTracks = if (BuildConfig.IS_VGM_BUILD) {
+            vgmFileScanner.loadTracks(dao) { partialTracks ->
+                val sortedPartial = (audioTracks + partialTracks)
+                    .distinctBy { it.track.uri }
+                    .sortedForLibrary()
+                onPartial(
+                    CachedLibrary(
+                        tracks = sortedPartial.map { it.track },
+                        favorites = favorites,
+                        snapshot = sortedPartial.map { it.toSnapshot() },
+                    ),
+                )
+            }
         } else {
-            audioTracks
+            emptyList()
+        }
+
+        dao.replaceSourceTracks(LibrarySource.MediaStore, audioTracks.map { it.toEntity() })
+        if (BuildConfig.IS_VGM_BUILD) {
+            val vgmEntities = vgmTracks.map { it.toEntity() }
+            dao.replaceSourceTracks(LibrarySource.Vgm, vgmEntities)
+            dao.replaceVgmMetadata(vgmEntities.map { it.toVgmMetadata() })
+        } else {
+            dao.replaceSourceTracks(LibrarySource.Vgm, emptyList())
+        }
+
+        val cachedTracks = dao.loadTracks()
+        dao.replaceDerivedCaches(cachedTracks)
+        CachedLibrary(
+            tracks = cachedTracks.map { it.toTrack() },
+            favorites = favorites,
+            snapshot = cachedTracks.map { it.toSnapshot() },
+        )
+    }
+
+    suspend fun setFavorite(trackId: Long, favorite: Boolean) = withContext(Dispatchers.IO) {
+        if (favorite) {
+            dao.upsertFavorite(FavoriteEntity(trackId))
+        } else {
+            dao.deleteFavorite(trackId)
         }
     }
 
@@ -360,7 +508,10 @@ class LibraryScanner(context: Context) {
 }
 
 class MediaStoreScanner(private val context: Context) {
-    fun loadTracks(): List<Track> {
+    suspend fun loadTracks(
+        dao: LibraryDao,
+        onPartial: suspend (List<ScannedTrack>) -> Unit = {},
+    ): List<ScannedTrack> {
         val collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
         val projection = buildList {
             add(MediaStore.Audio.Media._ID)
@@ -370,12 +521,14 @@ class MediaStoreScanner(private val context: Context) {
             add(MediaStore.Audio.Media.DURATION)
             add(MediaStore.Audio.Media.ALBUM_ID)
             add(MediaStore.Audio.Media.DISPLAY_NAME)
+            add(MediaStore.Audio.Media.DATE_MODIFIED)
+            add(MediaStore.Audio.Media.SIZE)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) add(MediaStore.Audio.Media.RELATIVE_PATH)
             @Suppress("DEPRECATION")
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) add(MediaStore.Audio.Media.DATA)
         }.toTypedArray()
 
-        val tracks = mutableListOf<Track>()
+        val scanned = mutableListOf<ScannedTrack>()
         context.contentResolver.query(
             collection,
             projection,
@@ -389,6 +542,8 @@ class MediaStoreScanner(private val context: Context) {
             val albumColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
             val durationColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
             val albumIdColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
+            val dateModifiedColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_MODIFIED)
+            val sizeColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE)
             val relativePathColumn = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 cursor.getColumnIndex(MediaStore.Audio.Media.RELATIVE_PATH)
             } else {
@@ -403,34 +558,110 @@ class MediaStoreScanner(private val context: Context) {
                 val artist = cursor.getString(artistColumn)?.takeIf { it.isNotBlank() } ?: "Unknown artist"
                 val album = cursor.getString(albumColumn)?.takeIf { it.isNotBlank() } ?: "Unknown album"
                 val folder = cursor.getStringOrNull(relativePathColumn)?.trimEnd('/') ?: "Music"
-                tracks += Track(
-                    id = id,
-                    title = title,
-                    artist = artist,
-                    album = album,
-                    durationMs = cursor.getLong(durationColumn).coerceAtLeast(0L),
-                    uri = uri,
-                    albumId = cursor.getLong(albumIdColumn),
-                    folder = folder,
+                scanned += ScannedTrack(
+                    track = Track(
+                        id = id,
+                        title = title,
+                        artist = artist,
+                        album = album,
+                        durationMs = cursor.getLong(durationColumn).coerceAtLeast(0L),
+                        uri = uri,
+                        albumId = cursor.getLong(albumIdColumn),
+                        folder = folder,
+                    ),
+                    cacheKey = uri.toString(),
+                    source = LibrarySource.MediaStore,
+                    lastModifiedMs = cursor.getLong(dateModifiedColumn).coerceAtLeast(0L) * 1_000L,
+                    sizeBytes = cursor.getLong(sizeColumn).coerceAtLeast(0L),
                 )
+                if (scanned.size == 1) {
+                    onPartial(scanned.reuseUnchangedCache(dao))
+                }
             }
         }
-        return tracks
+        return scanned.reuseUnchangedCache(dao)
+    }
+
+    private suspend fun List<ScannedTrack>.reuseUnchangedCache(
+        dao: LibraryDao,
+    ): List<ScannedTrack> {
+        if (isEmpty()) return emptyList()
+        val cached = dao.loadTracksByCacheKey(map { it.cacheKey }).associateBy { it.cacheKey }
+        return map { scanned ->
+            val cachedTrack = cached[scanned.cacheKey]
+            if (
+                cachedTrack != null &&
+                cachedTrack.lastModifiedMs == scanned.lastModifiedMs &&
+                cachedTrack.sizeBytes == scanned.sizeBytes
+            ) {
+                scanned.copy(track = cachedTrack.toTrack())
+            } else {
+                scanned
+            }
+        }
     }
 }
 
+private fun List<ScannedTrack>.sortedForLibrary(): List<ScannedTrack> =
+    sortedBy { it.track.title.lowercase(Locale.getDefault()) }
+
 class VgmFileScanner(private val context: Context) {
-    fun loadTracks(): List<Track> {
-        val tracks = mutableListOf<Track>()
+    suspend fun loadTracks(
+        dao: LibraryDao,
+        onPartial: suspend (List<ScannedTrack>) -> Unit = {},
+    ): List<ScannedTrack> {
+        val files = mutableListOf<File>()
         scanRoots().forEach { root ->
             root.walkReadableFiles { file ->
                 if (!file.isVgmFile()) return@walkReadableFiles
-                tracks += file.toVgmTrack()
+                files += file
+                if (files.size == 1) {
+                    onPartial(listOf(file.toScannedTrack(emptyMap())))
+                }
             }
         }
-        return tracks
-            .distinctBy { it.uri }
-            .sortedWith(compareBy({ it.folder.lowercase(Locale.ROOT) }, { it.title.lowercase(Locale.ROOT) }))
+        val cached = if (files.isEmpty()) {
+            emptyMap()
+        } else {
+            dao.loadVgmMetadata(files.map { it.absolutePath }).associateBy { it.path }
+        }
+        return files
+            .map { file -> file.toScannedTrack(cached) }
+            .distinctBy { it.track.uri }
+            .sortedWith(compareBy({ it.track.folder.lowercase(Locale.ROOT) }, { it.track.title.lowercase(Locale.ROOT) }))
+    }
+
+    private fun File.toScannedTrack(
+        cached: Map<String, me.ayra.music.data.VgmMetadataEntity>,
+    ): ScannedTrack {
+        val lastModifiedMs = lastModified().coerceAtLeast(0L)
+        val sizeBytes = length().coerceAtLeast(0L)
+        val cachedMetadata = cached[absolutePath]
+        val track = if (
+            cachedMetadata != null &&
+            cachedMetadata.lastModifiedMs == lastModifiedMs &&
+            cachedMetadata.sizeBytes == sizeBytes
+        ) {
+            Track(
+                id = stableVgmTrackId(absolutePath),
+                title = cachedMetadata.title,
+                artist = cachedMetadata.artist,
+                album = cachedMetadata.album,
+                durationMs = cachedMetadata.durationMs,
+                uri = Uri.fromFile(this),
+                albumId = 0L,
+                folder = cachedMetadata.folder,
+            )
+        } else {
+            toVgmTrack()
+        }
+        return ScannedTrack(
+            track = track,
+            cacheKey = absolutePath,
+            source = LibrarySource.Vgm,
+            lastModifiedMs = lastModifiedMs,
+            sizeBytes = sizeBytes,
+        )
     }
 
     private fun scanRoots(): List<File> {
@@ -459,7 +690,7 @@ class VgmFileScanner(private val context: Context) {
             .takeIf { it.exists() && it.isDirectory }
     }
 
-    private fun File.walkReadableFiles(onFile: (File) -> Unit) {
+    private suspend fun File.walkReadableFiles(onFile: suspend (File) -> Unit) {
         val pending = ArrayDeque<File>()
         pending += this
         while (pending.isNotEmpty()) {

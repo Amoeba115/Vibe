@@ -96,6 +96,7 @@ import coil3.ImageLoader
 import coil3.request.ImageRequest
 import coil3.request.SuccessResult
 import coil3.compose.AsyncImage
+import coil3.compose.SubcomposeAsyncImage
 import coil3.toBitmap
 import com.google.android.material.color.utilities.TonalPalette
 import kotlinx.coroutines.Dispatchers
@@ -142,11 +143,27 @@ fun AlbumArt(
         contentAlignment = Alignment.Center,
     ) {
         if (artwork != null) {
-            AsyncImage(
+            SubcomposeAsyncImage(
                 model = artwork,
                 contentDescription = null,
                 contentScale = contentScale,
                 modifier = Modifier.fillMaxSize(),
+                loading = {
+                    Icon(
+                        Icons.Default.MusicNote,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(30.dp).padding(12.dp),
+                    )
+                },
+                error = {
+                    Icon(
+                        Icons.Default.MusicNote,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(30.dp).padding(12.dp),
+                    )
+                },
             )
         } else {
             Icon(

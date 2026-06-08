@@ -1,4 +1,4 @@
-package me.ayra.gallery.shared.utils
+package me.ayra.music.util
 
 class Event<T> {
     private val observers = mutableSetOf<(T) -> Unit>()
