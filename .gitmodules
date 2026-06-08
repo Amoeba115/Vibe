@@ -1,0 +1,6 @@
+[submodule "vgmstream-android"]
+	path = vgmstream-android
+	url = https://github.com/AyraHikari/vgmstream-android.git
+[submodule "third_party/vgmstream"]
+	path = third_party/vgmstream
+	url = https://github.com/vgmstream/vgmstream.git

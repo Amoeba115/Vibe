@@ -22,12 +22,31 @@ android {
     }
 
     buildTypes {
+        debug {
+            buildConfigField("boolean", "IS_VGM_BUILD", "false")
+        }
         release {
             isMinifyEnabled = false
+            buildConfigField("boolean", "IS_VGM_BUILD", "false")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+        }
+        create("debugVGM") {
+            initWith(getByName("debug"))
+            matchingFallbacks += listOf("debug")
+            //applicationIdSuffix = ".vgm.debug"
+            versionNameSuffix = "-vgm-debug"
+            isDebuggable = true
+            buildConfigField("boolean", "IS_VGM_BUILD", "true")
+        }
+        create("releaseVGM") {
+            initWith(getByName("release"))
+            matchingFallbacks += listOf("release")
+            //applicationIdSuffix = ".vgm"
+            versionNameSuffix = "-vgm"
+            buildConfigField("boolean", "IS_VGM_BUILD", "true")
         }
     }
     compileOptions {
@@ -36,6 +55,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -57,6 +77,10 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.google.material)
     implementation(libs.androidx.palette.ktx)
+    add("debugVGMImplementation", project(":vgmstream-core"))
+    add("debugVGMImplementation", project(":vgmstream-media3"))
+    add("releaseVGMImplementation", project(":vgmstream-core"))
+    add("releaseVGMImplementation", project(":vgmstream-media3"))
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

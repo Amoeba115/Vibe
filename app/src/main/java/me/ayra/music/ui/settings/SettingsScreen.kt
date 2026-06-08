@@ -22,21 +22,29 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import me.ayra.music.BuildConfig
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(onBack: () -> Unit) {
-    BackHandler(onBack = onBack)
+    var showVgmSettings by rememberSaveable { mutableStateOf(false) }
+    BackHandler {
+        if (showVgmSettings) showVgmSettings = false else onBack()
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Settings") },
+                title = { Text(if (showVgmSettings) "vgmstream" else "Settings") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = { if (showVgmSettings) showVgmSettings = false else onBack() }) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                     }
                 },
@@ -45,26 +53,59 @@ fun SettingsScreen(onBack: () -> Unit) {
         },
         containerColor = MaterialTheme.colorScheme.background,
     ) { innerPadding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
-            contentPadding = PaddingValues(20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            item { SettingsRow("Dynamic color", "Uses your Material You system palette") }
-            item { SettingsRow("Player", "Media3 ExoPlayer playback core") }
-            item { SettingsRow("Library", "Local device audio from MediaStore") }
-            item { SettingsRow("About", "Music 1.0") }
+        if (showVgmSettings) {
+            VgmSettingsScreen(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding),
+            )
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding),
+                contentPadding = PaddingValues(20.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                item { SettingsRow("Dynamic color", "Uses your Material You system palette") }
+                item { SettingsRow("Player", "Media3 playback core") }
+                item { SettingsRow("Library", "Local device audio from MediaStore") }
+                if (BuildConfig.IS_VGM_BUILD) {
+                    item {
+                        SettingsRow(
+                            title = "vgmstream",
+                            subtitle = "Game audio scan and Media3 adapter settings",
+                            onClick = { showVgmSettings = true },
+                        )
+                    }
+                }
+                item { SettingsRow("About", "Music 1.0") }
+            }
         }
     }
 }
 
 @Composable
-private fun SettingsRow(title: String, subtitle: String) {
+private fun VgmSettingsScreen(modifier: Modifier = Modifier) {
+    LazyColumn(
+        modifier = modifier,
+        contentPadding = PaddingValues(20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item { SettingsRow("File scan", "Adds vgmstream formats from MediaStore Files") }
+        item { SettingsRow("Playback", "Uses vgmstream-media3 VgmPlayerAdapter") }
+        item { SettingsRow("Loop mode", "Normal loop behavior for supported formats") }
+        item { SettingsRow("Channel output", "Automatic channel output") }
+    }
+}
+
+@Composable
+private fun SettingsRow(title: String, subtitle: String, onClick: (() -> Unit)? = null) {
     Surface(
         shape = RoundedCornerShape(18.dp),
         color = MaterialTheme.colorScheme.surfaceContainer,
+        onClick = onClick ?: {},
+        enabled = onClick != null,
     ) {
         ListItem(
             headlineContent = { Text(title) },
