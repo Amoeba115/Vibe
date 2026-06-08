@@ -88,6 +88,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import me.ayra.music.AlbumGroup
+import me.ayra.music.ArtistGroup
 import me.ayra.music.FolderGroup
 import me.ayra.music.LibraryState
 import me.ayra.music.Track
@@ -106,6 +107,7 @@ private const val ROUTE_HOME = "home"
 private const val ROUTE_SEARCH = "search"
 private const val ROUTE_FOLDER_PREFIX = "folder:"
 private const val ROUTE_ALBUM_PREFIX = "album:"
+private const val ROUTE_ARTIST_PREFIX = "artist:"
 
 @OptIn(ExperimentalAnimationApi::class)
 @Composable
@@ -149,6 +151,7 @@ fun MainScreen(
                     onToggleFavorite = onToggleFavorite,
                     onFolderClick = { route = ROUTE_FOLDER_PREFIX + it.path },
                     onAlbumClick = { route = ROUTE_ALBUM_PREFIX + it.id },
+                    onArtistClick = { route = ROUTE_ARTIST_PREFIX + it.name },
                     onSearch = { route = ROUTE_SEARCH },
                     initialTabIndex = initialTabIndex,
                     onTabSelected = onTabSelected,
@@ -170,6 +173,9 @@ fun MainScreen(
                     val folderPath = currentRoute.takeIf { it.startsWith(ROUTE_FOLDER_PREFIX) }
                         ?.removePrefix(ROUTE_FOLDER_PREFIX)
                     val folder = folderPath?.let { path -> library.folders.firstOrNull { it.path == path } }
+                    val artistName = currentRoute.takeIf { it.startsWith(ROUTE_ARTIST_PREFIX) }
+                        ?.removePrefix(ROUTE_ARTIST_PREFIX)
+                    val artist = artistName?.let { name -> library.artists.firstOrNull { it.name == name } }
                     when {
                         album != null -> AlbumDetailScreen(
                             album = album,
@@ -177,6 +183,18 @@ fun MainScreen(
                             onSettings = onSettings,
                             onSearch = { route = ROUTE_SEARCH },
                             onTrackClick = onTrackClick,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+
+                        artist != null -> ArtistDetailScreen(
+                            artist = artist,
+                            albums = library.albums
+                                .filter { albumGroup -> albumGroup.tracks.any { it.artist == artist.name } },
+                            onBack = { route = ROUTE_HOME },
+                            onSettings = onSettings,
+                            onSearch = { route = ROUTE_SEARCH },
+                            onTrackClick = onTrackClick,
+                            onAlbumClick = { route = ROUTE_ALBUM_PREFIX + it.id },
                             modifier = Modifier.fillMaxSize(),
                         )
 
@@ -202,6 +220,7 @@ fun MainScreen(
                             onToggleFavorite = onToggleFavorite,
                             onFolderClick = { route = ROUTE_FOLDER_PREFIX + it.path },
                             onAlbumClick = { route = ROUTE_ALBUM_PREFIX + it.id },
+                            onArtistClick = { route = ROUTE_ARTIST_PREFIX + it.name },
                             onSearch = { route = ROUTE_SEARCH },
                             initialTabIndex = initialTabIndex,
                             onTabSelected = onTabSelected,
@@ -224,6 +243,7 @@ private fun HomeScreen(
     onToggleFavorite: (Long) -> Unit,
     onFolderClick: (FolderGroup) -> Unit,
     onAlbumClick: (AlbumGroup) -> Unit,
+    onArtistClick: (ArtistGroup) -> Unit,
     onSearch: () -> Unit,
     initialTabIndex: Int,
     onTabSelected: (Int) -> Unit,
@@ -302,7 +322,7 @@ private fun HomeScreen(
                     HomeTab.Playlist -> PlaylistTab(library, onTrackClick)
                     HomeTab.Track -> TrackTab(library, onTrackClick)
                     HomeTab.Album -> AlbumTab(library, onAlbumClick)
-                    HomeTab.Artist -> ArtistTab(library, onTrackClick)
+                    HomeTab.Artist -> ArtistTab(library, onArtistClick)
                     HomeTab.Folder -> FolderTab(library, onFolderClick)
                 }
             }
@@ -772,7 +792,7 @@ private fun AlbumDetailScreen(
 }
 
 @Composable
-private fun ArtistTab(library: LibraryState, onTrackClick: (Track, List<Track>) -> Unit) {
+private fun ArtistTab(library: LibraryState, onArtistClick: (ArtistGroup) -> Unit) {
     val listState = rememberLazyListState()
     IndexedListWithRail(listState = listState) {
         item { SortHeader("Name") }
@@ -781,10 +801,268 @@ private fun ArtistTab(library: LibraryState, onTrackClick: (Track, List<Track>) 
                 artwork = artist.tracks.firstOrNull()?.albumArtUri,
                 title = artist.name,
                 subtitle = "${artist.albums} albums | ${artist.tracks.size} tracks",
-                onClick = { artist.tracks.firstOrNull()?.let { onTrackClick(it, artist.tracks) } },
+                onClick = { onArtistClick(artist) },
             )
         }
         if (library.artists.isEmpty()) item { EmptyInline("No artists found") }
+    }
+}
+
+private enum class ArtistDetailTab(val label: String) {
+    Track("Track"),
+    Album("Album"),
+}
+
+@Composable
+private fun ArtistDetailScreen(
+    artist: ArtistGroup,
+    albums: List<AlbumGroup>,
+    onBack: () -> Unit,
+    onSettings: () -> Unit,
+    onSearch: () -> Unit,
+    onTrackClick: (Track, List<Track>) -> Unit,
+    onAlbumClick: (AlbumGroup) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val tabs = ArtistDetailTab.entries
+    val pagerState = rememberPagerState(initialPage = 0) { tabs.size }
+    val coroutineScope = rememberCoroutineScope()
+    val artistTracks = remember(artist.tracks) { artist.tracks.sortedForArtistPlayback() }
+    val artistAlbums = remember(albums) {
+        albums.sortedWith(compareBy<AlbumGroup>({ it.releaseYear().takeIf { year -> year > 0 } ?: Int.MAX_VALUE }, { it.title.lowercase() }))
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 8.dp, top = 18.dp, end = 8.dp, bottom = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.primary)
+            }
+            Text(
+                text = artist.name,
+                color = MaterialTheme.colorScheme.primary,
+                fontSize = 28.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            IconButton(onClick = { }) {
+                Icon(Icons.Default.FavoriteBorder, contentDescription = "Favorite artist", tint = MaterialTheme.colorScheme.primary)
+            }
+            IconButton(onClick = onSearch) {
+                Icon(Icons.Default.Search, contentDescription = "Search", tint = MaterialTheme.colorScheme.primary)
+            }
+            IconButton(onClick = onSettings) {
+                Icon(Icons.Default.MoreVert, contentDescription = "Menu", tint = MaterialTheme.colorScheme.primary)
+            }
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            tabs.forEachIndexed { index, tab ->
+                val selected = pagerState.currentPage == index
+                Surface(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 8.dp)
+                        .clickable {
+                            coroutineScope.launch { pagerState.animateScrollToPage(index) }
+                        },
+                    shape = RoundedCornerShape(28.dp),
+                    color = if (selected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent,
+                ) {
+                    Text(
+                        text = "${tab.label} (${if (tab == ArtistDetailTab.Track) artistTracks.size else artistAlbums.size})",
+                        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 18.sp,
+                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(vertical = 14.dp),
+                    )
+                }
+            }
+        }
+
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxSize(),
+        ) { page ->
+            when (tabs[page]) {
+                ArtistDetailTab.Track -> ArtistTrackTab(
+                    albums = artistAlbums,
+                    tracks = artistTracks,
+                    onTrackClick = onTrackClick,
+                )
+
+                ArtistDetailTab.Album -> ArtistAlbumTab(
+                    albums = artistAlbums,
+                    onAlbumClick = onAlbumClick,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ArtistTrackTab(
+    albums: List<AlbumGroup>,
+    tracks: List<Track>,
+    onTrackClick: (Track, List<Track>) -> Unit,
+) {
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(top = 8.dp)
+            .clip(RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainer),
+        contentPadding = PaddingValues(start = 20.dp, top = 18.dp, end = 20.dp, bottom = 116.dp),
+    ) {
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceVariant) {
+                    IconButton(
+                        onClick = {
+                            val shuffledTracks = tracks.shuffled()
+                            shuffledTracks.firstOrNull()?.let { onTrackClick(it, shuffledTracks) }
+                        },
+                        modifier = Modifier.size(48.dp),
+                    ) {
+                        Icon(Icons.Default.Shuffle, contentDescription = "Shuffle")
+                    }
+                }
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(start = 12.dp),
+                ) {
+                    IconButton(
+                        onClick = { tracks.firstOrNull()?.let { onTrackClick(it, tracks) } },
+                        modifier = Modifier.size(48.dp),
+                    ) {
+                        Icon(Icons.Default.PlayArrow, contentDescription = "Play", tint = MaterialTheme.colorScheme.onPrimary)
+                    }
+                }
+            }
+        }
+
+        albums.forEach { album ->
+            val albumTracks = album.tracks.sortedForAlbumPlayback()
+            val albumGroups = albumTracks.groupForAlbumDetail()
+            item(key = "artist-album-${album.id}") {
+                ArtistAlbumHeader(album)
+            }
+            albumGroups.forEachIndexed { groupIndex, group ->
+                if (albumTracks.any { it.discNumber > 0 } || albumTracks.map { it.folder }.distinct().size > 1) {
+                    item(key = "artist-album-${album.id}-group-${group.name}") {
+                        Text(
+                            text = group.name,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = if (groupIndex == 0) 12.dp else 24.dp, bottom = 8.dp),
+                        )
+                    }
+                }
+                items(group.tracks, key = { "artist-track-${album.id}-${it.id}" }) { track ->
+                    val index = group.tracks.indexOf(track)
+                    val isLastTrack = album == albums.lastOrNull() &&
+                        groupIndex == albumGroups.lastIndex &&
+                        index == group.tracks.lastIndex
+                    AlbumTrackRow(
+                        index = index + 1,
+                        track = track,
+                        showDivider = !isLastTrack,
+                        onClick = { onTrackClick(track, albumTracks) },
+                    )
+                }
+            }
+        }
+
+        if (tracks.isEmpty()) item { EmptyInline("No tracks found") }
+    }
+}
+
+@Composable
+private fun ArtistAlbumHeader(album: AlbumGroup) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 20.dp, bottom = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AlbumArt(album.tracks.firstOrNull()?.albumArtUri, Modifier.size(88.dp), RoundedCornerShape(16.dp))
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = 16.dp),
+        ) {
+            Text(
+                text = album.title,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                fontSize = 21.sp,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = album.yearLabel(),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                fontSize = 15.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ArtistAlbumTab(
+    albums: List<AlbumGroup>,
+    onAlbumClick: (AlbumGroup) -> Unit,
+) {
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(2),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(top = 8.dp)
+            .clip(RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainer),
+        contentPadding = PaddingValues(start = 20.dp, top = 18.dp, end = 20.dp, bottom = 116.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
+    ) {
+        item(span = { GridItemSpan(maxLineSpan) }) { SortHeader("Release") }
+        items(albums, key = { it.id }) { album ->
+            ArtworkCard(
+                title = album.title,
+                subtitle = album.yearLabel(),
+                artwork = album.tracks.firstOrNull()?.albumArtUri,
+                modifier = Modifier.clickable { onAlbumClick(album) },
+            )
+        }
+        if (albums.isEmpty()) {
+            item(span = { GridItemSpan(maxLineSpan) }) { EmptyInline("No albums found") }
+        }
     }
 }
 
@@ -1012,6 +1290,23 @@ private data class AlbumTrackGroup(
 
 private fun List<Track>.sortedForAlbumPlayback(): List<Track> =
     groupForAlbumDetail().flatMap { it.tracks }
+
+private fun List<Track>.sortedForArtistPlayback(): List<Track> =
+    groupBy { it.albumId }
+        .values
+        .sortedWith(
+            compareBy<List<Track>>(
+                { tracks -> tracks.mapNotNull { it.year.takeIf { year -> year > 0 } }.minOrNull() ?: Int.MAX_VALUE },
+                { tracks -> tracks.firstOrNull()?.album?.lowercase().orEmpty() },
+            ),
+        )
+        .flatMap { it.sortedForAlbumPlayback() }
+
+private fun AlbumGroup.releaseYear(): Int =
+    tracks.mapNotNull { it.year.takeIf { year -> year > 0 } }.minOrNull() ?: 0
+
+private fun AlbumGroup.yearLabel(): String =
+    releaseYear().takeIf { it > 0 }?.toString() ?: "${tracks.size} tracks"
 
 private fun List<Track>.groupForAlbumDetail(): List<AlbumTrackGroup> {
     if (any { it.discNumber > 0 }) {

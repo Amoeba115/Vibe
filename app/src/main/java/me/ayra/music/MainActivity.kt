@@ -119,6 +119,7 @@ data class Track(
     val folder: String,
     val trackNumber: Int = 0,
     val discNumber: Int = 0,
+    val year: Int = 0,
 ) {
     val albumArtUri: Uri
         get() = ContentUris.withAppendedId(Uri.parse("content://media/external/audio/albumart"), albumId)
@@ -523,6 +524,7 @@ class MediaStoreScanner(private val context: Context) {
             add(MediaStore.Audio.Media.DURATION)
             add(MediaStore.Audio.Media.ALBUM_ID)
             add(MediaStore.Audio.Media.TRACK)
+            add(MediaStore.Audio.Media.YEAR)
             add(MediaStore.Audio.Media.DISPLAY_NAME)
             add(MediaStore.Audio.Media.DATE_MODIFIED)
             add(MediaStore.Audio.Media.SIZE)
@@ -546,6 +548,7 @@ class MediaStoreScanner(private val context: Context) {
             val durationColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
             val albumIdColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
             val trackNumberColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TRACK)
+            val yearColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.YEAR)
             val dateModifiedColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_MODIFIED)
             val sizeColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE)
             val relativePathColumn = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -575,6 +578,7 @@ class MediaStoreScanner(private val context: Context) {
                         folder = folder,
                         trackNumber = trackMetadata.trackNumber,
                         discNumber = trackMetadata.discNumber,
+                        year = cursor.getInt(yearColumn).takeIf { it > 0 } ?: 0,
                     ),
                     cacheKey = uri.toString(),
                     source = LibrarySource.MediaStore,
