@@ -11,11 +11,12 @@ import androidx.sqlite.db.SupportSQLiteDatabase
     entities = [
         TrackEntity::class,
         FavoriteEntity::class,
+        FavoriteItemEntity::class,
         AlbumCacheEntity::class,
         ArtistCacheEntity::class,
         VgmMetadataEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
 abstract class LibraryDatabase : RoomDatabase() {
@@ -32,7 +33,7 @@ abstract class LibraryDatabase : RoomDatabase() {
                     LibraryDatabase::class.java,
                     "music_library.db",
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .fallbackToDestructiveMigration(false)
                     .build()
                     .also { instance = it }
@@ -54,6 +55,21 @@ abstract class LibraryDatabase : RoomDatabase() {
         private val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE tracks ADD COLUMN year INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS favorite_items (
+                        type TEXT NOT NULL,
+                        favorite_key TEXT NOT NULL,
+                        added_at INTEGER NOT NULL,
+                        PRIMARY KEY(type, favorite_key)
+                    )
+                    """.trimIndent(),
+                )
             }
         }
     }

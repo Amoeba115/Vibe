@@ -34,6 +34,15 @@ interface LibraryDao {
     @Query("DELETE FROM favorite_tracks WHERE track_id = :trackId")
     suspend fun deleteFavorite(trackId: Long)
 
+    @Query("SELECT * FROM favorite_items ORDER BY added_at DESC")
+    suspend fun loadFavoriteItems(): List<FavoriteItemEntity>
+
+    @Upsert
+    suspend fun upsertFavoriteItem(favorite: FavoriteItemEntity)
+
+    @Query("DELETE FROM favorite_items WHERE type = :type AND favorite_key = :key")
+    suspend fun deleteFavoriteItem(type: String, key: String)
+
     @Upsert
     suspend fun upsertAlbums(albums: List<AlbumCacheEntity>)
 

@@ -56,6 +56,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.ayra.music.data.FavoriteEntity
+import me.ayra.music.data.FavoriteItemEntity
 import me.ayra.music.data.LibraryDao
 import me.ayra.music.data.LibraryDatabase
 import me.ayra.music.data.LibrarySource
@@ -129,16 +130,28 @@ data class AlbumGroup(val id: Long, val title: String, val artist: String, val t
 data class ArtistGroup(val name: String, val albums: Int, val tracks: List<Track>)
 data class FolderGroup(val name: String, val path: String, val tracks: List<Track>)
 data class PlaylistGroup(val title: String, val tracks: List<Track>, val artwork: Uri?)
+data class FavoriteItem(val type: String, val key: String, val addedAt: Long)
+
+object FavoriteType {
+    const val Track = "track"
+    const val Artist = "artist"
+    const val Folder = "folder"
+    const val Album = "album"
+}
 
 data class LibraryState(
     val loading: Boolean = false,
     val permissionGranted: Boolean = false,
     val tracks: List<Track> = emptyList(),
     val favorites: Set<Long> = emptySet(),
+    val favoriteItems: List<FavoriteItem> = emptyList(),
     val playlists: List<PlaylistGroup> = emptyList(),
     val error: String? = null,
 ) {
     val favoriteTracks: List<Track> get() = tracks.filter { it.id in favorites }
+    fun isFavoriteItem(type: String, key: String): Boolean =
+        favoriteItems.any { it.type == type && it.key == key }
+
     val albums: List<AlbumGroup>
         get() = tracks.groupBy { it.albumId }
             .map { (_, items) -> AlbumGroup(items.first().albumId, items.first().album, items.first().artist, items) }
@@ -222,6 +235,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                             loading = permissionGranted && cached.tracks.isEmpty(),
                             tracks = cached.tracks,
                             favorites = cached.favorites,
+                            favoriteItems = cached.favoriteItems,
                             playlists = libraryScanner.buildPlaylists(cached.tracks),
                             error = null,
                         )
@@ -245,6 +259,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                                     loading = false,
                                     tracks = partial.tracks,
                                     favorites = partial.favorites,
+                                    favoriteItems = partial.favoriteItems,
                                     playlists = libraryScanner.buildPlaylists(partial.tracks),
                                     error = null,
                                 )
@@ -264,6 +279,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                             loading = false,
                             tracks = refreshed.tracks,
                             favorites = refreshed.favorites,
+                            favoriteItems = refreshed.favoriteItems,
                             playlists = libraryScanner.buildPlaylists(refreshed.tracks),
                             error = null,
                         )
@@ -329,14 +345,35 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun toggleFavorite(trackId: Long) {
+        toggleFavoriteItem(FavoriteType.Track, trackId.toString())
+    }
+
+    fun toggleFavoriteItem(type: String, key: String) {
         var favoriteNow = false
+        val normalizedKey = key.trim()
+        if (normalizedKey.isEmpty()) return
         _library.update { state ->
-            val favorites = if (trackId in state.favorites) state.favorites - trackId else state.favorites + trackId
-            favoriteNow = trackId in favorites
-            state.copy(favorites = favorites)
+            val exists = state.favoriteItems.any { it.type == type && it.key == normalizedKey }
+            favoriteNow = !exists
+            val updatedItems = if (exists) {
+                state.favoriteItems.filterNot { it.type == type && it.key == normalizedKey }
+            } else {
+                listOf(FavoriteItem(type, normalizedKey, System.currentTimeMillis())) + state.favoriteItems
+            }
+            val favorites = if (type == FavoriteType.Track) {
+                val trackId = normalizedKey.toLongOrNull()
+                when {
+                    trackId == null -> state.favorites
+                    favoriteNow -> state.favorites + trackId
+                    else -> state.favorites - trackId
+                }
+            } else {
+                state.favorites
+            }
+            state.copy(favorites = favorites, favoriteItems = updatedItems)
         }
         viewModelScope.launch {
-            libraryScanner.setFavorite(trackId, favoriteNow)
+            libraryScanner.setFavoriteItem(type, normalizedKey, favoriteNow)
         }
     }
 
@@ -429,8 +466,26 @@ private fun Track.toMediaItem(): MediaItem {
 data class CachedLibrary(
     val tracks: List<Track>,
     val favorites: Set<Long>,
+    val favoriteItems: List<FavoriteItem>,
     val snapshot: List<TrackSnapshot> = emptyList(),
 )
+
+private suspend fun LibraryDao.loadLibraryFavorites(): List<FavoriteItem> {
+    val itemFavorites = loadFavoriteItems().map { FavoriteItem(it.type, it.key, it.addedAt) }
+    val itemTrackIds = itemFavorites
+        .filter { it.type == FavoriteType.Track }
+        .mapNotNull { it.key.toLongOrNull() }
+        .toSet()
+    val legacyTrackFavorites = loadFavoriteIds()
+        .filterNot { it in itemTrackIds }
+        .map { FavoriteItem(FavoriteType.Track, it.toString(), 0L) }
+    return (itemFavorites + legacyTrackFavorites).sortedByDescending { it.addedAt }
+}
+
+private fun List<FavoriteItem>.trackIds(): Set<Long> =
+    filter { it.type == FavoriteType.Track }
+        .mapNotNull { it.key.toLongOrNull() }
+        .toSet()
 
 class LibraryScanner(context: Context) {
     private val dao = LibraryDatabase.get(context).libraryDao()
@@ -439,21 +494,25 @@ class LibraryScanner(context: Context) {
 
     suspend fun loadCachedLibrary(): CachedLibrary = withContext(Dispatchers.IO) {
         val cachedTracks = dao.loadTracks()
+        val favoriteItems = dao.loadLibraryFavorites()
         CachedLibrary(
             tracks = cachedTracks.map { it.toTrack() },
-            favorites = dao.loadFavoriteIds().toSet(),
+            favorites = favoriteItems.trackIds(),
+            favoriteItems = favoriteItems,
             snapshot = cachedTracks.map { it.toSnapshot() },
         )
     }
 
     suspend fun refreshLibrary(onPartial: suspend (CachedLibrary) -> Unit = {}): CachedLibrary = withContext(Dispatchers.IO) {
-        val favorites = dao.loadFavoriteIds().toSet()
+        val favoriteItems = dao.loadLibraryFavorites()
+        val favorites = favoriteItems.trackIds()
         val audioTracks = mediaStoreScanner.loadTracks(dao) { partialTracks ->
             val sortedPartial = partialTracks.sortedForLibrary()
             onPartial(
                 CachedLibrary(
                     tracks = sortedPartial.map { it.track },
                     favorites = favorites,
+                    favoriteItems = favoriteItems,
                     snapshot = sortedPartial.map { it.toSnapshot() },
                 ),
             )
@@ -467,6 +526,7 @@ class LibraryScanner(context: Context) {
                     CachedLibrary(
                         tracks = sortedPartial.map { it.track },
                         favorites = favorites,
+                        favoriteItems = favoriteItems,
                         snapshot = sortedPartial.map { it.toSnapshot() },
                     ),
                 )
@@ -489,15 +549,26 @@ class LibraryScanner(context: Context) {
         CachedLibrary(
             tracks = cachedTracks.map { it.toTrack() },
             favorites = favorites,
+            favoriteItems = favoriteItems,
             snapshot = cachedTracks.map { it.toSnapshot() },
         )
     }
 
     suspend fun setFavorite(trackId: Long, favorite: Boolean) = withContext(Dispatchers.IO) {
+        setFavoriteItem(FavoriteType.Track, trackId.toString(), favorite)
+    }
+
+    suspend fun setFavoriteItem(type: String, key: String, favorite: Boolean) = withContext(Dispatchers.IO) {
         if (favorite) {
-            dao.upsertFavorite(FavoriteEntity(trackId))
+            dao.upsertFavoriteItem(FavoriteItemEntity(type, key, System.currentTimeMillis()))
+            if (type == FavoriteType.Track) {
+                key.toLongOrNull()?.let { dao.upsertFavorite(FavoriteEntity(it)) }
+            }
         } else {
-            dao.deleteFavorite(trackId)
+            dao.deleteFavoriteItem(type, key)
+            if (type == FavoriteType.Track) {
+                key.toLongOrNull()?.let { dao.deleteFavorite(it) }
+            }
         }
     }
 
@@ -900,6 +971,7 @@ fun MusicApp(openPlayerRequest: Int = 0, viewModel: MusicViewModel = viewModel()
                         onSettings = { rootRoute = RootRoute.Settings },
                         onTrackClick = viewModel::playTrack,
                         onToggleFavorite = viewModel::toggleFavorite,
+                        onToggleFavoriteItem = viewModel::toggleFavoriteItem,
                         initialTabIndex = lastHomeTab,
                         onTabSelected = { tabIndex ->
                             lastHomeTab = tabIndex

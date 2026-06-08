@@ -42,6 +42,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.LibraryMusic
@@ -89,8 +90,10 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import me.ayra.music.AlbumGroup
 import me.ayra.music.ArtistGroup
+import me.ayra.music.FavoriteType
 import me.ayra.music.FolderGroup
 import me.ayra.music.LibraryState
+import me.ayra.music.PlaylistGroup
 import me.ayra.music.Track
 import me.ayra.music.ui.player.AlbumArt
 
@@ -117,6 +120,7 @@ fun MainScreen(
     onSettings: () -> Unit,
     onTrackClick: (Track, List<Track>) -> Unit,
     onToggleFavorite: (Long) -> Unit,
+    onToggleFavoriteItem: (String, String) -> Unit,
     initialTabIndex: Int,
     onTabSelected: (Int) -> Unit,
 ) {
@@ -149,6 +153,7 @@ fun MainScreen(
                     onSettings = onSettings,
                     onTrackClick = onTrackClick,
                     onToggleFavorite = onToggleFavorite,
+                    onToggleFavoriteItem = onToggleFavoriteItem,
                     onFolderClick = { route = ROUTE_FOLDER_PREFIX + it.path },
                     onAlbumClick = { route = ROUTE_ALBUM_PREFIX + it.id },
                     onArtistClick = { route = ROUTE_ARTIST_PREFIX + it.name },
@@ -183,6 +188,8 @@ fun MainScreen(
                             onSettings = onSettings,
                             onSearch = { route = ROUTE_SEARCH },
                             onTrackClick = onTrackClick,
+                            isFavorite = library.isFavoriteItem(FavoriteType.Album, album.id.toString()),
+                            onToggleFavorite = { onToggleFavoriteItem(FavoriteType.Album, album.id.toString()) },
                             modifier = Modifier.fillMaxSize(),
                         )
 
@@ -195,6 +202,8 @@ fun MainScreen(
                             onSearch = { route = ROUTE_SEARCH },
                             onTrackClick = onTrackClick,
                             onAlbumClick = { route = ROUTE_ALBUM_PREFIX + it.id },
+                            isFavorite = library.isFavoriteItem(FavoriteType.Artist, artist.name),
+                            onToggleFavorite = { onToggleFavoriteItem(FavoriteType.Artist, artist.name) },
                             modifier = Modifier.fillMaxSize(),
                         )
 
@@ -207,6 +216,8 @@ fun MainScreen(
                             onSearch = { route = ROUTE_SEARCH },
                             onTrackClick = onTrackClick,
                             onToggleFavorite = onToggleFavorite,
+                            isFavorite = library.isFavoriteItem(FavoriteType.Folder, folder.path),
+                            onToggleFolderFavorite = { onToggleFavoriteItem(FavoriteType.Folder, folder.path) },
                             modifier = Modifier.fillMaxSize(),
                         )
                         }
@@ -218,6 +229,7 @@ fun MainScreen(
                             onSettings = onSettings,
                             onTrackClick = onTrackClick,
                             onToggleFavorite = onToggleFavorite,
+                            onToggleFavoriteItem = onToggleFavoriteItem,
                             onFolderClick = { route = ROUTE_FOLDER_PREFIX + it.path },
                             onAlbumClick = { route = ROUTE_ALBUM_PREFIX + it.id },
                             onArtistClick = { route = ROUTE_ARTIST_PREFIX + it.name },
@@ -241,6 +253,7 @@ private fun HomeScreen(
     onSettings: () -> Unit,
     onTrackClick: (Track, List<Track>) -> Unit,
     onToggleFavorite: (Long) -> Unit,
+    onToggleFavoriteItem: (String, String) -> Unit,
     onFolderClick: (FolderGroup) -> Unit,
     onAlbumClick: (AlbumGroup) -> Unit,
     onArtistClick: (ArtistGroup) -> Unit,
@@ -318,7 +331,13 @@ private fun HomeScreen(
                 modifier = Modifier.fillMaxSize(),
             ) { page ->
                 when (tabs[page]) {
-                    HomeTab.Favorite -> FavoriteTab(library, onTrackClick)
+                    HomeTab.Favorite -> FavoriteTab(
+                        library = library,
+                        onTrackClick = onTrackClick,
+                        onArtistClick = onArtistClick,
+                        onAlbumClick = onAlbumClick,
+                        onFolderClick = onFolderClick,
+                    )
                     HomeTab.Playlist -> PlaylistTab(library, onTrackClick)
                     HomeTab.Track -> TrackTab(library, onTrackClick)
                     HomeTab.Album -> AlbumTab(library, onAlbumClick)
@@ -509,24 +528,43 @@ private fun LoadingState() {
 }
 
 @Composable
-private fun FavoriteTab(library: LibraryState, onTrackClick: (Track, List<Track>) -> Unit) {
-    val tracks = library.favoriteTracks
-    if (tracks.isEmpty()) {
-        EmptyPanel("Favorite tracks will appear here.")
+private fun FavoriteTab(
+    library: LibraryState,
+    onTrackClick: (Track, List<Track>) -> Unit,
+    onArtistClick: (ArtistGroup) -> Unit,
+    onAlbumClick: (AlbumGroup) -> Unit,
+    onFolderClick: (FolderGroup) -> Unit,
+) {
+    val favoriteCards = remember(library.favoriteItems, library.favoriteTracks, library.artists, library.albums, library.folders) {
+        library.favoriteCards()
+    }
+    if (favoriteCards.isEmpty()) {
+        EmptyPanel("Favorite tracks, artists, folders, and albums will appear here.")
         return
     }
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(20.dp, 18.dp, 20.dp, 116.dp),
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(2),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(top = 14.dp)
+            .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainer),
+        contentPadding = PaddingValues(start = 20.dp, top = 18.dp, end = 20.dp, bottom = 116.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        item {
-            ArtworkCard(
-                title = "Favorite tracks",
-                subtitle = "${tracks.size} tracks",
-                artwork = tracks.firstOrNull()?.albumArtUri,
-                modifier = Modifier
-                    .fillMaxWidth(0.52f)
-                    .clickable { onTrackClick(tracks.first(), tracks) },
+        item(span = { GridItemSpan(maxLineSpan) }) { SortHeader("Favorite date") }
+        items(favoriteCards, key = { "${it.type}:${it.key}" }) { card ->
+            FavoriteGridCard(
+                card = card,
+                modifier = Modifier.clickable {
+                    when (card.type) {
+                        FavoriteType.Track -> card.tracks.firstOrNull()?.let { onTrackClick(it, card.tracks) }
+                        FavoriteType.Artist -> card.artist?.let(onArtistClick)
+                        FavoriteType.Folder -> card.folder?.let(onFolderClick)
+                        FavoriteType.Album -> card.album?.let(onAlbumClick)
+                    }
+                },
             )
         }
     }
@@ -534,24 +572,33 @@ private fun FavoriteTab(library: LibraryState, onTrackClick: (Track, List<Track>
 
 @Composable
 private fun PlaylistTab(library: LibraryState, onTrackClick: (Track, List<Track>) -> Unit) {
-    val playlists = library.playlists
+    val smartPlaylists = remember(library.tracks, library.favoriteTracks) { library.smartPlaylists() }
+    val customPlaylists = library.playlists.filterNot { playlist ->
+        smartPlaylists.any { it.title == playlist.title }
+    }
     if (library.tracks.isEmpty()) {
         EmptyPanel("Create playlists and they will appear here.")
         return
     }
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(20.dp, 18.dp, 20.dp, 116.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(top = 14.dp)
+            .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainer),
+        contentPadding = PaddingValues(start = 20.dp, top = 18.dp, end = 20.dp, bottom = 116.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
+        item { SortHeader("Playlist") }
         item {
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                items(playlists) { playlist ->
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                items(smartPlaylists, key = { it.title }) { playlist ->
                     ArtworkCard(
                         title = playlist.title,
                         subtitle = "${playlist.tracks.size} tracks",
                         artwork = playlist.artwork,
                         modifier = Modifier
-                            .width(156.dp)
+                            .width(150.dp)
                             .clickable { playlist.tracks.firstOrNull()?.let { onTrackClick(it, playlist.tracks) } },
                     )
                 }
@@ -559,13 +606,108 @@ private fun PlaylistTab(library: LibraryState, onTrackClick: (Track, List<Track>
         }
         item {
             Text(
-                "Create playlists, and playlists will appear here.",
-                color = MaterialTheme.colorScheme.primary,
-                style = MaterialTheme.typography.titleLarge,
-                modifier = Modifier.padding(top = 24.dp),
+                "Custom playlist",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(top = 8.dp),
             )
         }
+        if (customPlaylists.isEmpty()) {
+            item { EmptyInline("No custom playlists found") }
+        } else {
+            items(customPlaylists, key = { it.title }) { playlist ->
+                PlaylistRow(
+                    playlist = playlist,
+                    onClick = { playlist.tracks.firstOrNull()?.let { onTrackClick(it, playlist.tracks) } },
+                )
+            }
+        }
     }
+}
+
+private data class FavoriteCardItem(
+    val type: String,
+    val key: String,
+    val title: String,
+    val subtitle: String,
+    val artwork: Uri?,
+    val tracks: List<Track> = emptyList(),
+    val artist: ArtistGroup? = null,
+    val album: AlbumGroup? = null,
+    val folder: FolderGroup? = null,
+    val addedAt: Long,
+)
+
+private fun LibraryState.favoriteCards(): List<FavoriteCardItem> {
+    val cards = mutableListOf<FavoriteCardItem>()
+    val trackAddedAt = favoriteItems
+        .filter { it.type == FavoriteType.Track }
+        .maxOfOrNull { it.addedAt }
+    if (favoriteTracks.isNotEmpty()) {
+        cards += FavoriteCardItem(
+            type = FavoriteType.Track,
+            key = "favorite-tracks",
+            title = "Favorite track",
+            subtitle = "${favoriteTracks.size} tracks",
+            artwork = favoriteTracks.firstOrNull()?.albumArtUri,
+            tracks = favoriteTracks,
+            addedAt = trackAddedAt ?: 0L,
+        )
+    }
+    favoriteItems.forEach { favorite ->
+        when (favorite.type) {
+            FavoriteType.Artist -> artists.firstOrNull { it.name == favorite.key }?.let { artist ->
+                cards += FavoriteCardItem(
+                    type = FavoriteType.Artist,
+                    key = favorite.key,
+                    title = artist.name,
+                    subtitle = "${artist.albums} albums | ${artist.tracks.size} tracks",
+                    artwork = artist.tracks.firstOrNull()?.albumArtUri,
+                    artist = artist,
+                    addedAt = favorite.addedAt,
+                )
+            }
+
+            FavoriteType.Folder -> folders.firstOrNull { it.path == favorite.key }?.let { folder ->
+                cards += FavoriteCardItem(
+                    type = FavoriteType.Folder,
+                    key = favorite.key,
+                    title = folder.name,
+                    subtitle = folder.path,
+                    artwork = folder.tracks.firstOrNull()?.albumArtUri,
+                    folder = folder,
+                    addedAt = favorite.addedAt,
+                )
+            }
+
+            FavoriteType.Album -> favorite.key.toLongOrNull()
+                ?.let { albumId -> albums.firstOrNull { it.id == albumId } }
+                ?.let { album ->
+                    cards += FavoriteCardItem(
+                        type = FavoriteType.Album,
+                        key = favorite.key,
+                        title = album.title,
+                        subtitle = "${album.artist} | ${album.tracks.size} tracks",
+                        artwork = album.tracks.firstOrNull()?.albumArtUri,
+                        album = album,
+                        addedAt = favorite.addedAt,
+                    )
+                }
+        }
+    }
+    return cards.distinctBy { it.type to it.key }.sortedByDescending { it.addedAt }
+}
+
+private fun LibraryState.smartPlaylists(): List<PlaylistGroup> {
+    if (tracks.isEmpty()) return emptyList()
+    val justPlayed = tracks.take(20)
+    return listOf(
+        PlaylistGroup("Recently added", tracks.take(50), tracks.firstOrNull()?.albumArtUri),
+        PlaylistGroup("Most played", tracks.sortedBy { it.title.lowercase() }.take(50), tracks.getOrNull(1)?.albumArtUri),
+        PlaylistGroup("Just played", justPlayed, justPlayed.firstOrNull()?.albumArtUri),
+        PlaylistGroup("Favorite track", favoriteTracks, favoriteTracks.firstOrNull()?.albumArtUri),
+    )
 }
 
 @Composable
@@ -611,6 +753,8 @@ private fun AlbumDetailScreen(
     onSettings: () -> Unit,
     onSearch: () -> Unit,
     onTrackClick: (Track, List<Track>) -> Unit,
+    isFavorite: Boolean,
+    onToggleFavorite: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val albumTracks = remember(album.tracks) { album.tracks.sortedForAlbumPlayback() }
@@ -778,8 +922,12 @@ private fun AlbumDetailScreen(
                     .weight(1f)
                     .alpha(if (showPinnedTitle) 1f else 0f),
             )
-            IconButton(onClick = { }) {
-                Icon(Icons.Default.FavoriteBorder, contentDescription = "Favorite album", tint = MaterialTheme.colorScheme.primary)
+            IconButton(onClick = onToggleFavorite) {
+                Icon(
+                    if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                    contentDescription = "Favorite album",
+                    tint = MaterialTheme.colorScheme.primary,
+                )
             }
             IconButton(onClick = onSearch) {
                 Icon(Icons.Default.Search, contentDescription = "Search", tint = MaterialTheme.colorScheme.primary)
@@ -822,6 +970,8 @@ private fun ArtistDetailScreen(
     onSearch: () -> Unit,
     onTrackClick: (Track, List<Track>) -> Unit,
     onAlbumClick: (AlbumGroup) -> Unit,
+    isFavorite: Boolean,
+    onToggleFavorite: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val tabs = ArtistDetailTab.entries
@@ -855,8 +1005,12 @@ private fun ArtistDetailScreen(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
-            IconButton(onClick = { }) {
-                Icon(Icons.Default.FavoriteBorder, contentDescription = "Favorite artist", tint = MaterialTheme.colorScheme.primary)
+            IconButton(onClick = onToggleFavorite) {
+                Icon(
+                    if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                    contentDescription = "Favorite artist",
+                    tint = MaterialTheme.colorScheme.primary,
+                )
             }
             IconButton(onClick = onSearch) {
                 Icon(Icons.Default.Search, contentDescription = "Search", tint = MaterialTheme.colorScheme.primary)
@@ -1093,6 +1247,8 @@ private fun FolderDetailScreen(
     onSearch: () -> Unit,
     onTrackClick: (Track, List<Track>) -> Unit,
     onToggleFavorite: (Long) -> Unit,
+    isFavorite: Boolean,
+    onToggleFolderFavorite: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
@@ -1115,8 +1271,12 @@ private fun FolderDetailScreen(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
-            IconButton(onClick = { }) {
-                Icon(Icons.Default.FavoriteBorder, contentDescription = "Favorite folder", tint = MaterialTheme.colorScheme.primary)
+            IconButton(onClick = onToggleFolderFavorite) {
+                Icon(
+                    if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                    contentDescription = "Favorite folder",
+                    tint = MaterialTheme.colorScheme.primary,
+                )
             }
             IconButton(onClick = onSearch) {
                 Icon(Icons.Default.Search, contentDescription = "Search", tint = MaterialTheme.colorScheme.primary)
@@ -1443,6 +1603,79 @@ private fun MediaGroupRow(
 }
 
 @Composable
+private fun PlaylistRow(
+    playlist: PlaylistGroup,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AlbumArt(playlist.artwork, Modifier.size(56.dp), RoundedCornerShape(13.dp))
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = 14.dp),
+        ) {
+            Text(playlist.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 19.sp)
+            Text(
+                "${playlist.tracks.size} tracks",
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 14.sp,
+            )
+        }
+    }
+}
+
+@Composable
+private fun FavoriteGridCard(
+    card: FavoriteCardItem,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .clip(RoundedCornerShape(18.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+            contentAlignment = Alignment.BottomStart,
+        ) {
+            AlbumArt(card.artwork, Modifier.fillMaxSize(), RoundedCornerShape(18.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.28f)),
+            )
+            Column(modifier = Modifier.padding(12.dp)) {
+                Text(
+                    text = card.type.replaceFirstChar { it.uppercase() },
+                    color = Color.White.copy(alpha = 0.78f),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                )
+                Text(
+                    text = card.title,
+                    color = Color.White,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        Text(card.title, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp), fontSize = 16.sp)
+        Text(card.subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+    }
+}
+
+@Composable
 private fun ArtworkCard(title: String, subtitle: String, artwork: Uri?, modifier: Modifier = Modifier) {
     Column(modifier = modifier) {
         Box(
@@ -1535,7 +1768,7 @@ private fun EmptyPanel(message: String?) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(20.dp),
-        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
         border = BorderStroke(0.dp, Color.Transparent),
     ) {
