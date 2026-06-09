@@ -100,6 +100,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -107,6 +108,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import me.ayra.music.R
 import me.ayra.music.AlbumGroup
 import me.ayra.music.ArtistGroup
 import me.ayra.music.FavoriteType
@@ -377,6 +379,7 @@ private fun HomeScreen(
     val tabListState = rememberLazyListState(initialFirstVisibleItemIndex = restoredTab)
     val density = LocalDensity.current
     val tabWidthPx = with(density) { HOME_TAB_WIDTH.roundToPx() }
+    var menuExpanded by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(pagerState.currentPage) {
         onTabSelected(pagerState.currentPage)
@@ -424,8 +427,22 @@ private fun HomeScreen(
             IconButton(onClick = onSearch) {
                 Icon(Icons.Default.Search, contentDescription = "Search", tint = MaterialTheme.colorScheme.primary)
             }
-            IconButton(onClick = onSettings) {
-                Icon(Icons.Default.MoreVert, contentDescription = "Menu", tint = MaterialTheme.colorScheme.primary)
+            Box {
+                IconButton(onClick = { menuExpanded = true }) {
+                    Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.menu), tint = MaterialTheme.colorScheme.primary)
+                }
+                DropdownMenu(
+                    expanded = menuExpanded,
+                    onDismissRequest = { menuExpanded = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.settings)) },
+                        onClick = {
+                            menuExpanded = false
+                            onSettings()
+                        },
+                    )
+                }
             }
         }
 

@@ -399,13 +399,23 @@ class MusicViewModel(
 
     fun previous() {
         val player = controller ?: return
-        if (player.hasPreviousMediaItem()) player.seekToPreviousMediaItem() else player.seekTo(0)
+        if (player.mediaItemCount == 0) return
+        if (player.hasPreviousMediaItem()) {
+            player.seekToPreviousMediaItem()
+        } else {
+            player.seekTo(player.mediaItemCount - 1, 0L)
+        }
         publishPlayerState()
     }
 
     fun next() {
         val player = controller ?: return
-        if (player.hasNextMediaItem()) player.seekToNextMediaItem()
+        if (player.mediaItemCount == 0) return
+        if (player.hasNextMediaItem()) {
+            player.seekToNextMediaItem()
+        } else {
+            player.seekTo(0, 0L)
+        }
         publishPlayerState()
     }
 
@@ -1083,6 +1093,7 @@ fun MusicApp(
     val playerState by viewModel.playerState.collectAsState()
     val preferences = remember(context) { MusicPreferences(context) }
     var lastHomeTab by rememberSaveable { mutableStateOf(preferences.loadLastTab(HomeTab.Favorite.ordinal)) }
+    val hidePlayerSheet = navigator.currentRoute == MainRoute.Settings
 
     LaunchedEffect(openPlayerRequest) {
         if (openPlayerRequest > 0) {
@@ -1120,20 +1131,22 @@ fun MusicApp(
                 },
             )
 
-            PlayerSheet(
-                playerState = playerState,
-                isFavorite = playerState.currentTrack?.id in library.favorites,
-                expandRequest = openPlayerRequest,
-                onSettings = { navigator.navigate(MainRoute.Settings) },
-                onToggleFavorite = { playerState.currentTrack?.id?.let(viewModel::toggleFavorite) },
-                onPlayPause = viewModel::togglePlayPause,
-                onPrevious = viewModel::previous,
-                onNext = viewModel::next,
-                onSeek = viewModel::seekTo,
-                onShuffle = viewModel::toggleShuffle,
-                onQueueTrackClick = { track -> viewModel.playTrack(track, playerState.queue) },
-                onRepeat = viewModel::toggleRepeat,
-            )
+            if (!hidePlayerSheet) {
+                PlayerSheet(
+                    playerState = playerState,
+                    isFavorite = playerState.currentTrack?.id in library.favorites,
+                    expandRequest = openPlayerRequest,
+                    onSettings = { navigator.navigate(MainRoute.Settings) },
+                    onToggleFavorite = { playerState.currentTrack?.id?.let(viewModel::toggleFavorite) },
+                    onPlayPause = viewModel::togglePlayPause,
+                    onPrevious = viewModel::previous,
+                    onNext = viewModel::next,
+                    onSeek = viewModel::seekTo,
+                    onShuffle = viewModel::toggleShuffle,
+                    onQueueTrackClick = { track -> viewModel.playTrack(track, playerState.queue) },
+                    onRepeat = viewModel::toggleRepeat,
+                )
+            }
         }
     }
 }

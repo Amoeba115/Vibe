@@ -70,6 +70,8 @@ import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -100,6 +102,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -121,6 +124,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import me.ayra.music.R
 import me.ayra.music.PlayerState
 import me.ayra.music.Track
 import me.ayra.music.util.MusicPreferences
@@ -306,7 +310,13 @@ fun PlayerSheet(
                     draggableState.animateTo(PlayerSheetAnchor.Expanded)
                 }
             },
-            onSettings = onSettings,
+            onSettings = {
+                coroutineScope.launch {
+                    upperContent = PlayerUpperContent.Cover
+                    draggableState.animateTo(PlayerSheetAnchor.Collapsed)
+                    onSettings()
+                }
+            },
             onToggleFavorite = onToggleFavorite,
             onLyrics = { upperContent = PlayerUpperContent.Lyrics },
             onExitUpperContent = { upperContent = PlayerUpperContent.Cover },
@@ -709,6 +719,7 @@ private fun ExpandedPlayerContent(
     modifier: Modifier = Modifier,
 ) {
     val track = playerState.currentTrack
+    var menuExpanded by rememberSaveable { mutableStateOf(false) }
 
     Column(
         modifier =
@@ -763,10 +774,24 @@ private fun ExpandedPlayerContent(
                                 Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Minimize", modifier = Modifier.size(34.dp))
                             }
                             Spacer(Modifier.weight(1f))
-                            IconButton(
-                                onClick = onSettings,
-                                enabled = enabled,
-                            ) { Icon(Icons.Default.MoreVert, contentDescription = "Settings") }
+                            Box {
+                                IconButton(
+                                    onClick = { menuExpanded = true },
+                                    enabled = enabled,
+                                ) { Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.menu)) }
+                                DropdownMenu(
+                                    expanded = menuExpanded,
+                                    onDismissRequest = { menuExpanded = false },
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.settings)) },
+                                        onClick = {
+                                            menuExpanded = false
+                                            onSettings()
+                                        },
+                                    )
+                                }
+                            }
                         }
                         Box(
                             modifier =
