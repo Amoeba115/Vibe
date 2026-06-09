@@ -18,10 +18,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.ExperimentalAnimationApi
-import androidx.compose.animation.SizeTransform
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
@@ -68,12 +64,9 @@ import me.ayra.music.data.toTrack
 import me.ayra.music.data.toVgmMetadata
 import me.ayra.music.ui.home.HomeTab
 import me.ayra.music.ui.home.MainScreen
-import me.ayra.music.ui.home.modernEnter
-import me.ayra.music.ui.home.modernExit
-import me.ayra.music.ui.home.modernPopEnter
-import me.ayra.music.ui.home.modernPopExit
+import me.ayra.music.ui.navigation.MainRoute
+import me.ayra.music.ui.navigation.rememberMusicNavigator
 import me.ayra.music.ui.player.PlayerSheet
-import me.ayra.music.ui.settings.SettingsScreen
 import me.ayra.music.ui.theme.MusicTheme
 import me.ayra.music.util.MusicPreferences
 import java.io.File
@@ -988,16 +981,13 @@ zsm zss zwv
 
 private fun android.database.Cursor.getStringOrNull(column: Int): String? = if (column >= 0 && !isNull(column)) getString(column) else null
 
-private enum class RootRoute { Main, Settings }
-
-@OptIn(ExperimentalAnimationApi::class)
 @Composable
 fun MusicApp(
     openPlayerRequest: Int = 0,
     viewModel: MusicViewModel = viewModel(),
 ) {
     val context = LocalContext.current
-    var rootRoute by rememberSaveable { mutableStateOf(RootRoute.Main) }
+    val navigator = rememberMusicNavigator()
     val permission = remember { audioPermission() }
     var permissionGranted by remember {
         mutableStateOf(hasLibraryPermission(context, permission))
@@ -1045,7 +1035,9 @@ fun MusicApp(
 
     LaunchedEffect(openPlayerRequest) {
         if (openPlayerRequest > 0) {
-            rootRoute = RootRoute.Main
+            while (navigator.canGoBack()) {
+                navigator.back()
+            }
         }
     }
 
@@ -1054,54 +1046,34 @@ fun MusicApp(
         color = MaterialTheme.colorScheme.background,
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
-            AnimatedContent(
-                targetState = rootRoute,
-                transitionSpec = {
-                    if (targetState == RootRoute.Settings) {
-                        modernEnter() togetherWith modernExit()
+            MainScreen(
+                library = library,
+                navigator = navigator,
+                onRequestPermission = {
+                    if (ContextCompat.checkSelfPermission(context, permission) != PackageManager.PERMISSION_GRANTED) {
+                        permissionLauncher.launch(permission)
+                    } else if (needsManageExternalStoragePermission(context)) {
+                        manageStorageLauncher.launch(manageExternalStorageIntent(context))
                     } else {
-                        modernPopEnter() togetherWith modernPopExit()
-                    }.using(SizeTransform(clip = false))
+                        permissionGranted = true
+                        viewModel.loadLibrary(true)
+                    }
                 },
-                label = "root-nav",
-            ) { route ->
-                when (route) {
-                    RootRoute.Main -> {
-                        MainScreen(
-                            library = library,
-                            onRequestPermission = {
-                                if (ContextCompat.checkSelfPermission(context, permission) != PackageManager.PERMISSION_GRANTED) {
-                                    permissionLauncher.launch(permission)
-                                } else if (needsManageExternalStoragePermission(context)) {
-                                    manageStorageLauncher.launch(manageExternalStorageIntent(context))
-                                } else {
-                                    permissionGranted = true
-                                    viewModel.loadLibrary(true)
-                                }
-                            },
-                            onSettings = { rootRoute = RootRoute.Settings },
-                            onTrackClick = viewModel::playTrack,
-                            onToggleFavorite = viewModel::toggleFavorite,
-                            onToggleFavoriteItem = viewModel::toggleFavoriteItem,
-                            initialTabIndex = lastHomeTab,
-                            onTabSelected = { tabIndex ->
-                                lastHomeTab = tabIndex
-                                preferences.saveLastTab(tabIndex)
-                            },
-                        )
-                    }
-
-                    RootRoute.Settings -> {
-                        SettingsScreen(onBack = { rootRoute = RootRoute.Main })
-                    }
-                }
-            }
+                onTrackClick = viewModel::playTrack,
+                onToggleFavorite = viewModel::toggleFavorite,
+                onToggleFavoriteItem = viewModel::toggleFavoriteItem,
+                initialTabIndex = lastHomeTab,
+                onTabSelected = { tabIndex ->
+                    lastHomeTab = tabIndex
+                    preferences.saveLastTab(tabIndex)
+                },
+            )
 
             PlayerSheet(
                 playerState = playerState,
                 isFavorite = playerState.currentTrack?.id in library.favorites,
                 expandRequest = openPlayerRequest,
-                onSettings = { rootRoute = RootRoute.Settings },
+                onSettings = { navigator.navigate(MainRoute.Settings) },
                 onToggleFavorite = { playerState.currentTrack?.id?.let(viewModel::toggleFavorite) },
                 onPlayPause = viewModel::togglePlayPause,
                 onPrevious = viewModel::previous,

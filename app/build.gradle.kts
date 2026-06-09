@@ -1,15 +1,24 @@
+import java.io.ByteArrayOutputStream
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
 }
 
+val keystorePropertiesFile = rootProject.file("app/keystore/keystore.properties")
+val keystoreProperties = Properties()
+keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+
 android {
     namespace = "me.ayra.music"
     compileSdk {
-        version = release(36) {
-            minorApiLevel = 1
-        }
+        version =
+            release(36) {
+                minorApiLevel = 1
+            }
     }
 
     defaultConfig {
@@ -22,32 +31,50 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        create("release") {
+            if (!keystoreProperties.isEmpty) {
+                storeFile = file(keystoreProperties["storeFile"] as String)
+                storePassword = keystoreProperties["storePassword"] as String
+                keyAlias = keystoreProperties["keyAlias"] as String
+                keyPassword = keystoreProperties["keyPassword"] as String
+            }
+        }
+    }
+
     buildTypes {
         debug {
             buildConfigField("boolean", "IS_VGM_BUILD", "false")
+            signingConfig = signingConfigs["release"]
         }
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = false
             buildConfigField("boolean", "IS_VGM_BUILD", "false")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
+                "proguard-rules.pro",
             )
+            signingConfig = signingConfigs["release"]
         }
         create("debugVGM") {
             initWith(getByName("debug"))
             matchingFallbacks += listOf("debug")
-            //applicationIdSuffix = ".vgm.debug"
+            // applicationIdSuffix = ".vgm.debug"
             versionNameSuffix = "-vgm-debug"
             isDebuggable = true
             buildConfigField("boolean", "IS_VGM_BUILD", "true")
+            signingConfig = signingConfigs["release"]
         }
         create("releaseVGM") {
             initWith(getByName("release"))
             matchingFallbacks += listOf("release")
-            //applicationIdSuffix = ".vgm"
+            isMinifyEnabled = true
+            isShrinkResources = false
+            // applicationIdSuffix = ".vgm"
             versionNameSuffix = "-vgm"
             buildConfigField("boolean", "IS_VGM_BUILD", "true")
+            signingConfig = signingConfigs["release"]
         }
     }
     compileOptions {

@@ -16,6 +16,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.AnchoredDraggableDefaults
 import androidx.compose.foundation.gestures.AnchoredDraggableState
@@ -23,6 +24,10 @@ import androidx.compose.foundation.gestures.DraggableAnchors
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.anchoredDraggable
 import androidx.compose.foundation.gestures.animateTo
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.drag
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -41,8 +46,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -65,28 +72,33 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -111,6 +123,7 @@ import me.ayra.music.Track
 import java.util.Collections
 import java.util.LinkedHashMap
 import kotlin.math.roundToInt
+import kotlin.math.roundToLong
 
 data class PlayerSheetState(
     val progress: Float,
@@ -128,6 +141,7 @@ private enum class PlayerUpperContent {
 }
 
 private data class MiniPlayerAccent(
+    val primary: Color,
     val container: Color,
     val onContainer: Color,
     val fullscreen: Color,
@@ -366,6 +380,7 @@ private fun PlayerSurface(
     var artworkSeedColor by remember { mutableStateOf<Int?>(null) }
     val defaultMiniAccent =
         MiniPlayerAccent(
+            primary = MaterialTheme.colorScheme.primary,
             container = MaterialTheme.colorScheme.primaryContainer,
             onContainer = MaterialTheme.colorScheme.onPrimaryContainer,
             fullscreen = MaterialTheme.colorScheme.background,
@@ -384,6 +399,11 @@ private fun PlayerSurface(
         targetValue = miniAccent.onContainer,
         animationSpec = tween(durationMillis = 450),
         label = "mini-on-container-accent",
+    )
+    val animatedPrimary by animateColorAsState(
+        targetValue = miniAccent.primary,
+        animationSpec = tween(durationMillis = 450),
+        label = "player-primary-accent",
     )
     val animatedFullscreen by animateColorAsState(
         targetValue = miniAccent.fullscreen,
@@ -409,6 +429,7 @@ private fun PlayerSurface(
         )
     val animatedMiniAccent =
         miniAccent.copy(
+            primary = animatedPrimary,
             container = animatedMiniContainer,
             onContainer = animatedMiniOnContainer,
             fullscreen = animatedFullscreen,
@@ -449,6 +470,7 @@ private fun PlayerSurface(
                     onPlayPause = onPlayPause,
                     onNext = onNext,
                     onRepeat = onRepeat,
+                    seekAccent = animatedMiniAccent.primary,
                     modifier = Modifier.fillMaxSize(),
                 )
                 CollapsedPlayerContent(
@@ -499,6 +521,7 @@ private fun PlayerSurface(
                     onPlayPause = onPlayPause,
                     onNext = onNext,
                     onRepeat = onRepeat,
+                    seekAccent = animatedMiniAccent.primary,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -662,6 +685,7 @@ private fun ExpandedPlayerContent(
     onPlayPause: () -> Unit,
     onNext: () -> Unit,
     onRepeat: () -> Unit,
+    seekAccent: Color,
     modifier: Modifier = Modifier,
 ) {
     val track = playerState.currentTrack
@@ -738,10 +762,10 @@ private fun ExpandedPlayerContent(
                                     .padding(top = 28.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
-                            Text(track?.title ?: "No track selected", fontSize = 30.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(track?.title ?: "No track selected", fontSize = 24.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text(
                                 track?.artist ?: "Choose music to play",
-                                fontSize = 18.sp,
+                                fontSize = 15.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
@@ -778,6 +802,7 @@ private fun ExpandedPlayerContent(
             positionMs = playerState.positionMs,
             durationMs = playerState.durationMs,
             enabled = enabled,
+            accent = seekAccent,
             onSeek = onSeek,
         )
         Controls(
@@ -817,7 +842,7 @@ private fun LyricsContent(
                 modifier = Modifier.weight(1f),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Text(track?.title ?: "No track selected", fontSize = 28.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(track?.title ?: "No track selected", fontSize = 24.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
                     track?.artist ?: "",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -836,7 +861,7 @@ private fun LyricsContent(
                     .padding(bottom = 28.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Text("No lyric found", fontSize = 28.sp, color = MaterialTheme.colorScheme.onSurface)
+            Text("No lyric found", fontSize = 24.sp, color = MaterialTheme.colorScheme.onSurface)
         }
     }
 }
@@ -849,6 +874,23 @@ private fun PlaylistContent(
     onQueueTrackClick: (Track) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val listState = rememberLazyListState()
+    val currentTrackId = playerState.currentTrack?.id
+    LaunchedEffect(currentTrackId, playerState.queue) {
+        val activeIndex = playerState.queue.indexOfFirst { it.id == currentTrackId }
+        if (activeIndex >= 0) {
+            listState.scrollToItem(activeIndex)
+            withFrameNanos { }
+            val layoutInfo = listState.layoutInfo
+            val activeItem = layoutInfo.visibleItemsInfo.firstOrNull { it.index == activeIndex }
+            if (activeItem != null) {
+                val viewportCenter = (layoutInfo.viewportStartOffset + layoutInfo.viewportEndOffset) / 2
+                val itemCenter = activeItem.offset + activeItem.size / 2
+                listState.scrollBy((itemCenter - viewportCenter).toFloat())
+            }
+        }
+    }
+
     Column(modifier = modifier) {
         Row(
             modifier =
@@ -864,7 +906,7 @@ private fun PlaylistContent(
                 modifier = Modifier.weight(1f),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Text("Playlist", fontSize = 28.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                Text("Playlist", fontSize = 24.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
                 Text("${playerState.queue.size} tracks", color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
             }
             IconButton(onClick = { }, enabled = false) {
@@ -881,6 +923,7 @@ private fun PlaylistContent(
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
+                state = listState,
                 contentPadding =
                     androidx.compose.foundation.layout
                         .PaddingValues(bottom = 28.dp),
@@ -924,7 +967,11 @@ private fun QueueTrackRow(
     ) {
         Text(
             text = index.toString(),
-            modifier = Modifier.size(width = 34.dp, height = 48.dp),
+            modifier =
+                Modifier
+                    .size(width = 34.dp, height = 48.dp)
+                    .wrapContentSize(Alignment.Center),
+            textAlign = TextAlign.Center,
             color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 16.sp,
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
@@ -966,17 +1013,91 @@ private fun SeekBar(
     positionMs: Long,
     durationMs: Long,
     enabled: Boolean,
+    accent: Color,
     onSeek: (Long) -> Unit,
 ) {
+    val onSurface = MaterialTheme.colorScheme.onSurface
+    val density = LocalDensity.current
+    var dragging by remember { mutableStateOf(false) }
+    var sliderValue by remember { mutableFloatStateOf(positionMs.coerceAtLeast(0L).toFloat()) }
+    val safeDuration = durationMs.coerceAtLeast(0L)
+    val displayPosition = if (dragging) sliderValue.roundToLong() else positionMs
+
+    LaunchedEffect(positionMs, safeDuration, dragging) {
+        if (!dragging) {
+            sliderValue = positionMs.coerceIn(0L, safeDuration.coerceAtLeast(1L)).toFloat()
+        }
+    }
+
     Column(modifier = Modifier.fillMaxWidth()) {
-        Slider(
-            value = if (durationMs > 0) positionMs.coerceIn(0L, durationMs).toFloat() else 0f,
-            onValueChange = { onSeek(it.toLong()) },
-            valueRange = 0f..durationMs.coerceAtLeast(1L).toFloat(),
-            enabled = enabled && durationMs > 0,
+        Canvas(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .height(24.dp)
+                    .pointerInput(enabled, safeDuration) {
+                        if (!enabled || safeDuration <= 0L) return@pointerInput
+                        awaitEachGesture {
+                            val down = awaitFirstDown()
+                            dragging = true
+
+                            fun updateValue(x: Float) {
+                                val width = size.width.toFloat().coerceAtLeast(1f)
+                                sliderValue = ((x.coerceIn(0f, width) / width) * safeDuration).coerceIn(0f, safeDuration.toFloat())
+                            }
+
+                            updateValue(down.position.x)
+                            drag(down.id) { change ->
+                                updateValue(change.position.x)
+                                change.consume()
+                            }
+                            dragging = false
+                            onSeek(sliderValue.roundToLong().coerceIn(0L, safeDuration))
+                        }
+                    },
         )
+        {
+            val trackHeight = with(density) { 4.dp.toPx() }
+            val thumbRadius = with(density) { 5.dp.toPx() }
+            val centerY = size.height / 2f
+            val progress = if (safeDuration > 0L) {
+                (sliderValue / safeDuration.toFloat()).coerceIn(0f, 1f)
+            } else {
+                0f
+            }
+            val thumbX = size.width * progress
+            val activeColor = if (enabled && safeDuration > 0L) accent else onSurface.copy(alpha = 0.35f)
+            val inactiveColor = if (enabled && safeDuration > 0L) accent.copy(alpha = 0.18f) else onSurface.copy(alpha = 0.15f)
+
+            drawLine(
+                color = onSurface.copy(alpha = 0.15f),
+                start = Offset(0f, centerY),
+                end = Offset(size.width, centerY),
+                strokeWidth = trackHeight,
+                cap = StrokeCap.Round,
+            )
+            drawLine(
+                color = inactiveColor,
+                start = Offset(0f, centerY),
+                end = Offset(size.width, centerY),
+                strokeWidth = trackHeight,
+                cap = StrokeCap.Round,
+            )
+            drawLine(
+                color = activeColor,
+                start = Offset(0f, centerY),
+                end = Offset(thumbX, centerY),
+                strokeWidth = trackHeight,
+                cap = StrokeCap.Round,
+            )
+            drawCircle(
+                color = activeColor,
+                radius = thumbRadius,
+                center = Offset(thumbX, centerY),
+            )
+        }
         Row(Modifier.fillMaxWidth()) {
-            Text(formatDuration(positionMs), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(formatDuration(displayPosition), color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.weight(1f))
             Text(formatDuration(durationMs), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -1124,6 +1245,7 @@ private fun miniPlayerAccentFromSeed(
     val palette = TonalPalette.fromInt(seedColor)
     return if (darkTheme) {
         MiniPlayerAccent(
+            primary = Color(palette.tone(70)),
             container = Color(palette.tone(35)),
             onContainer = Color(palette.tone(90)),
             fullscreen = Color(palette.tone(10)),
@@ -1131,6 +1253,7 @@ private fun miniPlayerAccentFromSeed(
         )
     } else {
         MiniPlayerAccent(
+            primary = Color(palette.tone(40)),
             container = Color(palette.tone(85)),
             onContainer = Color(palette.tone(10)),
             fullscreen = Color(palette.tone(96)),

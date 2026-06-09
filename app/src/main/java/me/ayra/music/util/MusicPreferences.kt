@@ -27,10 +27,18 @@ class MusicPreferences(context: Context) {
         preferences.edit().putString(KEY_LAST_QUEUE_IDS, trackIds.joinToString(",")).apply()
     }
 
+    fun loadSort(key: String, defaultValue: String): String =
+        preferences.getString("$KEY_SORT_PREFIX$key", defaultValue) ?: defaultValue
+
+    fun saveSort(key: String, value: String) {
+        preferences.edit().putString("$KEY_SORT_PREFIX$key", value).apply()
+    }
+
     private companion object {
         const val KEY_LAST_TAB = "last_tab"
         const val KEY_LAST_TRACK_ID = "last_track_id"
         const val KEY_LAST_QUEUE_IDS = "last_queue_ids"
+        const val KEY_SORT_PREFIX = "sort_"
         const val NO_TRACK_ID = -1L
     }
 }

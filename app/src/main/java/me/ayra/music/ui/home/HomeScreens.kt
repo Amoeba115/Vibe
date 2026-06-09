@@ -84,6 +84,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -98,7 +99,11 @@ import me.ayra.music.FolderGroup
 import me.ayra.music.LibraryState
 import me.ayra.music.PlaylistGroup
 import me.ayra.music.Track
+import me.ayra.music.ui.navigation.MainRoute
+import me.ayra.music.ui.navigation.MusicNavigator
 import me.ayra.music.ui.player.AlbumArt
+import me.ayra.music.ui.settings.SettingsScreen
+import me.ayra.music.util.MusicPreferences
 
 enum class HomeTab(
     val label: String,
@@ -141,28 +146,25 @@ private enum class FolderSort(
     DateAdded("Date added"),
 }
 
-private const val ROUTE_HOME = "home"
-private const val ROUTE_SEARCH = "search"
-private const val ROUTE_FOLDER_PREFIX = "folder:"
-private const val ROUTE_ALBUM_PREFIX = "album:"
-private const val ROUTE_ARTIST_PREFIX = "artist:"
+private const val SORT_TRACK = "track"
+private const val SORT_ALBUM = "album"
+private const val SORT_ARTIST = "artist"
+private const val SORT_FOLDER = "folder"
 
 @OptIn(ExperimentalAnimationApi::class)
 @Composable
 fun MainScreen(
     library: LibraryState,
+    navigator: MusicNavigator,
     onRequestPermission: () -> Unit,
-    onSettings: () -> Unit,
     onTrackClick: (Track, List<Track>) -> Unit,
     onToggleFavorite: (Long) -> Unit,
     onToggleFavoriteItem: (String, String) -> Unit,
     initialTabIndex: Int,
     onTabSelected: (Int) -> Unit,
 ) {
-    var route by rememberSaveable { mutableStateOf(ROUTE_HOME) }
-    BackHandler(enabled = route != ROUTE_HOME) {
-        route = ROUTE_HOME
-    }
+    val currentRoute = navigator.currentRoute
+    BackHandler(enabled = navigator.canGoBack()) { navigator.back() }
 
     Box(
         modifier =
@@ -171,128 +173,143 @@ fun MainScreen(
                 .background(MaterialTheme.colorScheme.background)
                 .windowInsetsPadding(WindowInsets.statusBars),
     ) {
+        HomeScreen(
+            library = library,
+            onRequestPermission = onRequestPermission,
+            onSettings = { navigator.navigate(MainRoute.Settings) },
+            onTrackClick = onTrackClick,
+            onToggleFavorite = onToggleFavorite,
+            onToggleFavoriteItem = onToggleFavoriteItem,
+            onFolderClick = { navigator.navigate(MainRoute.Folder(it.path)) },
+            onAlbumClick = { navigator.navigate(MainRoute.Album(it.id)) },
+            onArtistClick = { navigator.navigate(MainRoute.Artist(it.name)) },
+            onSearch = { navigator.navigate(MainRoute.Search) },
+            initialTabIndex = initialTabIndex,
+            onTabSelected = onTabSelected,
+            modifier = Modifier.fillMaxSize(),
+        )
+
         AnimatedContent(
-            targetState = route,
+            targetState = currentRoute,
             transitionSpec = {
-                if (targetState != ROUTE_HOME) {
+                if (targetState != MainRoute.Home) {
                     modernEnter() togetherWith modernExit()
                 } else {
                     modernPopEnter() togetherWith modernPopExit()
                 }.using(SizeTransform(clip = false))
             },
-            label = "content-nav",
-        ) { currentRoute ->
-            when (currentRoute) {
-                ROUTE_HOME -> {
-                    HomeScreen(
-                        library = library,
-                        onRequestPermission = onRequestPermission,
-                        onSettings = onSettings,
-                        onTrackClick = onTrackClick,
-                        onToggleFavorite = onToggleFavorite,
-                        onToggleFavoriteItem = onToggleFavoriteItem,
-                        onFolderClick = { route = ROUTE_FOLDER_PREFIX + it.path },
-                        onAlbumClick = { route = ROUTE_ALBUM_PREFIX + it.id },
-                        onArtistClick = { route = ROUTE_ARTIST_PREFIX + it.name },
-                        onSearch = { route = ROUTE_SEARCH },
-                        initialTabIndex = initialTabIndex,
-                        onTabSelected = onTabSelected,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                }
+            label = "detail-nav",
+        ) { route ->
+            DetailHost(
+                route = route,
+                library = library,
+                onBack = navigator::back,
+                onSettings = { navigator.navigate(MainRoute.Settings) },
+                onSearch = { navigator.navigate(MainRoute.Search) },
+                onTrackClick = onTrackClick,
+                onToggleFavorite = onToggleFavorite,
+                onToggleFavoriteItem = onToggleFavoriteItem,
+                onAlbumClick = { navigator.navigate(MainRoute.Album(it.id)) },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+    }
+}
 
-                ROUTE_SEARCH -> {
-                    SearchScreen(
-                        library = library,
-                        onBack = { route = ROUTE_HOME },
-                        onTrackClick = onTrackClick,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                }
+@Composable
+private fun DetailHost(
+    route: MainRoute,
+    library: LibraryState,
+    onBack: () -> Unit,
+    onSettings: () -> Unit,
+    onSearch: () -> Unit,
+    onTrackClick: (Track, List<Track>) -> Unit,
+    onToggleFavorite: (Long) -> Unit,
+    onToggleFavoriteItem: (String, String) -> Unit,
+    onAlbumClick: (AlbumGroup) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    when (route) {
+        MainRoute.Home -> {
+            Box(modifier = modifier)
+        }
 
-                else -> {
-                    val albumId =
-                        currentRoute
-                            .takeIf { it.startsWith(ROUTE_ALBUM_PREFIX) }
-                            ?.removePrefix(ROUTE_ALBUM_PREFIX)
-                            ?.toLongOrNull()
-                    val album = albumId?.let { id -> library.albums.firstOrNull { it.id == id } }
-                    val folderPath =
-                        currentRoute
-                            .takeIf { it.startsWith(ROUTE_FOLDER_PREFIX) }
-                            ?.removePrefix(ROUTE_FOLDER_PREFIX)
-                    val folder = folderPath?.let { path -> library.folders.firstOrNull { it.path == path } }
-                    val artistName =
-                        currentRoute
-                            .takeIf { it.startsWith(ROUTE_ARTIST_PREFIX) }
-                            ?.removePrefix(ROUTE_ARTIST_PREFIX)
-                    val artist = artistName?.let { name -> library.artists.firstOrNull { it.name == name } }
-                    when {
-                        album != null -> {
-                            AlbumDetailScreen(
-                                album = album,
-                                onBack = { route = ROUTE_HOME },
-                                onSettings = onSettings,
-                                onSearch = { route = ROUTE_SEARCH },
-                                onTrackClick = onTrackClick,
-                                isFavorite = library.isFavoriteItem(FavoriteType.Album, album.id.toString()),
-                                onToggleFavorite = { onToggleFavoriteItem(FavoriteType.Album, album.id.toString()) },
-                                modifier = Modifier.fillMaxSize(),
-                            )
-                        }
+        MainRoute.Search -> {
+            SearchScreen(
+                library = library,
+                onBack = onBack,
+                onTrackClick = onTrackClick,
+                modifier = modifier,
+            )
+        }
 
-                        artist != null -> {
-                            ArtistDetailScreen(
-                                artist = artist,
-                                albums =
-                                    library.albums
-                                        .filter { albumGroup -> albumGroup.tracks.any { it.artist == artist.name } },
-                                onBack = { route = ROUTE_HOME },
-                                onSettings = onSettings,
-                                onSearch = { route = ROUTE_SEARCH },
-                                onTrackClick = onTrackClick,
-                                onAlbumClick = { route = ROUTE_ALBUM_PREFIX + it.id },
-                                isFavorite = library.isFavoriteItem(FavoriteType.Artist, artist.name),
-                                onToggleFavorite = { onToggleFavoriteItem(FavoriteType.Artist, artist.name) },
-                                modifier = Modifier.fillMaxSize(),
-                            )
-                        }
+        MainRoute.Settings -> {
+            SettingsScreen(
+                onBack = onBack,
+                modifier = modifier,
+            )
+        }
 
-                        folder != null -> {
-                            FolderDetailScreen(
-                                folder = folder,
-                                favorites = library.favorites,
-                                onBack = { route = ROUTE_HOME },
-                                onSettings = onSettings,
-                                onSearch = { route = ROUTE_SEARCH },
-                                onTrackClick = onTrackClick,
-                                onToggleFavorite = onToggleFavorite,
-                                isFavorite = library.isFavoriteItem(FavoriteType.Folder, folder.path),
-                                onToggleFolderFavorite = { onToggleFavoriteItem(FavoriteType.Folder, folder.path) },
-                                modifier = Modifier.fillMaxSize(),
-                            )
-                        }
-
-                        else -> {
-                            HomeScreen(
-                                library = library,
-                                onRequestPermission = onRequestPermission,
-                                onSettings = onSettings,
-                                onTrackClick = onTrackClick,
-                                onToggleFavorite = onToggleFavorite,
-                                onToggleFavoriteItem = onToggleFavoriteItem,
-                                onFolderClick = { route = ROUTE_FOLDER_PREFIX + it.path },
-                                onAlbumClick = { route = ROUTE_ALBUM_PREFIX + it.id },
-                                onArtistClick = { route = ROUTE_ARTIST_PREFIX + it.name },
-                                onSearch = { route = ROUTE_SEARCH },
-                                initialTabIndex = initialTabIndex,
-                                onTabSelected = onTabSelected,
-                                modifier = Modifier.fillMaxSize(),
-                            )
-                        }
-                    }
-                }
+        is MainRoute.Album -> {
+            val album = library.albums.firstOrNull { it.id == route.id }
+            if (album == null) {
+                Box(modifier = modifier)
+            } else {
+                AlbumDetailScreen(
+                    album = album,
+                    onBack = onBack,
+                    onSettings = onSettings,
+                    onSearch = onSearch,
+                    onTrackClick = onTrackClick,
+                    isFavorite = library.isFavoriteItem(FavoriteType.Album, album.id.toString()),
+                    onToggleFavorite = { onToggleFavoriteItem(FavoriteType.Album, album.id.toString()) },
+                    modifier = modifier,
+                )
             }
+        }
+
+        is MainRoute.Artist -> {
+            val artist = library.artists.firstOrNull { it.name == route.name }
+            if (artist == null) {
+                Box(modifier = modifier)
+            } else {
+                ArtistDetailScreen(
+                    artist = artist,
+                    albums = library.albums.filter { albumGroup -> albumGroup.tracks.any { it.artist == artist.name } },
+                    onBack = onBack,
+                    onSettings = onSettings,
+                    onSearch = onSearch,
+                    onTrackClick = onTrackClick,
+                    onAlbumClick = onAlbumClick,
+                    isFavorite = library.isFavoriteItem(FavoriteType.Artist, artist.name),
+                    onToggleFavorite = { onToggleFavoriteItem(FavoriteType.Artist, artist.name) },
+                    modifier = modifier,
+                )
+            }
+        }
+
+        is MainRoute.Folder -> {
+            val folder = library.folders.firstOrNull { it.path == route.path }
+            if (folder == null) {
+                Box(modifier = modifier)
+            } else {
+                FolderDetailScreen(
+                    folder = folder,
+                    favorites = library.favorites,
+                    onBack = onBack,
+                    onSettings = onSettings,
+                    onSearch = onSearch,
+                    onTrackClick = onTrackClick,
+                    onToggleFavorite = onToggleFavorite,
+                    isFavorite = library.isFavoriteItem(FavoriteType.Folder, folder.path),
+                    onToggleFolderFavorite = { onToggleFavoriteItem(FavoriteType.Folder, folder.path) },
+                    modifier = modifier,
+                )
+            }
+        }
+
+        is MainRoute.Playlist -> {
+            Box(modifier = modifier)
         }
     }
 }
@@ -655,14 +672,16 @@ private fun FavoriteTab(
             FavoriteGridCard(
                 card = card,
                 modifier =
-                    Modifier.clickable {
-                        when (card.type) {
-                            FavoriteType.Track -> card.tracks.firstOrNull()?.let { onTrackClick(it, card.tracks) }
-                            FavoriteType.Artist -> card.artist?.let(onArtistClick)
-                            FavoriteType.Folder -> card.folder?.let(onFolderClick)
-                            FavoriteType.Album -> card.album?.let(onAlbumClick)
-                        }
-                    },
+                    Modifier
+                        .animateItem()
+                        .clickable {
+                            when (card.type) {
+                                FavoriteType.Track -> card.tracks.firstOrNull()?.let { onTrackClick(it, card.tracks) }
+                                FavoriteType.Artist -> card.artist?.let(onArtistClick)
+                                FavoriteType.Folder -> card.folder?.let(onFolderClick)
+                                FavoriteType.Album -> card.album?.let(onAlbumClick)
+                            }
+                        },
             )
         }
     }
@@ -724,6 +743,7 @@ private fun PlaylistTab(
                 PlaylistRow(
                     playlist = playlist,
                     onClick = { playlist.tracks.firstOrNull()?.let { onTrackClick(it, playlist.tracks) } },
+                    modifier = Modifier.animateItem(),
                 )
             }
         }
@@ -838,20 +858,29 @@ private fun TrackTab(
     onTrackClick: (Track, List<Track>) -> Unit,
 ) {
     val listState = rememberLazyListState()
-    var sort by rememberSaveable { mutableStateOf(TrackSort.Name) }
+    val preferences = rememberSortPreferences()
+    var sort by rememberSaveable {
+        mutableStateOf(preferences.loadEnumSort(SORT_TRACK, TrackSort.Name, TrackSort.entries))
+    }
     val tracks = remember(library.tracks, sort) { library.tracks.sortedBy(sort) }
     IndexedListWithRail(listState = listState) {
         item {
             SortHeader(
                 label = sort.label,
                 options = TrackSort.entries.map { it.label },
-                onOptionSelected = { label -> TrackSort.entries.firstOrNull { it.label == label }?.let { sort = it } },
+                onOptionSelected = { label ->
+                    TrackSort.entries.firstOrNull { it.label == label }?.let {
+                        sort = it
+                        preferences.saveSort(SORT_TRACK, it.name)
+                    }
+                },
             )
         }
         items(tracks, key = { it.id }) { track ->
             TrackRow(
                 track = track,
                 onClick = { onTrackClick(track, tracks) },
+                modifier = Modifier.animateItem(),
             )
         }
         if (tracks.isEmpty()) item { EmptyInline("No tracks found") }
@@ -863,14 +892,22 @@ private fun AlbumTab(
     library: LibraryState,
     onAlbumClick: (AlbumGroup) -> Unit,
 ) {
-    var sort by rememberSaveable { mutableStateOf(AlbumSort.Release) }
+    val preferences = rememberSortPreferences()
+    var sort by rememberSaveable {
+        mutableStateOf(preferences.loadEnumSort(SORT_ALBUM, AlbumSort.Release, AlbumSort.entries))
+    }
     val albums = remember(library.albums, sort) { library.albums.sortedBy(sort) }
     RoundedGridPanel {
         item(span = { GridItemSpan(maxLineSpan) }) {
             SortHeader(
                 label = sort.label,
                 options = AlbumSort.entries.map { it.label },
-                onOptionSelected = { label -> AlbumSort.entries.firstOrNull { it.label == label }?.let { sort = it } },
+                onOptionSelected = { label ->
+                    AlbumSort.entries.firstOrNull { it.label == label }?.let {
+                        sort = it
+                        preferences.saveSort(SORT_ALBUM, it.name)
+                    }
+                },
             )
         }
         items(albums, key = { it.id }) { album ->
@@ -878,7 +915,10 @@ private fun AlbumTab(
                 title = album.title,
                 subtitle = "${album.artist} | ${album.tracks.size} tracks",
                 artwork = album.tracks.firstOrNull()?.albumArtUri,
-                modifier = Modifier.clickable { onAlbumClick(album) },
+                modifier =
+                    Modifier
+                        .animateItem()
+                        .clickable { onAlbumClick(album) },
             )
         }
         if (albums.isEmpty()) {
@@ -950,7 +990,7 @@ private fun AlbumDetailScreen(
                         text = album.title,
                         modifier = Modifier.padding(top = 24.dp),
                         color = MaterialTheme.colorScheme.primary,
-                        fontSize = 27.sp,
+                        fontSize = 25.sp,
                         lineHeight = 33.sp,
                         fontWeight = FontWeight.Medium,
                         textAlign = TextAlign.Center,
@@ -996,7 +1036,7 @@ private fun AlbumDetailScreen(
                                         val shuffledTracks = albumTracks.shuffled()
                                         shuffledTracks.firstOrNull()?.let { onTrackClick(it, shuffledTracks) }
                                     },
-                                    modifier = Modifier.size(48.dp),
+                                    modifier = Modifier.size(42.dp),
                                 ) {
                                     Icon(Icons.Default.Shuffle, contentDescription = "Shuffle")
                                 }
@@ -1008,7 +1048,7 @@ private fun AlbumDetailScreen(
                             ) {
                                 IconButton(
                                     onClick = { albumTracks.firstOrNull()?.let { onTrackClick(it, albumTracks) } },
-                                    modifier = Modifier.size(48.dp),
+                                    modifier = Modifier.size(42.dp),
                                 ) {
                                     Icon(Icons.Default.PlayArrow, contentDescription = "Play", tint = MaterialTheme.colorScheme.onPrimary)
                                 }
@@ -1092,14 +1132,22 @@ private fun ArtistTab(
     onArtistClick: (ArtistGroup) -> Unit,
 ) {
     val listState = rememberLazyListState()
-    var sort by rememberSaveable { mutableStateOf(ArtistSort.Name) }
+    val preferences = rememberSortPreferences()
+    var sort by rememberSaveable {
+        mutableStateOf(preferences.loadEnumSort(SORT_ARTIST, ArtistSort.Name, ArtistSort.entries))
+    }
     val artists = remember(library.artists, sort) { library.artists.sortedBy(sort) }
     IndexedListWithRail(listState = listState) {
         item {
             SortHeader(
                 label = sort.label,
                 options = ArtistSort.entries.map { it.label },
-                onOptionSelected = { label -> ArtistSort.entries.firstOrNull { it.label == label }?.let { sort = it } },
+                onOptionSelected = { label ->
+                    ArtistSort.entries.firstOrNull { it.label == label }?.let {
+                        sort = it
+                        preferences.saveSort(SORT_ARTIST, it.name)
+                    }
+                },
             )
         }
         items(artists, key = { it.name }) { artist ->
@@ -1108,6 +1156,7 @@ private fun ArtistTab(
                 title = artist.name,
                 subtitle = "${artist.albums} albums | ${artist.tracks.size} tracks",
                 onClick = { onArtistClick(artist) },
+                modifier = Modifier.animateItem(),
             )
         }
         if (artists.isEmpty()) item { EmptyInline("No artists found") }
@@ -1407,14 +1456,22 @@ private fun FolderTab(
     onFolderClick: (FolderGroup) -> Unit,
 ) {
     val listState = rememberLazyListState()
-    var sort by rememberSaveable { mutableStateOf(FolderSort.Name) }
+    val preferences = rememberSortPreferences()
+    var sort by rememberSaveable {
+        mutableStateOf(preferences.loadEnumSort(SORT_FOLDER, FolderSort.Name, FolderSort.entries))
+    }
     val folders = remember(library.folders, sort) { library.folders.sortedBy(sort) }
     IndexedListWithRail(listState = listState) {
         item {
             SortHeader(
                 label = sort.label,
                 options = FolderSort.entries.map { it.label },
-                onOptionSelected = { label -> FolderSort.entries.firstOrNull { it.label == label }?.let { sort = it } },
+                onOptionSelected = { label ->
+                    FolderSort.entries.firstOrNull { it.label == label }?.let {
+                        sort = it
+                        preferences.saveSort(SORT_FOLDER, it.name)
+                    }
+                },
             )
         }
         items(folders, key = { it.path }) { folder ->
@@ -1424,6 +1481,7 @@ private fun FolderTab(
                 subtitle = folder.path,
                 folder = true,
                 onClick = { onFolderClick(folder) },
+                modifier = Modifier.animateItem(),
             )
         }
         if (folders.isEmpty()) item { EmptyInline("No folders found") }
@@ -1449,6 +1507,7 @@ private fun FolderDetailScreen(
             modifier =
                 Modifier
                     .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.background.copy(alpha = 0.96f))
                     .padding(start = 8.dp, top = 18.dp, end = 8.dp, bottom = 18.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -1626,12 +1685,12 @@ private fun DetailSortHeader(
             modifier = Modifier.weight(1f),
         )
         Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceVariant) {
-            IconButton(onClick = onShuffle, modifier = Modifier.size(48.dp)) {
+            IconButton(onClick = onShuffle, modifier = Modifier.size(42.dp)) {
                 Icon(Icons.Default.Shuffle, contentDescription = "Shuffle")
             }
         }
         Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceVariant) {
-            IconButton(onClick = onPlay, modifier = Modifier.size(48.dp)) {
+            IconButton(onClick = onPlay, modifier = Modifier.size(42.dp)) {
                 Icon(Icons.Default.PlayArrow, contentDescription = "Play")
             }
         }
@@ -1757,6 +1816,21 @@ private fun albumTrackComparator(): Comparator<Track> =
 
 private fun String.displayFolderName(): String = substringAfterLast('/').ifBlank { this }
 
+@Composable
+private fun rememberSortPreferences(): MusicPreferences {
+    val context = LocalContext.current
+    return remember(context) { MusicPreferences(context) }
+}
+
+private inline fun <reified T> MusicPreferences.loadEnumSort(
+    key: String,
+    defaultValue: T,
+    entries: List<T>,
+): T where T : Enum<T> {
+    val saved = loadSort(key, defaultValue.name)
+    return entries.firstOrNull { it.name == saved } ?: defaultValue
+}
+
 private fun List<Track>.sortedBy(sort: TrackSort): List<Track> =
     when (sort) {
         TrackSort.Name -> {
@@ -1851,10 +1925,11 @@ private fun String.compareNaturally(other: String): Int {
 private fun TrackRow(
     track: Track,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Row(
         modifier =
-            Modifier
+            modifier
                 .fillMaxWidth()
                 .clickable(onClick = onClick)
                 .padding(vertical = 4.dp),
@@ -1901,10 +1976,11 @@ private fun MediaGroupRow(
     subtitle: String,
     folder: Boolean = false,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Row(
         modifier =
-            Modifier
+            modifier
                 .fillMaxWidth()
                 .clickable(onClick = onClick)
                 .padding(vertical = 9.dp),
@@ -1942,10 +2018,11 @@ private fun MediaGroupRow(
 private fun PlaylistRow(
     playlist: PlaylistGroup,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Row(
         modifier =
-            Modifier
+            modifier
                 .fillMaxWidth()
                 .clickable(onClick = onClick)
                 .padding(vertical = 8.dp),
