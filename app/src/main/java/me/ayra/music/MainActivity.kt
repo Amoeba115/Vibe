@@ -625,6 +625,35 @@ class MusicViewModel(
         publishPlayerState()
     }
 
+    fun replaceCurrentQueue(tracks: List<Track>) {
+        val player = controller ?: return
+        if (tracks.isEmpty()) return
+        player.setMediaItems(tracks.map { it.toMediaItem() }, 0, 0L)
+        player.prepare()
+        player.play()
+        saveLastQueue(tracks)
+        tracks.firstOrNull()?.let {
+            preferences.saveLastTrackId(it.id)
+            lastSavedTrackId = it.id
+            recordTrackPlayed(it.id)
+        }
+        _playerState.update { it.copy(queue = tracks, currentTrack = tracks.firstOrNull()) }
+        publishPlayerState()
+    }
+
+    fun replacePlaylistTracks(
+        playlistId: String,
+        tracks: List<Track>,
+    ) {
+        viewModelScope.launch {
+            libraryScanner.replacePlaylistTracks(playlistId, tracks)
+            val visibleTracks = _library.value.tracks
+            _library.update { state ->
+                state.copy(playlists = libraryScanner.buildPlaylists(visibleTracks))
+            }
+        }
+    }
+
     private fun publishPlayerState() {
         val player = controller ?: return
         val queue =
@@ -941,6 +970,20 @@ class LibraryScanner(
             dao.upsertCustomPlaylistTracks(additions)
             customPlaylistsCache = dao.loadCustomPlaylists(dao.loadTracks().map { it.toTrack() })
         }
+    }
+
+    suspend fun replacePlaylistTracks(
+        playlistId: String,
+        tracks: List<Track>,
+    ) = withContext(Dispatchers.IO) {
+        val now = System.currentTimeMillis()
+        dao.replaceCustomPlaylistTracks(
+            playlistId,
+            tracks.distinctBy { it.id }.mapIndexed { index, track ->
+                CustomPlaylistTrackEntity(playlistId, track.id, index, now)
+            },
+        )
+        customPlaylistsCache = dao.loadCustomPlaylists(dao.loadTracks().map { it.toTrack() })
     }
 
     fun buildPlaylists(tracks: List<Track>): List<PlaylistGroup> {
@@ -1345,7 +1388,8 @@ fun MusicApp(
     val playerState by viewModel.playerState.collectAsState()
     val preferences = remember(context) { MusicPreferences(context) }
     var lastHomeTab by rememberSaveable { mutableStateOf(preferences.loadLastTab(HomeTab.Favorite.ordinal)) }
-    val hidePlayerSheet = navigator.currentRoute == MainRoute.Settings
+    var playlistEditMode by rememberSaveable { mutableStateOf(false) }
+    val hidePlayerSheet = navigator.currentRoute == MainRoute.Settings || playlistEditMode
     var playerExpandRequest by rememberSaveable { mutableIntStateOf(0) }
 
     LaunchedEffect(openPlayerRequest) {
@@ -1384,6 +1428,10 @@ fun MusicApp(
                 onCreatePlaylist = viewModel::createPlaylist,
                 onAddTracksToPlaylist = viewModel::addTracksToPlaylist,
                 onAddTracksToCurrentQueue = viewModel::addTracksToCurrentQueue,
+                onReplaceCurrentQueue = viewModel::replaceCurrentQueue,
+                onReplacePlaylistTracks = viewModel::replacePlaylistTracks,
+                onAddTracksToRoute = { tracks -> navigator.navigate(MainRoute.AddToTracks(tracks.map { it.id })) },
+                onPlaylistEditModeChanged = { playlistEditMode = it },
                 initialTabIndex = lastHomeTab,
                 onTabSelected = { tabIndex ->
                     lastHomeTab = tabIndex

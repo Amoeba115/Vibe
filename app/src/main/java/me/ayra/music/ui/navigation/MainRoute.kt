@@ -16,4 +16,5 @@ sealed interface MainRoute {
     data class SelectPlaylistTracks(val name: String) : MainRoute
     data class AddTracksToPlaylist(val id: String) : MainRoute
     data class AddToPlaylist(val trackId: Long) : MainRoute
+    data class AddToTracks(val trackIds: List<Long>) : MainRoute
 }
