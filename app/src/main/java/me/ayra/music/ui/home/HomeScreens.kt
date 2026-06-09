@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
@@ -44,8 +45,10 @@ import androidx.compose.foundation.lazy.grid.LazyGridScope
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -74,9 +77,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
-import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
@@ -95,7 +96,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -115,6 +119,9 @@ import me.ayra.music.ui.navigation.MusicNavigator
 import me.ayra.music.ui.player.AlbumArt
 import me.ayra.music.ui.settings.SettingsScreen
 import me.ayra.music.util.MusicPreferences
+import kotlin.math.abs
+import kotlin.math.floor
+import kotlin.math.roundToInt
 
 enum class HomeTab(
     val label: String,
@@ -163,6 +170,7 @@ private const val SORT_ARTIST = "artist"
 private const val SORT_FOLDER = "folder"
 private const val ALBUM_SNAP_EXPAND_THRESHOLD = 0.35f
 private const val ALBUM_SNAP_FLING_DELTA_PX = 72
+private val HOME_TAB_WIDTH = 104.dp
 
 @OptIn(ExperimentalAnimationApi::class, ExperimentalSharedTransitionApi::class)
 @Composable
@@ -366,9 +374,36 @@ private fun HomeScreen(
     val restoredTab = initialTabIndex.coerceIn(tabs.indices)
     val pagerState = rememberPagerState(initialPage = restoredTab) { tabs.size }
     val coroutineScope = rememberCoroutineScope()
+    val tabListState = rememberLazyListState(initialFirstVisibleItemIndex = restoredTab)
+    val density = LocalDensity.current
+    val tabWidthPx = with(density) { HOME_TAB_WIDTH.roundToPx() }
 
     LaunchedEffect(pagerState.currentPage) {
         onTabSelected(pagerState.currentPage)
+    }
+
+    LaunchedEffect(pagerState, tabListState, tabWidthPx) {
+        snapshotFlow { pagerState.currentPage + pagerState.currentPageOffsetFraction }
+            .collect { rawPosition ->
+                if (!tabListState.isScrollInProgress) {
+                    val tabPosition = rawPosition.coerceIn(0f, tabs.lastIndex.toFloat())
+                    val itemIndex = floor(tabPosition).toInt().coerceIn(0, tabs.lastIndex)
+                    val itemOffset = ((tabPosition - itemIndex) * tabWidthPx).roundToInt()
+                    tabListState.scrollToItem(itemIndex, itemOffset)
+                }
+            }
+    }
+
+    LaunchedEffect(tabListState, pagerState) {
+        var lastCenteredTab = restoredTab
+        snapshotFlow { tabListState.centeredTabIndex(tabs.size) }
+            .collect { centeredTab ->
+                if (tabListState.isScrollInProgress && centeredTab != lastCenteredTab) {
+                    lastCenteredTab = centeredTab
+                    onTabSelected(centeredTab)
+                    pagerState.scrollToPage(centeredTab)
+                }
+            }
     }
 
     Column(modifier = modifier) {
@@ -394,34 +429,15 @@ private fun HomeScreen(
             }
         }
 
-        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-            val centeredTabEdge = (maxWidth / 2 - 44.dp).coerceAtLeast(0.dp)
-            ScrollableTabRow(
-                selectedTabIndex = pagerState.currentPage,
-                edgePadding = centeredTabEdge,
-                containerColor = Color.Transparent,
-                contentColor = MaterialTheme.colorScheme.primary,
-                divider = {},
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                tabs.forEachIndexed { index, tab ->
-                    Tab(
-                        selected = pagerState.currentPage == index,
-                        onClick = {
-                            onTabSelected(index)
-                            coroutineScope.launch { pagerState.animateScrollToPage(index) }
-                        },
-                        text = {
-                            Text(
-                                text = tab.label,
-                                fontSize = if (pagerState.currentPage == index) 20.sp else 16.sp,
-                                fontWeight = if (pagerState.currentPage == index) FontWeight.SemiBold else FontWeight.Normal,
-                            )
-                        },
-                    )
-                }
-            }
-        }
+        CenteredHomeTabs(
+            tabs = tabs,
+            pagerState = pagerState,
+            listState = tabListState,
+            onTabClick = { index ->
+                onTabSelected(index)
+                coroutineScope.launch { pagerState.animateScrollToPage(index) }
+            },
+        )
 
         when {
             !library.permissionGranted && library.tracks.isEmpty() -> {
@@ -477,6 +493,58 @@ private fun HomeScreen(
                             FolderTab(library, onFolderClick)
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CenteredHomeTabs(
+    tabs: List<HomeTab>,
+    pagerState: PagerState,
+    listState: LazyListState,
+    onTabClick: (Int) -> Unit,
+) {
+    val pagerPosition = pagerState.currentPage + pagerState.currentPageOffsetFraction
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val horizontalPadding = ((maxWidth - HOME_TAB_WIDTH) / 2).coerceAtLeast(0.dp)
+        LazyRow(
+            state = listState,
+            modifier = Modifier.fillMaxWidth(),
+            contentPadding = PaddingValues(horizontal = horizontalPadding),
+        ) {
+            itemsIndexed(tabs, key = { _, tab -> tab.label }) { index, tab ->
+                val progress = (1f - abs(index - pagerPosition)).coerceIn(0f, 1f)
+                val scale = 0.8f + (0.5f * progress)
+                val color =
+                    lerp(
+                        MaterialTheme.colorScheme.onSurfaceVariant,
+                        MaterialTheme.colorScheme.primary,
+                        progress,
+                    )
+                Box(
+                    modifier =
+                        Modifier
+                            .width(HOME_TAB_WIDTH)
+                            .height(52.dp)
+                            .clickable { onTabClick(index) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = tab.label,
+                        color = color,
+                        fontSize = 18.sp,
+                        fontWeight = if (progress >= 0.5f) FontWeight.SemiBold else FontWeight.Normal,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                        modifier =
+                            Modifier.graphicsLayer {
+                                scaleX = scale
+                                scaleY = scale
+                            },
+                    )
                 }
             }
         }
@@ -1963,6 +2031,16 @@ private fun albumTrackComparator(): Comparator<Track> =
 private fun String.displayFolderName(): String = substringAfterLast('/').ifBlank { this }
 
 private fun LazyListState.albumDetailScrollY(): Int = firstVisibleItemIndex * 100_000 + firstVisibleItemScrollOffset
+
+private fun LazyListState.centeredTabIndex(tabCount: Int): Int {
+    if (tabCount <= 0) return 0
+    val center = (layoutInfo.viewportStartOffset + layoutInfo.viewportEndOffset) / 2
+    return layoutInfo.visibleItemsInfo
+        .minByOrNull { item -> abs((item.offset + item.size / 2) - center) }
+        ?.index
+        ?.coerceIn(0, tabCount - 1)
+        ?: firstVisibleItemIndex.coerceIn(0, tabCount - 1)
+}
 
 private fun albumSharedKey(albumId: Long): String = "album-art-$albumId"
 
