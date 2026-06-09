@@ -64,6 +64,18 @@ class MusicPreferences(context: Context) {
         preferences.edit().putInt(KEY_CROSSFADE_SECONDS, value.coerceIn(0, 5)).apply()
     }
 
+    fun loadShuffleEnabled(): Boolean = preferences.getBoolean(KEY_SHUFFLE_ENABLED, false)
+
+    fun saveShuffleEnabled(value: Boolean) {
+        preferences.edit().putBoolean(KEY_SHUFFLE_ENABLED, value).apply()
+    }
+
+    fun loadRepeatMode(): Int = preferences.getInt(KEY_REPEAT_MODE, 0).coerceIn(0, 2)
+
+    fun saveRepeatMode(value: Int) {
+        preferences.edit().putInt(KEY_REPEAT_MODE, value.coerceIn(0, 2)).apply()
+    }
+
     fun loadVgmLoopMode(): String = preferences.getString(KEY_VGM_LOOP_MODE, VGM_LOOP_FOLLOW_APP) ?: VGM_LOOP_FOLLOW_APP
 
     fun saveVgmLoopMode(value: String) {
@@ -138,6 +150,8 @@ class MusicPreferences(context: Context) {
         private const val KEY_THEME_COLOR_SEED = "theme_color_seed"
         private const val KEY_AMOLED_MODE = "amoled_mode"
         private const val KEY_CROSSFADE_SECONDS = "crossfade_seconds"
+        private const val KEY_SHUFFLE_ENABLED = "shuffle_enabled"
+        private const val KEY_REPEAT_MODE = "repeat_mode"
         private const val KEY_VGM_LOOP_MODE = "vgm_loop_mode"
         private const val KEY_VGM_LOOP_COUNT = "vgm_loop_count"
         private const val KEY_VGM_FADE_LENGTH_SECONDS = "vgm_fade_length_seconds"

@@ -273,6 +273,8 @@ class MusicViewModel(
                         controller =
                             connectedController.also { mediaController ->
                                 mediaController.setPlaybackSpeed(preferences.loadPlaybackSpeed())
+                                mediaController.shuffleModeEnabled = preferences.loadShuffleEnabled()
+                                mediaController.repeatMode = preferences.loadRepeatMode()
                                 mediaController.addListener(
                                     object : Player.Listener {
                                         override fun onIsPlayingChanged(isPlaying: Boolean) = publishPlayerState()
@@ -284,9 +286,15 @@ class MusicViewModel(
 
                                         override fun onPlaybackStateChanged(playbackState: Int) = publishPlayerState()
 
-                                        override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) = publishPlayerState()
+                                        override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
+                                            preferences.saveShuffleEnabled(shuffleModeEnabled)
+                                            publishPlayerState()
+                                        }
 
-                                        override fun onRepeatModeChanged(repeatMode: Int) = publishPlayerState()
+                                        override fun onRepeatModeChanged(repeatMode: Int) {
+                                            preferences.saveRepeatMode(repeatMode)
+                                            publishPlayerState()
+                                        }
                                     },
                                 )
                             }
@@ -409,17 +417,23 @@ class MusicViewModel(
 
     fun toggleShuffle() {
         val player = controller ?: return
-        player.shuffleModeEnabled = !player.shuffleModeEnabled
+        val enabled = !player.shuffleModeEnabled
+        player.shuffleModeEnabled = enabled
+        preferences.saveShuffleEnabled(enabled)
+        _playerState.update { it.copy(shuffle = enabled) }
     }
 
     fun toggleRepeat() {
         val player = controller ?: return
-        player.repeatMode =
+        val repeatMode =
             when (player.repeatMode) {
                 Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
                 Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
                 else -> Player.REPEAT_MODE_OFF
             }
+        player.repeatMode = repeatMode
+        preferences.saveRepeatMode(repeatMode)
+        _playerState.update { it.copy(repeatMode = repeatMode) }
     }
 
     fun toggleFavorite(trackId: Long) {
@@ -510,6 +524,8 @@ class MusicViewModel(
 
         restoredTrack = true
         lastSavedTrackId = trackId
+        player.shuffleModeEnabled = preferences.loadShuffleEnabled()
+        player.repeatMode = preferences.loadRepeatMode()
         player.setMediaItems(queue.map { it.toMediaItem() }, startIndex, 0L)
         player.prepare()
         _playerState.update { it.copy(queue = queue) }

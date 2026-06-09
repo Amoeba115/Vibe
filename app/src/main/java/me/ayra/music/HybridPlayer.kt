@@ -209,8 +209,10 @@ class HybridPlayer(
 
     override fun handleSetRepeatMode(repeatMode: Int): ListenableFuture<Any> {
         this.repeatMode = repeatMode
-        exoPlayer.repeatMode = repeatMode
-        vgmPlayer?.repeatMode = repeatMode
+        val childRepeatMode = childRepeatMode()
+        exoPlayer.repeatMode = childRepeatMode
+        vgmPlayer?.repeatMode = childRepeatMode
+        applyVgmSettings()
         invalidateState()
         return immediateFuture()
     }
@@ -268,7 +270,7 @@ class HybridPlayer(
         } else {
             nextPlayer.stop()
         }
-        nextPlayer.repeatMode = repeatMode
+        nextPlayer.repeatMode = childRepeatMode()
         nextPlayer.shuffleModeEnabled = shuffleModeEnabled
         nextPlayer.volume = volume
         if (nextPlayer === exoPlayer) {
@@ -294,6 +296,9 @@ class HybridPlayer(
         playWhenReady = false
     }
 
+    private fun childRepeatMode(): Int =
+        if (repeatMode == Player.REPEAT_MODE_ONE) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
+
     private fun createVgmPlayer(looper: Looper): Player? {
         return runCatching {
             val settings = createVgmSettings()
@@ -317,11 +322,13 @@ class HybridPlayer(
         val settingsClass = Class.forName("me.ayra.vgmstream.VgmSettings")
         val loopModeClass = Class.forName("me.ayra.vgmstream.LoopMode")
         val channelOutputClass = Class.forName("me.ayra.vgmstream.ChannelOutput")
+        val savedLoopMode = preferences.loadVgmLoopMode()
         val loopModeName =
-            preferences
-                .loadVgmLoopMode()
-                .takeUnless { it == MusicPreferences.VGM_LOOP_FOLLOW_APP }
-                ?: "Normal"
+            when {
+                savedLoopMode != MusicPreferences.VGM_LOOP_FOLLOW_APP -> savedLoopMode
+                repeatMode == Player.REPEAT_MODE_ONE -> "Forever"
+                else -> "Normal"
+            }
         val loopModeConstants = loopModeClass.enumConstants.orEmpty()
         val loopMode = loopModeConstants.firstOrNull { (it as Enum<*>).name == loopModeName }
             ?: loopModeConstants.first { (it as Enum<*>).name == "Normal" }
@@ -377,13 +384,23 @@ class HybridPlayer(
     private fun maybeAdvanceAfterEnded(playbackState: Int) {
         if (playbackState != Player.STATE_ENDED || !playWhenReady) return
         val nextIndex = synchronized(stateLock) {
-            val candidate = currentIndex + 1
-            if (candidate in playlist.indices) {
-                currentIndex = candidate
-                pendingStartPositionMs = 0L
-                candidate
-            } else {
-                C.INDEX_UNSET
+            when {
+                currentIndex == C.INDEX_UNSET || playlist.isEmpty() -> C.INDEX_UNSET
+                repeatMode == Player.REPEAT_MODE_ONE -> {
+                    pendingStartPositionMs = 0L
+                    currentIndex
+                }
+                currentIndex + 1 in playlist.indices -> {
+                    currentIndex += 1
+                    pendingStartPositionMs = 0L
+                    currentIndex
+                }
+                repeatMode == Player.REPEAT_MODE_ALL -> {
+                    currentIndex = 0
+                    pendingStartPositionMs = 0L
+                    currentIndex
+                }
+                else -> C.INDEX_UNSET
             }
         }
         if (nextIndex != C.INDEX_UNSET) {

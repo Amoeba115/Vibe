@@ -85,11 +85,17 @@ class MusicPlaybackService : MediaSessionService() {
     }
 
     private fun createSessionPlayer(): Player {
+        val preferences = me.ayra.music.util.MusicPreferences(this)
         return if (BuildConfig.IS_VGM_BUILD) {
-            HybridPlayer(this)
+            HybridPlayer(this).apply {
+                shuffleModeEnabled = preferences.loadShuffleEnabled()
+                repeatMode = preferences.loadRepeatMode()
+            }
         } else {
             ExoPlayer.Builder(this).build().apply {
-                setPlaybackSpeed(me.ayra.music.util.MusicPreferences(this@MusicPlaybackService).loadPlaybackSpeed())
+                setPlaybackSpeed(preferences.loadPlaybackSpeed())
+                shuffleModeEnabled = preferences.loadShuffleEnabled()
+                repeatMode = preferences.loadRepeatMode()
             }
         }
     }

@@ -65,6 +65,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
@@ -811,6 +812,7 @@ private fun ExpandedPlayerContent(
             repeatMode = playerState.repeatMode,
             hasTrack = track != null,
             enabled = enabled,
+            accent = seekAccent,
             onShuffle = onShuffle,
             onPrevious = onPrevious,
             onPlayPause = onPlayPause,
@@ -1112,6 +1114,7 @@ private fun Controls(
     repeatMode: Int,
     hasTrack: Boolean,
     enabled: Boolean,
+    accent: Color,
     onShuffle: () -> Unit,
     onPrevious: () -> Unit,
     onPlayPause: () -> Unit,
@@ -1126,12 +1129,13 @@ private fun Controls(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        IconButton(onClick = onShuffle, enabled = enabled && hasTrack) {
-            Icon(
-                Icons.Default.Shuffle,
-                contentDescription = "Shuffle",
-                tint = if (shuffle) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-            )
+        AccentOptionButton(
+            active = shuffle,
+            enabled = enabled && hasTrack,
+            accent = accent,
+            onClick = onShuffle,
+        ) {
+            Icon(Icons.Default.Shuffle, contentDescription = "Shuffle")
         }
         IconButton(onClick = onPrevious, enabled = enabled && hasTrack) {
             Icon(Icons.Default.SkipPrevious, contentDescription = "Previous", modifier = Modifier.size(38.dp))
@@ -1146,20 +1150,44 @@ private fun Controls(
         IconButton(onClick = onNext, enabled = enabled && hasTrack) {
             Icon(Icons.Default.SkipNext, contentDescription = "Next", modifier = Modifier.size(38.dp))
         }
-        IconButton(onClick = onRepeat, enabled = enabled && hasTrack) {
+        AccentOptionButton(
+            active = repeatMode != Player.REPEAT_MODE_OFF,
+            enabled = enabled && hasTrack,
+            accent = accent,
+            onClick = onRepeat,
+        ) {
             Icon(
-                Icons.Default.Repeat,
-                contentDescription = "Repeat",
-                tint =
-                    if (repeatMode !=
-                        Player.REPEAT_MODE_OFF
-                    ) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
+                if (repeatMode == Player.REPEAT_MODE_ONE) Icons.Default.RepeatOne else Icons.Default.Repeat,
+                contentDescription =
+                    when (repeatMode) {
+                        Player.REPEAT_MODE_ONE -> "Repeat one"
+                        Player.REPEAT_MODE_ALL -> "Repeat all"
+                        else -> "Repeat off"
                     },
             )
         }
+    }
+}
+
+@Composable
+private fun AccentOptionButton(
+    active: Boolean,
+    enabled: Boolean,
+    accent: Color,
+    onClick: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    val contentColor =
+        when {
+            !enabled -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+            active -> accent
+            else -> MaterialTheme.colorScheme.onSurface
+        }
+    IconButton(onClick = onClick, enabled = enabled) {
+        androidx.compose.runtime.CompositionLocalProvider(
+            androidx.compose.material3.LocalContentColor provides contentColor,
+            content = content,
+        )
     }
 }
 
