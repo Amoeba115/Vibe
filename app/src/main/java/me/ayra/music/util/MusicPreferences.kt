@@ -52,6 +52,12 @@ class MusicPreferences(context: Context) {
         preferences.edit().putBoolean(KEY_AMOLED_MODE, value).apply()
     }
 
+    fun loadDisableAlbumDynamicColor(): Boolean = preferences.getBoolean(KEY_DISABLE_ALBUM_DYNAMIC_COLOR, false)
+
+    fun saveDisableAlbumDynamicColor(value: Boolean) {
+        preferences.edit().putBoolean(KEY_DISABLE_ALBUM_DYNAMIC_COLOR, value).apply()
+    }
+
     fun loadPlaybackSpeed(): Float = preferences.getFloat(KEY_PLAYBACK_SPEED, 1f).coerceIn(0.5f, 2f)
 
     fun savePlaybackSpeed(value: Float) {
@@ -149,6 +155,7 @@ class MusicPreferences(context: Context) {
         private const val KEY_THEME_MODE = "theme_mode"
         private const val KEY_THEME_COLOR_SEED = "theme_color_seed"
         private const val KEY_AMOLED_MODE = "amoled_mode"
+        private const val KEY_DISABLE_ALBUM_DYNAMIC_COLOR = "disable_album_dynamic_color"
         private const val KEY_CROSSFADE_SECONDS = "crossfade_seconds"
         private const val KEY_SHUFFLE_ENABLED = "shuffle_enabled"
         private const val KEY_REPEAT_MODE = "repeat_mode"

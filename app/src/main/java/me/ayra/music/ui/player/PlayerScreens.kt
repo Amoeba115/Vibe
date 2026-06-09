@@ -1,6 +1,7 @@
 package me.ayra.music.ui.player
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.net.Uri
@@ -76,6 +77,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -121,6 +123,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.ayra.music.PlayerState
 import me.ayra.music.Track
+import me.ayra.music.util.MusicPreferences
 import java.util.Collections
 import java.util.LinkedHashMap
 import kotlin.math.roundToInt
@@ -370,6 +373,8 @@ private fun PlayerSurface(
     shape: RoundedCornerShape,
 ) {
     val context = LocalContext.current
+    val preferences = remember(context) { MusicPreferences(context) }
+    var disableAlbumDynamicColor by remember { mutableStateOf(preferences.loadDisableAlbumDynamicColor()) }
     val darkTheme = isSystemInDarkTheme()
     val progress = sheetState.progress
     val collapsedVisible = 1f - progress
@@ -388,7 +393,7 @@ private fun PlayerSurface(
             onFullscreen = MaterialTheme.colorScheme.onSurface,
         )
     val miniAccent =
-        artworkSeedColor?.let { seed ->
+        artworkSeedColor?.takeUnless { disableAlbumDynamicColor }?.let { seed ->
             miniPlayerAccentFromSeed(seed, darkTheme)
         } ?: defaultMiniAccent
     val animatedMiniContainer by animateColorAsState(
@@ -437,8 +442,22 @@ private fun PlayerSurface(
             onFullscreen = animatedOnFullscreen,
         )
 
-    LaunchedEffect(track?.id, artwork, track?.uri) {
-        artworkSeedColor = track?.let { loadTrackSeedColor(context, it.albumArtUri, it.uri) }
+    LaunchedEffect(track?.id, artwork, track?.uri, disableAlbumDynamicColor) {
+        artworkSeedColor =
+            if (disableAlbumDynamicColor) {
+                null
+            } else {
+                track?.let { loadTrackSeedColor(context, it.albumArtUri, it.uri) }
+            }
+    }
+
+    DisposableEffect(preferences) {
+        val listener =
+            SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+                disableAlbumDynamicColor = preferences.loadDisableAlbumDynamicColor()
+            }
+        preferences.registerSettingsListener(listener)
+        onDispose { preferences.unregisterSettingsListener(listener) }
     }
 
     Surface(

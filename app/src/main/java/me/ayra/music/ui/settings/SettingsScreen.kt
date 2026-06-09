@@ -2,6 +2,7 @@ package me.ayra.music.ui.settings
 
 import android.os.Build
 import androidx.activity.compose.BackHandler
+import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.SizeTransform
@@ -41,20 +42,18 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PlayCircle
+import androidx.compose.material.icons.rounded.RadioButtonUnchecked
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ColorScheme
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -85,6 +84,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -92,6 +92,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import me.ayra.music.BuildConfig
+import me.ayra.music.R
 import me.ayra.music.ui.theme.LocalThemeState
 import me.ayra.music.ui.theme.THEME_SEED_NEUTRAL
 import me.ayra.music.ui.theme.THEME_SEED_SYSTEM
@@ -104,39 +105,39 @@ import me.ayra.music.util.MusicPreferences
 import kotlin.math.roundToInt
 
 private enum class SettingsCategory(
-    val title: String,
+    @StringRes val titleRes: Int,
     val depth: Int = 1,
 ) {
-    LookAndFeel("Look and feel"),
-    Player("Player"),
-    Library("Library"),
-    Vgmstream("vgmstream"),
-    About("About"),
+    LookAndFeel(R.string.look_and_feel),
+    Player(R.string.player),
+    Library(R.string.library),
+    Vgmstream(R.string.vgmstream),
+    About(R.string.about),
 }
 
 private data class OptionItem(
     val value: String,
-    val label: String,
+    @StringRes val labelRes: Int,
 )
 
 private val loopModeOptions =
     listOf(
-        OptionItem(MusicPreferences.VGM_LOOP_FOLLOW_APP, "Follow app"),
-        OptionItem("Normal", "Normal"),
-        OptionItem("Forever", "Loop forever"),
-        OptionItem("IgnoreLoop", "Ignore loop points"),
+        OptionItem(MusicPreferences.VGM_LOOP_FOLLOW_APP, R.string.loop_mode_follow_app),
+        OptionItem("Normal", R.string.loop_mode_normal),
+        OptionItem("Forever", R.string.loop_mode_forever),
+        OptionItem("IgnoreLoop", R.string.loop_mode_ignore),
     )
 
 private val channelOutputOptions =
     listOf(
-        OptionItem("Auto", "Auto"),
-        OptionItem("AllChannels", "All channels"),
-        OptionItem("Channel1", "Channel 1"),
-        OptionItem("Channel2", "Channel 2"),
-        OptionItem("Channel3", "Channel 3"),
-        OptionItem("Channel4", "Channel 4"),
-        OptionItem("Stereo12", "Stereo 1/2"),
-        OptionItem("Stereo34", "Stereo 3/4"),
+        OptionItem("Auto", R.string.channel_output_auto),
+        OptionItem("AllChannels", R.string.channel_output_all),
+        OptionItem("Channel1", R.string.channel_output_1),
+        OptionItem("Channel2", R.string.channel_output_2),
+        OptionItem("Channel3", R.string.channel_output_3),
+        OptionItem("Channel4", R.string.channel_output_4),
+        OptionItem("Stereo12", R.string.channel_output_stereo12),
+        OptionItem("Stereo34", R.string.channel_output_stereo34),
     )
 
 @Composable
@@ -145,7 +146,7 @@ fun SettingsScreen(
     modifier: Modifier = Modifier,
 ) {
     var selectedCategory by rememberSaveable { mutableStateOf<SettingsCategory?>(null) }
-    val title = selectedCategory?.title ?: "Settings"
+    val title = selectedCategory?.titleRes?.let { stringResource(it) } ?: stringResource(R.string.settings)
 
     BackHandler {
         if (selectedCategory == null) onBack() else selectedCategory = null
@@ -199,37 +200,37 @@ private fun SettingsCategoryList(onCategorySelected: (SettingsCategory) -> Unit)
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         item {
-            SettingsSectionTitle("Appearance")
+            SettingsSectionTitle(stringResource(R.string.appearance))
             SettingsGroup {
                 SettingsNavigationRow(
-                    title = "Look and feel",
-                    subtitle = "Theme, color palette, and preview",
+                    title = stringResource(R.string.look_and_feel),
+                    subtitle = stringResource(R.string.look_and_feel_subtitle),
                     icon = Icons.Rounded.Palette,
                     onClick = { onCategorySelected(SettingsCategory.LookAndFeel) },
                 )
             }
         }
         item {
-            SettingsSectionTitle("Music")
+            SettingsSectionTitle(stringResource(R.string.music))
             SettingsGroup {
                 SettingsNavigationRow(
-                    title = "Player",
-                    subtitle = "Speed and crossfade",
+                    title = stringResource(R.string.player),
+                    subtitle = stringResource(R.string.player_subtitle),
                     icon = Icons.Rounded.PlayCircle,
                     onClick = { onCategorySelected(SettingsCategory.Player) },
                 )
                 SettingsDivider()
                 SettingsNavigationRow(
-                    title = "Library",
-                    subtitle = "Scanner and cached local library",
+                    title = stringResource(R.string.library),
+                    subtitle = stringResource(R.string.library_subtitle),
                     icon = Icons.Rounded.LibraryMusic,
                     onClick = { onCategorySelected(SettingsCategory.Library) },
                 )
                 if (BuildConfig.IS_VGM_BUILD) {
                     SettingsDivider()
                     SettingsNavigationRow(
-                        title = "vgmstream",
-                        subtitle = "Loop, fade, subsong, and channel output",
+                        title = stringResource(R.string.vgmstream),
+                        subtitle = stringResource(R.string.vgmstream_subtitle),
                         icon = Icons.Rounded.Settings,
                         onClick = { onCategorySelected(SettingsCategory.Vgmstream) },
                     )
@@ -237,11 +238,11 @@ private fun SettingsCategoryList(onCategorySelected: (SettingsCategory) -> Unit)
             }
         }
         item {
-            SettingsSectionTitle("Info")
+            SettingsSectionTitle(stringResource(R.string.info))
             SettingsGroup {
                 SettingsNavigationRow(
-                    title = "About",
-                    subtitle = "Version and project information",
+                    title = stringResource(R.string.about),
+                    subtitle = stringResource(R.string.about_subtitle),
                     icon = Icons.Rounded.Info,
                     onClick = { onCategorySelected(SettingsCategory.About) },
                 )
@@ -253,6 +254,7 @@ private fun SettingsCategoryList(onCategorySelected: (SettingsCategory) -> Unit)
 @Composable
 private fun LookAndFeelSettings() {
     val context = LocalContext.current
+    val preferences = rememberPreferences()
     val themeState = LocalThemeState.current
     val themeMode by themeState.themeMode.collectAsState()
     val themeColorSeed by themeState.themeColorSeed.collectAsState()
@@ -289,6 +291,7 @@ private fun LookAndFeelSettings() {
     }
     val followSystem = themeMode == ThemeMode.Auto
     val darkMode = themeMode == ThemeMode.Dark || (followSystem && systemDark)
+    var disableAlbumDynamicColor by rememberSaveable { mutableStateOf(preferences.loadDisableAlbumDynamicColor()) }
 
     Column(
         modifier =
@@ -308,7 +311,7 @@ private fun LookAndFeelSettings() {
         )
         Spacer(Modifier.height(16.dp))
         Text(
-            "Preview updates with your selected palette.",
+            stringResource(R.string.preview_palette_description),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(horizontal = 32.dp),
@@ -361,36 +364,52 @@ private fun LookAndFeelSettings() {
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
         ) {
             Row(modifier = Modifier.padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                PillTab(selected = selectedTab == 0, text = "Material You", onClick = { selectedTab = 0 })
-                PillTab(selected = selectedTab == 1, text = "Colors", onClick = { selectedTab = 1 })
+                PillTab(selected = selectedTab == 0, text = stringResource(R.string.material_you), onClick = { selectedTab = 0 })
+                PillTab(selected = selectedTab == 1, text = stringResource(R.string.colors), onClick = { selectedTab = 1 })
             }
         }
         Spacer(Modifier.height(24.dp))
         SettingsGroup(modifier = Modifier.padding(horizontal = 20.dp)) {
             SettingsSwitchRow(
-                title = "Follow system theme",
-                subtitle = "Use the Android light or dark setting",
+                title = stringResource(R.string.follow_system_theme),
+                subtitle = stringResource(R.string.follow_system_theme_subtitle),
                 checked = followSystem,
                 onCheckedChange = { checked ->
                     themeState.setThemeMode(
-                        if (checked) ThemeMode.Auto else if (systemDark) ThemeMode.Dark else ThemeMode.Light,
+                        if (checked) {
+                            ThemeMode.Auto
+                        } else if (systemDark) {
+                            ThemeMode.Dark
+                        } else {
+                            ThemeMode.Light
+                        },
                     )
                 },
             )
             SettingsDivider()
             SettingsSwitchRow(
-                title = "Use dark theme",
-                subtitle = "Force dark colors when system following is off",
+                title = stringResource(R.string.use_dark_theme),
+                subtitle = stringResource(R.string.use_dark_theme_subtitle),
                 checked = darkMode,
                 enabled = !followSystem,
                 onCheckedChange = { checked -> themeState.setThemeMode(if (checked) ThemeMode.Dark else ThemeMode.Light) },
             )
             SettingsDivider()
             SettingsSwitchRow(
-                title = "Use AMOLED mode",
-                subtitle = "Use black background and surfaces in dark theme",
+                title = stringResource(R.string.use_amoled_mode),
+                subtitle = stringResource(R.string.use_amoled_mode_subtitle),
                 checked = amoledMode,
                 onCheckedChange = themeState::setAmoledMode,
+            )
+            SettingsDivider()
+            SettingsSwitchRow(
+                title = stringResource(R.string.disable_album_dynamic_color),
+                subtitle = stringResource(R.string.disable_album_dynamic_color_subtitle),
+                checked = disableAlbumDynamicColor,
+                onCheckedChange = {
+                    disableAlbumDynamicColor = it
+                    preferences.saveDisableAlbumDynamicColor(it)
+                },
             )
         }
         Spacer(Modifier.height(116.dp))
@@ -406,8 +425,8 @@ private fun PlayerSettings() {
     SettingsPage {
         SettingsGroup {
             SliderSettingRow(
-                title = "Play speed",
-                subtitle = "Playback speed for Media3 playback",
+                title = stringResource(R.string.play_speed),
+                subtitle = stringResource(R.string.play_speed_subtitle),
                 valueLabel = "%.1fx".format(speed),
                 value = speed,
                 valueRange = 0.5f..2.0f,
@@ -419,9 +438,9 @@ private fun PlayerSettings() {
             )
             SettingsDivider()
             SliderSettingRow(
-                title = "Crossfade each track",
-                subtitle = "Saved for playback transition behavior",
-                valueLabel = if (crossfadeSeconds == 0) "Disabled" else "${crossfadeSeconds}s",
+                title = stringResource(R.string.crossfade_each_track),
+                subtitle = stringResource(R.string.crossfade_each_track_subtitle),
+                valueLabel = if (crossfadeSeconds == 0) stringResource(R.string.disabled) else "${crossfadeSeconds}s",
                 value = crossfadeSeconds.toFloat(),
                 valueRange = 0f..5f,
                 steps = 4,
@@ -438,7 +457,7 @@ private fun PlayerSettings() {
 private fun VgmstreamSettings() {
     val preferences = rememberPreferences()
     var loopMode by rememberSaveable { mutableStateOf(preferences.loadVgmLoopMode()) }
-    var loopCountText by rememberSaveable { mutableStateOf(preferences.loadVgmLoopCount().toString()) }
+    var loopCount by rememberSaveable { mutableFloatStateOf(preferences.loadVgmLoopCount()) }
     var fadeLength by rememberSaveable { mutableIntStateOf(preferences.loadVgmFadeLengthSeconds()) }
     var fadeDelay by rememberSaveable { mutableIntStateOf(preferences.loadVgmFadeDelaySeconds()) }
     var disableSubsongs by rememberSaveable { mutableStateOf(preferences.loadVgmDisableSubsongs()) }
@@ -446,11 +465,12 @@ private fun VgmstreamSettings() {
     var downmixChannels by rememberSaveable { mutableIntStateOf(preferences.loadVgmDownmixChannels()) }
     var channelOutput by rememberSaveable { mutableStateOf(preferences.loadVgmChannelOutput()) }
     var loopDialog by rememberSaveable { mutableStateOf(false) }
+    var loopCountDialog by rememberSaveable { mutableStateOf(false) }
     var channelDialog by rememberSaveable { mutableStateOf(false) }
 
     if (loopDialog) {
         SingleChoiceDialog(
-            title = "Loop mode",
+            title = stringResource(R.string.loop_mode),
             options = loopModeOptions,
             selectedValue = loopMode,
             onDismiss = { loopDialog = false },
@@ -461,9 +481,20 @@ private fun VgmstreamSettings() {
             },
         )
     }
+    if (loopCountDialog) {
+        LoopCountDialog(
+            value = loopCount,
+            onDismiss = { loopCountDialog = false },
+            onSave = {
+                loopCount = it
+                preferences.saveVgmLoopCount(it)
+                loopCountDialog = false
+            },
+        )
+    }
     if (channelDialog) {
         SingleChoiceDialog(
-            title = "Channel output",
+            title = stringResource(R.string.channel_output),
             options = channelOutputOptions,
             selectedValue = channelOutput,
             onDismiss = { channelDialog = false },
@@ -478,33 +509,25 @@ private fun VgmstreamSettings() {
     SettingsPage {
         SettingsGroup {
             SettingsValueRow(
-                title = "Loop mode",
-                subtitle = "Loop behavior for vgmstream formats",
-                value = loopModeOptions.firstOrNull { it.value == loopMode }?.label ?: "Normal",
+                title = stringResource(R.string.loop_mode),
+                subtitle = stringResource(R.string.loop_mode_subtitle),
+                value =
+                    loopModeOptions.firstOrNull { it.value == loopMode }?.let { stringResource(it.labelRes) }
+                        ?: stringResource(R.string.loop_mode_normal),
                 onClick = { loopDialog = true },
             )
             SettingsDivider()
-            Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp)) {
-                Text("Loop count", color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
-                Spacer(Modifier.height(4.dp))
-                Text("Default is 2.0, maximum is 99.0", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.height(10.dp))
-                OutlinedTextField(
-                    value = loopCountText,
-                    onValueChange = { value ->
-                        loopCountText = value
-                        value.toFloatOrNull()?.let { preferences.saveVgmLoopCount(it.coerceIn(0f, 99f)) }
-                    },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
+            SettingsValueRow(
+                title = stringResource(R.string.loop_count),
+                subtitle = stringResource(R.string.loop_count_subtitle),
+                value = "%.1f".format(loopCount),
+                onClick = { loopCountDialog = true },
+            )
             SettingsDivider()
             SliderSettingRow(
-                title = "Fade length",
-                subtitle = "Fade-out duration after loop limit",
-                valueLabel = if (fadeLength == 0) "Disabled" else "${fadeLength}s",
+                title = stringResource(R.string.fade_length),
+                subtitle = stringResource(R.string.fade_length_subtitle),
+                valueLabel = if (fadeLength == 0) stringResource(R.string.disabled) else "${fadeLength}s",
                 value = fadeLength.toFloat(),
                 valueRange = 0f..30f,
                 steps = 29,
@@ -515,9 +538,9 @@ private fun VgmstreamSettings() {
             )
             SettingsDivider()
             SliderSettingRow(
-                title = "Fade delay",
-                subtitle = "Delay before fade-out starts",
-                valueLabel = if (fadeDelay == 0) "Disabled" else "${fadeDelay}s",
+                title = stringResource(R.string.fade_delay),
+                subtitle = stringResource(R.string.fade_delay_subtitle),
+                valueLabel = if (fadeDelay == 0) stringResource(R.string.disabled) else "${fadeDelay}s",
                 value = fadeDelay.toFloat(),
                 valueRange = 0f..30f,
                 steps = 29,
@@ -528,8 +551,8 @@ private fun VgmstreamSettings() {
             )
             SettingsDivider()
             SettingsSwitchRow(
-                title = "Disable subsongs",
-                subtitle = "Ignore detected subsong entries",
+                title = stringResource(R.string.disable_subsongs),
+                subtitle = stringResource(R.string.disable_subsongs_subtitle),
                 checked = disableSubsongs,
                 onCheckedChange = {
                     disableSubsongs = it
@@ -538,8 +561,8 @@ private fun VgmstreamSettings() {
             )
             SettingsDivider()
             SettingsSwitchRow(
-                title = "Downmix",
-                subtitle = "Mix output to a fixed channel count",
+                title = stringResource(R.string.downmix),
+                subtitle = stringResource(R.string.downmix_subtitle),
                 checked = downmix,
                 onCheckedChange = {
                     downmix = it
@@ -549,8 +572,8 @@ private fun VgmstreamSettings() {
             if (downmix) {
                 SettingsDivider()
                 SliderSettingRow(
-                    title = "Downmix channel",
-                    subtitle = "Output channel count",
+                    title = stringResource(R.string.downmix_channel),
+                    subtitle = stringResource(R.string.downmix_channel_subtitle),
                     valueLabel = downmixChannels.toString(),
                     value = downmixChannels.toFloat(),
                     valueRange = 1f..6f,
@@ -563,9 +586,11 @@ private fun VgmstreamSettings() {
             }
             SettingsDivider()
             SettingsValueRow(
-                title = "Channel output",
-                subtitle = "Select a specific source channel layout",
-                value = channelOutputOptions.firstOrNull { it.value == channelOutput }?.label ?: "Auto",
+                title = stringResource(R.string.channel_output),
+                subtitle = stringResource(R.string.channel_output_subtitle),
+                value =
+                    channelOutputOptions.firstOrNull { it.value == channelOutput }?.let { stringResource(it.labelRes) }
+                        ?: stringResource(R.string.channel_output_auto),
                 onClick = { channelDialog = true },
             )
         }
@@ -576,9 +601,17 @@ private fun VgmstreamSettings() {
 private fun LibrarySettings() {
     SettingsPage {
         SettingsGroup {
-            SettingsValueRow("Scanner", "Local device audio from MediaStore and enabled file scanners", "Enabled")
+            SettingsValueRow(
+                stringResource(R.string.scanner),
+                stringResource(R.string.scanner_subtitle),
+                stringResource(R.string.enabled),
+            )
             SettingsDivider()
-            SettingsValueRow("Cache", "Room cache with background refresh", "Enabled")
+            SettingsValueRow(
+                stringResource(R.string.cache),
+                stringResource(R.string.cache_subtitle),
+                stringResource(R.string.enabled),
+            )
         }
     }
 }
@@ -587,9 +620,17 @@ private fun LibrarySettings() {
 private fun AboutSettings() {
     SettingsPage {
         SettingsGroup {
-            SettingsValueRow("App", "Material You local music player", "Music")
+            SettingsValueRow(
+                stringResource(R.string.app),
+                stringResource(R.string.about_app_subtitle),
+                stringResource(R.string.app_name),
+            )
             SettingsDivider()
-            SettingsValueRow("Version", "Current installed build", BuildConfig.VERSION_NAME)
+            SettingsValueRow(
+                stringResource(R.string.version),
+                stringResource(R.string.version_subtitle),
+                BuildConfig.VERSION_NAME,
+            )
         }
     }
 }
@@ -620,7 +661,11 @@ private fun SettingsHeader(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(onClick = onBack) {
-            Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.primary)
+            Icon(
+                Icons.AutoMirrored.Rounded.ArrowBack,
+                contentDescription = stringResource(R.string.back),
+                tint = MaterialTheme.colorScheme.primary,
+            )
         }
         Text(
             text = title,
@@ -680,7 +725,11 @@ private fun SettingsNavigationRow(
             }
         }
         Column(modifier = Modifier.weight(1f).padding(start = 14.dp)) {
-            Text(title, color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
+            Text(
+                title,
+                color = MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+            )
             Spacer(Modifier.height(4.dp))
             Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
         }
@@ -737,7 +786,11 @@ private fun SettingsValueRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(title, color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
+            Text(
+                title,
+                color = MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+            )
             Spacer(Modifier.height(4.dp))
             Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
         }
@@ -763,11 +816,19 @@ private fun SliderSettingRow(
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(title, color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
+                Text(
+                    title,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                )
                 Spacer(Modifier.height(4.dp))
                 Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
             }
-            Text(valueLabel, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
+            Text(
+                valueLabel,
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+            )
         }
         Spacer(Modifier.height(10.dp))
         Slider(value = value, onValueChange = onValueChange, valueRange = valueRange, steps = steps)
@@ -805,11 +866,32 @@ private fun SingleChoiceDialog(
                                 .padding(horizontal = 12.dp, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
+                        Icon(
+                            if (option.value == selectedValue) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
+                            contentDescription = null,
+                            tint =
+                                if (option.value == selectedValue) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                            modifier = Modifier.size(24.dp),
+                        )
                         Text(
-                            option.label,
-                            color = if (option.value == selectedValue) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                            stringResource(option.labelRes),
+                            color =
+                                if (option.value ==
+                                    selectedValue
+                                ) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                },
                             fontWeight = if (option.value == selectedValue) FontWeight.SemiBold else FontWeight.Normal,
-                            modifier = Modifier.weight(1f),
+                            modifier =
+                                Modifier
+                                    .weight(1f)
+                                    .padding(start = 14.dp),
                         )
                     }
                 }
@@ -818,7 +900,70 @@ private fun SingleChoiceDialog(
         confirmButton = {},
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.cancel))
+            }
+        },
+    )
+}
+
+@Composable
+private fun LoopCountDialog(
+    value: Float,
+    onDismiss: () -> Unit,
+    onSave: (Float) -> Unit,
+) {
+    var sliderValue by rememberSaveable(value) { mutableFloatStateOf(value.coerceIn(0f, 99f)) }
+    var textValue by rememberSaveable(value) { mutableStateOf("%.1f".format(value)) }
+    val normalizedText = textValue.replace(',', '.')
+    val parsed = normalizedText.toFloatOrNull()
+    val valid = parsed != null && parsed in 0f..99f
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.loop_count)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Text(stringResource(R.string.loop_count_subtitle), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Slider(
+                    value = sliderValue,
+                    onValueChange = {
+                        sliderValue = it
+                        textValue = "%.1f".format(it)
+                    },
+                    valueRange = 1f..99f,
+                    steps = 98,
+                )
+                OutlinedTextField(
+                    value = textValue,
+                    onValueChange = {
+                        textValue = it
+                        it.toFloatOrNull()?.takeIf { parsedValue -> parsedValue in 0f..99f }?.let { parsedValue ->
+                            sliderValue = parsedValue
+                        }
+                    },
+                    singleLine = true,
+                    isError = textValue.isNotBlank() && !valid,
+                    supportingText = {
+                        if (textValue.isNotBlank() && !valid) {
+                            Text(stringResource(R.string.invalid_loop_count))
+                        }
+                    },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { parsed?.takeIf { it in 0f..99f }?.let(onSave) },
+                enabled = valid,
+            ) {
+                Text(stringResource(R.string.done))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
             }
         },
     )
@@ -901,10 +1046,21 @@ private fun MusicPhonePreview(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("Music", modifier = Modifier.weight(1f), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    Text(
+                        stringResource(R.string.app_name),
+                        modifier = Modifier.weight(1f),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
                     Surface(modifier = Modifier.size(26.dp), shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
                         Box(contentAlignment = Alignment.Center) {
-                            Icon(Icons.Rounded.Search, contentDescription = null, modifier = Modifier.size(13.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Icon(
+                                Icons.Rounded.Search,
+                                contentDescription = null,
+                                modifier = Modifier.size(13.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                     }
                 }
@@ -912,7 +1068,11 @@ private fun MusicPhonePreview(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp),
                     horizontalArrangement = Arrangement.SpaceEvenly,
                 ) {
-                    listOf("Favorite", "Playlist", "Track").forEachIndexed { index, label ->
+                    listOf(
+                        stringResource(R.string.favorite),
+                        stringResource(R.string.playlist),
+                        stringResource(R.string.track),
+                    ).forEachIndexed { index, label ->
                         Text(
                             label,
                             fontSize = if (index == 0) 10.sp else 8.sp,
@@ -936,8 +1096,22 @@ private fun MusicPhonePreview(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Box(Modifier.size(30.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.primaryContainer))
                             Column(Modifier.padding(start = 8.dp).weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Box(Modifier.fillMaxWidth(0.7f).height(5.dp).clip(CircleShape).background(MaterialTheme.colorScheme.onSurface))
-                                Box(Modifier.fillMaxWidth(0.45f).height(4.dp).clip(CircleShape).background(MaterialTheme.colorScheme.onSurfaceVariant))
+                                Box(
+                                    Modifier
+                                        .fillMaxWidth(
+                                            0.7f,
+                                        ).height(5.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.onSurface),
+                                )
+                                Box(
+                                    Modifier
+                                        .fillMaxWidth(
+                                            0.45f,
+                                        ).height(4.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.onSurfaceVariant),
+                                )
                             }
                         }
                     }
@@ -949,7 +1123,12 @@ private fun MusicPhonePreview(
                 ) {
                     Row(modifier = Modifier.padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Rounded.MusicNote, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
-                        Text("No track selected", modifier = Modifier.padding(start = 8.dp), color = MaterialTheme.colorScheme.onPrimaryContainer, fontSize = 11.sp)
+                        Text(
+                            stringResource(R.string.no_track_selected),
+                            modifier = Modifier.padding(start = 8.dp),
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            fontSize = 11.sp,
+                        )
                     }
                 }
             }
