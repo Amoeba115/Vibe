@@ -13,4 +13,7 @@ sealed interface MainRoute {
     data class Folder(val path: String) : MainRoute
 
     data class Playlist(val id: String) : MainRoute
+    data class SelectPlaylistTracks(val name: String) : MainRoute
+    data class AddTracksToPlaylist(val id: String) : MainRoute
+    data class AddToPlaylist(val trackId: Long) : MainRoute
 }

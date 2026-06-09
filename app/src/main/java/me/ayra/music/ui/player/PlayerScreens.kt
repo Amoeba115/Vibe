@@ -219,6 +219,7 @@ fun PlayerSheet(
     expandRequest: Int,
     onExpandRequestConsumed: () -> Unit = {},
     onSettings: () -> Unit,
+    onAddTo: (Track) -> Unit,
     onToggleFavorite: () -> Unit,
     onPlayPause: () -> Unit,
     onPrevious: () -> Unit,
@@ -253,11 +254,11 @@ fun PlayerSheet(
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val navigationBarBottom = with(density) { WindowInsets.navigationBars.getBottom(this).toDp() }
+        val floatingMiniPlayer = miniPlayerStyle != MusicPreferences.MINI_PLAYER_STYLE_FILLED
         val collapsedOffsetPx =
             with(density) {
                 (maxHeight - miniPlayerHeight - navigationBarBottom).toPx().coerceAtLeast(0f)
-        }
-        val floatingMiniPlayer = miniPlayerStyle != MusicPreferences.MINI_PLAYER_STYLE_FILLED
+            }
         val miniHorizontalPadding = if (floatingMiniPlayer) 10.dp else 0.dp
         val maxCoverSize = maxWidth - 48.dp
 
@@ -333,6 +334,13 @@ fun PlayerSheet(
                     onSettings()
                 }
             },
+            onAddTo = { track ->
+                coroutineScope.launch {
+                    upperContent = PlayerUpperContent.Cover
+                    draggableState.animateTo(PlayerSheetAnchor.Collapsed)
+                    onAddTo(track)
+                }
+            },
             onToggleFavorite = onToggleFavorite,
             onLyrics = { upperContent = PlayerUpperContent.Lyrics },
             onExitUpperContent = { upperContent = PlayerUpperContent.Cover },
@@ -391,6 +399,7 @@ private fun PlayerSurface(
     onMinimize: () -> Unit,
     onExpandPlaylist: () -> Unit,
     onSettings: () -> Unit,
+    onAddTo: (Track) -> Unit,
     onToggleFavorite: () -> Unit,
     onLyrics: () -> Unit,
     onExitUpperContent: () -> Unit,
@@ -511,6 +520,7 @@ private fun PlayerSurface(
                     maxCoverSize = maxCoverSize,
                     onMinimize = onMinimize,
                     onSettings = onSettings,
+                    onAddTo = onAddTo,
                     onToggleFavorite = onToggleFavorite,
                     onLyrics = onLyrics,
                     onPlaylist = onExpandPlaylist,
@@ -562,6 +572,7 @@ private fun PlayerSurface(
                     maxCoverSize = maxCoverSize,
                     onMinimize = onMinimize,
                     onSettings = onSettings,
+                    onAddTo = onAddTo,
                     onToggleFavorite = onToggleFavorite,
                     onLyrics = onLyrics,
                     onPlaylist = onExpandPlaylist,
@@ -726,6 +737,7 @@ private fun ExpandedPlayerContent(
     maxCoverSize: Dp,
     onMinimize: () -> Unit,
     onSettings: () -> Unit,
+    onAddTo: (Track) -> Unit,
     onToggleFavorite: () -> Unit,
     onLyrics: () -> Unit,
     onPlaylist: () -> Unit,
@@ -857,8 +869,8 @@ private fun ExpandedPlayerContent(
                                 )
                             }
                             IconButton(
-                                onClick = { },
-                                enabled = enabled,
+                                onClick = { track?.let(onAddTo) },
+                                enabled = enabled && track != null,
                             ) { Icon(Icons.Default.Add, contentDescription = "Add to", modifier = Modifier.size(36.dp)) }
                         }
                     }

@@ -78,6 +78,32 @@ data class TrackStatsEntity(
     val skipCount: Int = 0,
 )
 
+@Entity(tableName = "custom_playlists")
+data class CustomPlaylistEntity(
+    @PrimaryKey
+    @ColumnInfo(name = "playlist_id")
+    val playlistId: String,
+    val name: String,
+    @ColumnInfo(name = "created_at")
+    val createdAt: Long,
+)
+
+@Entity(
+    tableName = "custom_playlist_tracks",
+    primaryKeys = ["playlist_id", "track_id"],
+    indices = [Index("playlist_id"), Index("track_id")],
+)
+data class CustomPlaylistTrackEntity(
+    @ColumnInfo(name = "playlist_id")
+    val playlistId: String,
+    @ColumnInfo(name = "track_id")
+    val trackId: Long,
+    @ColumnInfo(name = "position")
+    val position: Int,
+    @ColumnInfo(name = "added_at")
+    val addedAt: Long,
+)
+
 @Entity(tableName = "album_cache")
 data class AlbumCacheEntity(
     @PrimaryKey

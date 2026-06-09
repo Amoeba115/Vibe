@@ -52,6 +52,30 @@ interface LibraryDao {
     @Upsert
     suspend fun upsertTrackStats(stats: TrackStatsEntity)
 
+    @Query("SELECT * FROM custom_playlists ORDER BY created_at ASC")
+    suspend fun loadCustomPlaylists(): List<CustomPlaylistEntity>
+
+    @Query("SELECT * FROM custom_playlist_tracks ORDER BY playlist_id ASC, position ASC")
+    suspend fun loadCustomPlaylistTracks(): List<CustomPlaylistTrackEntity>
+
+    @Upsert
+    suspend fun upsertCustomPlaylist(playlist: CustomPlaylistEntity)
+
+    @Query("DELETE FROM custom_playlist_tracks WHERE playlist_id = :playlistId")
+    suspend fun deleteCustomPlaylistTracks(playlistId: String)
+
+    @Upsert
+    suspend fun upsertCustomPlaylistTracks(tracks: List<CustomPlaylistTrackEntity>)
+
+    @Transaction
+    suspend fun replaceCustomPlaylistTracks(
+        playlistId: String,
+        tracks: List<CustomPlaylistTrackEntity>,
+    ) {
+        deleteCustomPlaylistTracks(playlistId)
+        if (tracks.isNotEmpty()) upsertCustomPlaylistTracks(tracks)
+    }
+
     @Upsert
     suspend fun upsertAlbums(albums: List<AlbumCacheEntity>)
 

@@ -55,6 +55,8 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Close
@@ -69,8 +71,10 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -79,8 +83,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
@@ -180,11 +186,29 @@ private enum class PlaylistSort(
     Artist("Artist"),
 }
 
+private enum class PlaylistListSort(
+    val label: String,
+) {
+    DateAdded("Date added"),
+    Name("Name"),
+    DatePlayed("Date played"),
+}
+
+private enum class SubParentSort(
+    val label: String,
+) {
+    Name("Name"),
+    DateAdded("Date added"),
+}
+
 private const val SORT_TRACK = "track"
 private const val SORT_ALBUM = "album"
 private const val SORT_ARTIST = "artist"
 private const val SORT_FOLDER = "folder"
+private const val SORT_PLAYLIST_LIST = "playlist_list"
 private const val SORT_PLAYLIST_PREFIX = "playlist_"
+private const val CUSTOM_PLAYLIST_PREFIX = "custom-"
+private const val SORT_SUB_PARENT_PREFIX = "sub_parent_"
 private const val PLAYLIST_RECENTLY_ADDED = "recently-added"
 private const val PLAYLIST_MOST_PLAYED = "most-played"
 private const val PLAYLIST_JUST_PLAYED = "just-played"
@@ -211,6 +235,9 @@ private fun MainRoute.saveableStateKey(searchStateVersion: Int): String =
         is MainRoute.Artist -> "artist:$name"
         is MainRoute.Folder -> "folder:$path"
         is MainRoute.Playlist -> "playlist:$id"
+        is MainRoute.SelectPlaylistTracks -> "select-playlist-tracks:$name"
+        is MainRoute.AddTracksToPlaylist -> "add-tracks-to-playlist:$id"
+        is MainRoute.AddToPlaylist -> "add-to-playlist:$trackId"
     }
 
 @OptIn(ExperimentalAnimationApi::class, ExperimentalSharedTransitionApi::class)
@@ -218,12 +245,16 @@ private fun MainRoute.saveableStateKey(searchStateVersion: Int): String =
 fun MainScreen(
     library: LibraryState,
     navigator: MusicNavigator,
+    currentQueue: List<Track>,
     onRequestPermission: () -> Unit,
     onTrackClick: (Track, List<Track>) -> Unit,
     onToggleFavorite: (Long) -> Unit,
     onToggleFavoriteItem: (String, String) -> Unit,
     onRescan: () -> Unit,
     onHiddenFoldersChanged: (Set<String>) -> Unit,
+    onCreatePlaylist: (String, List<Track>) -> Unit,
+    onAddTracksToPlaylist: (String, List<Track>) -> Unit,
+    onAddTracksToCurrentQueue: (List<Track>) -> Unit,
     initialTabIndex: Int,
     onTabSelected: (Int) -> Unit,
 ) {
@@ -276,6 +307,7 @@ fun MainScreen(
                     onAlbumClick = { navigate(MainRoute.Album(it.id)) },
                     onArtistClick = { navigate(MainRoute.Artist(it.name)) },
                     onPlaylistClick = { navigate(MainRoute.Playlist(it.id)) },
+                    onCreatePlaylist = { navigate(MainRoute.SelectPlaylistTracks(it)) },
                     onSearch = { navigate(MainRoute.Search) },
                     initialTabIndex = initialTabIndex,
                     onTabSelected = onTabSelected,
@@ -298,6 +330,7 @@ fun MainScreen(
                     DetailHost(
                         route = route,
                         library = library,
+                        currentQueue = currentQueue,
                         sharedTransitionScope = this@SharedTransitionLayout,
                         animatedVisibilityScope = this,
                         onBack = { back() },
@@ -313,6 +346,11 @@ fun MainScreen(
                         onShowAllAlbums = { navigate(MainRoute.SearchAlbums(it)) },
                         onAlbumClick = { navigate(MainRoute.Album(it.id)) },
                         onArtistClick = { navigate(MainRoute.Artist(it.name)) },
+                        onAddTracksToPlaylistRoute = { navigate(MainRoute.AddTracksToPlaylist(it)) },
+                        onCreatePlaylistRoute = { navigate(MainRoute.SelectPlaylistTracks(it)) },
+                        onCreatePlaylist = onCreatePlaylist,
+                        onAddTracksToPlaylist = onAddTracksToPlaylist,
+                        onAddTracksToCurrentQueue = onAddTracksToCurrentQueue,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
@@ -325,6 +363,7 @@ fun MainScreen(
 private fun DetailHost(
     route: MainRoute,
     library: LibraryState,
+    currentQueue: List<Track>,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
     onBack: () -> Unit,
@@ -340,6 +379,11 @@ private fun DetailHost(
     onShowAllAlbums: (String) -> Unit,
     onAlbumClick: (AlbumGroup) -> Unit,
     onArtistClick: (ArtistGroup) -> Unit,
+    onAddTracksToPlaylistRoute: (String) -> Unit,
+    onCreatePlaylistRoute: (String) -> Unit,
+    onCreatePlaylist: (String, List<Track>) -> Unit,
+    onAddTracksToPlaylist: (String, List<Track>) -> Unit,
+    onAddTracksToCurrentQueue: (List<Track>) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     when (route) {
@@ -470,9 +514,67 @@ private fun DetailHost(
                     playlist = playlist,
                     onBack = onBack,
                     onTrackClick = onTrackClick,
+                    isFavorite = library.isFavoriteItem(FavoriteType.Playlist, playlist.id),
+                    onToggleFavorite = { onToggleFavoriteItem(FavoriteType.Playlist, playlist.id) },
+                    onAddTracks = { onAddTracksToPlaylistRoute(playlist.id) },
                     modifier = modifier,
                 )
             }
+        }
+
+        is MainRoute.SelectPlaylistTracks -> {
+            SelectTrackScreen(
+                title = route.name,
+                tracks = library.tracks,
+                onBack = onBack,
+                onDone = { selected ->
+                    onCreatePlaylist(route.name, selected)
+                    onBack()
+                },
+                modifier = modifier,
+            )
+        }
+
+        is MainRoute.AddTracksToPlaylist -> {
+            val playlist = library.findPlaylist(route.id)
+            SelectTrackScreen(
+                title = playlist?.title ?: stringResource(R.string.add_tracks),
+                tracks = library.tracks,
+                onBack = onBack,
+                onDone = { selected ->
+                    onAddTracksToPlaylist(route.id, selected)
+                    onBack()
+                },
+                modifier = modifier,
+            )
+        }
+
+        is MainRoute.AddToPlaylist -> {
+            val track = library.tracks.firstOrNull { it.id == route.trackId }
+            AddToPlaylistScreen(
+                track = track,
+                playlists = library.playlists,
+                currentQueue = currentQueue,
+                isFavorite = track?.id in library.favorites,
+                onBack = onBack,
+                onCreatePlaylist = { name ->
+                    track?.let { onCreatePlaylist(name, listOf(it)) }
+                    onBack()
+                },
+                onAddToCurrent = {
+                    track?.let { onAddTracksToCurrentQueue(listOf(it)) }
+                    onBack()
+                },
+                onToggleFavorite = {
+                    track?.id?.let(onToggleFavorite)
+                    onBack()
+                },
+                onAdd = { playlist ->
+                    track?.let { onAddTracksToPlaylist(playlist.id, listOf(it)) }
+                    onBack()
+                },
+                modifier = modifier,
+            )
         }
     }
 }
@@ -491,6 +593,7 @@ private fun HomeScreen(
     onAlbumClick: (AlbumGroup) -> Unit,
     onArtistClick: (ArtistGroup) -> Unit,
     onPlaylistClick: (PlaylistGroup) -> Unit,
+    onCreatePlaylist: (String) -> Unit,
     onSearch: () -> Unit,
     initialTabIndex: Int,
     onTabSelected: (Int) -> Unit,
@@ -549,7 +652,7 @@ private fun HomeScreen(
                 modifier = Modifier.weight(1f),
             )
             IconButton(onClick = onSearch) {
-                Icon(Icons.Default.Search, contentDescription = "Search", tint = MaterialTheme.colorScheme.primary)
+                Icon(Icons.Default.Search, contentDescription = stringResource(R.string.search), tint = MaterialTheme.colorScheme.primary)
             }
             Box {
                 IconButton(onClick = { menuExpanded = true }) {
@@ -610,6 +713,7 @@ private fun HomeScreen(
                                 onArtistClick = onArtistClick,
                                 onAlbumClick = onAlbumClick,
                                 onFolderClick = onFolderClick,
+                                onPlaylistClick = onPlaylistClick,
                             )
                         }
 
@@ -617,6 +721,7 @@ private fun HomeScreen(
                             PlaylistTab(
                                 library = library,
                                 onPlaylistClick = onPlaylistClick,
+                                onCreatePlaylist = onCreatePlaylist,
                             )
                         }
 
@@ -753,7 +858,7 @@ private fun SearchScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onBack) {
-                Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.primary)
+                Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.back), tint = MaterialTheme.colorScheme.primary)
             }
             TextField(
                 value = query,
@@ -766,7 +871,7 @@ private fun SearchScreen(
                         fontWeight = FontWeight.Bold,
                     ),
                 placeholder = {
-                    Text("Search", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(stringResource(R.string.search), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 },
                 colors =
                     TextFieldDefaults.colors(
@@ -777,7 +882,7 @@ private fun SearchScreen(
                     ),
             )
             IconButton(onClick = { if (query.isBlank()) onBack() else query = "" }) {
-                Icon(Icons.Default.Close, contentDescription = "Close", tint = MaterialTheme.colorScheme.primary)
+                Icon(Icons.Default.Close, contentDescription = stringResource(R.string.close), tint = MaterialTheme.colorScheme.primary)
             }
         }
 
@@ -787,7 +892,7 @@ private fun SearchScreen(
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             if (normalizedQuery.isBlank()) {
-                item { EmptyInline("Search tracks, artists, and albums") }
+                item { EmptyInline(stringResource(R.string.search_hint)) }
             } else {
                 item { SectionTitle("Track (${trackResults.size})") }
                 if (trackResults.isNotEmpty()) {
@@ -817,7 +922,7 @@ private fun SearchScreen(
                         }
                     }
                 } else {
-                    item { SearchEmpty("No tracks found") }
+                    item { SearchEmpty(stringResource(R.string.no_tracks_found)) }
                 }
 
                 item { SectionTitle("Artist (${artistResults.size})") }
@@ -850,7 +955,7 @@ private fun SearchScreen(
                         }
                     }
                 } else {
-                    item { SearchEmpty("No artists found") }
+                    item { SearchEmpty(stringResource(R.string.no_artists_found)) }
                 }
 
                 item { SectionTitle("Album (${albumResults.size})") }
@@ -883,7 +988,7 @@ private fun SearchScreen(
                         }
                     }
                 } else {
-                    item { SearchEmpty("No albums found") }
+                    item { SearchEmpty(stringResource(R.string.no_albums_found)) }
                 }
             }
         }
@@ -1014,7 +1119,7 @@ private fun SearchArtistResultsScreen(
             if (index != artistResults.lastIndex) SearchDivider()
         }
         if (artistResults.isEmpty()) {
-            item { EmptyInline("No artists found") }
+            item { EmptyInline(stringResource(R.string.no_artists_found)) }
         }
     }
 }
@@ -1058,7 +1163,7 @@ private fun SearchAlbumResultsScreen(
             if (index != albumResults.lastIndex) SearchDivider()
         }
         if (albumResults.isEmpty()) {
-            item { EmptyInline("No albums found") }
+            item { EmptyInline(stringResource(R.string.no_albums_found)) }
         }
     }
 }
@@ -1130,10 +1235,10 @@ private fun PermissionState(onRequestPermission: () -> Unit) {
                 modifier = Modifier.size(38.dp),
                 tint = MaterialTheme.colorScheme.primary,
             )
-            Text("Allow music access", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text("Music needs audio permission to load tracks from your device.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.allow_music_access), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text(stringResource(R.string.allow_music_access_subtitle), color = MaterialTheme.colorScheme.onSurfaceVariant)
             Button(onClick = onRequestPermission) {
-                Text("Grant permission")
+                Text(stringResource(R.string.grant_permission))
             }
         }
     }
@@ -1149,7 +1254,7 @@ private fun LoadingState() {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-        Text("Scanning local music", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(stringResource(R.string.scanning), color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -1160,13 +1265,14 @@ private fun FavoriteTab(
     onArtistClick: (ArtistGroup) -> Unit,
     onAlbumClick: (AlbumGroup) -> Unit,
     onFolderClick: (FolderGroup) -> Unit,
+    onPlaylistClick: (PlaylistGroup) -> Unit,
 ) {
     val favoriteCards =
-        remember(library.favoriteItems, library.favoriteTracks, library.artists, library.albums, library.folders) {
+        remember(library.favoriteItems, library.favoriteTracks, library.artists, library.albums, library.folders, library.playlists) {
             library.favoriteCards()
         }
     if (favoriteCards.isEmpty()) {
-        EmptyPanel("Favorite tracks, artists, folders, and albums will appear here.")
+        EmptyPanel(stringResource(R.string.favorite_empty))
         return
     }
     LazyVerticalGrid(
@@ -1194,6 +1300,7 @@ private fun FavoriteTab(
                                 FavoriteType.Artist -> card.artist?.let(onArtistClick)
                                 FavoriteType.Folder -> card.folder?.let(onFolderClick)
                                 FavoriteType.Album -> card.album?.let(onAlbumClick)
+                                FavoriteType.Playlist -> card.playlist?.let(onPlaylistClick)
                             }
                         },
             )
@@ -1205,15 +1312,55 @@ private fun FavoriteTab(
 private fun PlaylistTab(
     library: LibraryState,
     onPlaylistClick: (PlaylistGroup) -> Unit,
+    onCreatePlaylist: (String) -> Unit,
 ) {
+    var createDialog by rememberSaveable { mutableStateOf(false) }
+    var playlistName by rememberSaveable { mutableStateOf("") }
+    val preferences = rememberSortPreferences()
+    var listSort by rememberSaveable {
+        mutableStateOf(preferences.loadEnumSort(SORT_PLAYLIST_LIST, PlaylistListSort.Name, PlaylistListSort.entries))
+    }
     val smartPlaylists = remember(library.tracks, library.favoriteItems, library.trackStats) { library.smartPlaylists() }
     val customPlaylists =
-        library.playlists.filterNot { playlist ->
-            smartPlaylists.any { it.id == playlist.id }
+        remember(library.playlists, library.trackStats, listSort) {
+            library.playlists
+                .filter { playlist -> playlist.id.startsWith(CUSTOM_PLAYLIST_PREFIX) }
+                .sortedWith(library.customPlaylistComparator(listSort))
         }
     if (library.tracks.isEmpty()) {
-        EmptyPanel("Create playlists and they will appear here.")
+        EmptyPanel(stringResource(R.string.playlist_empty))
         return
+    }
+    if (createDialog) {
+        AlertDialog(
+            onDismissRequest = { createDialog = false },
+            title = { Text(stringResource(R.string.create_playlist)) },
+            text = {
+                OutlinedTextField(
+                    value = playlistName,
+                    onValueChange = { playlistName = it },
+                    singleLine = true,
+                    label = { Text(stringResource(R.string.playlist_name)) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val name = playlistName.trim()
+                        if (name.isNotEmpty()) {
+                            createDialog = false
+                            playlistName = ""
+                            onCreatePlaylist(name)
+                        }
+                    },
+                    enabled = playlistName.isNotBlank(),
+                ) { Text(stringResource(R.string.next)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { createDialog = false }) { Text(stringResource(R.string.cancel)) }
+            },
+        )
     }
     LazyColumn(
         modifier =
@@ -1223,9 +1370,29 @@ private fun PlaylistTab(
                 .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
                 .background(MaterialTheme.colorScheme.surfaceContainer),
         contentPadding = PaddingValues(start = 20.dp, top = 18.dp, end = 20.dp, bottom = 116.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        item { SortHeader("Playlist") }
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                SortHeader(
+                    label = listSort.label,
+                    modifier = Modifier.weight(1f),
+                    options = PlaylistListSort.entries.map { it.label },
+                    onOptionSelected = { label ->
+                        PlaylistListSort.entries.firstOrNull { it.label == label }?.let {
+                            listSort = it
+                            preferences.saveSort(SORT_PLAYLIST_LIST, it.name)
+                        }
+                    },
+                )
+                IconButton(onClick = { createDialog = true }) {
+                    Icon(
+                        Icons.Default.Add,
+                        contentDescription = stringResource(R.string.create_playlist),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+        }
         item {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 items(smartPlaylists, key = { it.title }) { playlist ->
@@ -1241,21 +1408,13 @@ private fun PlaylistTab(
                 }
             }
         }
-        item {
-            Text(
-                "Custom playlist",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(top = 8.dp),
-            )
-        }
         if (customPlaylists.isEmpty()) {
-            item { EmptyInline("No custom playlists found") }
+            item { EmptyInline(stringResource(R.string.no_custom_playlists_found)) }
         } else {
-            items(customPlaylists, key = { it.title }) { playlist ->
-                PlaylistRow(
+            itemsIndexed(customPlaylists, key = { _, playlist -> playlist.id }) { index, playlist ->
+                PlaylistRowWithDivider(
                     playlist = playlist,
+                    showDivider = index != customPlaylists.lastIndex,
                     onClick = { onPlaylistClick(playlist) },
                     modifier = Modifier.animateItem(),
                 )
@@ -1269,6 +1428,9 @@ private fun PlaylistDetailScreen(
     playlist: PlaylistGroup,
     onBack: () -> Unit,
     onTrackClick: (Track, List<Track>) -> Unit,
+    isFavorite: Boolean,
+    onToggleFavorite: () -> Unit,
+    onAddTracks: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
@@ -1279,27 +1441,272 @@ private fun PlaylistDetailScreen(
     val tracks =
         remember(playlist.tracks, sort) {
             when (sort) {
-                PlaylistSort.CustomOrder -> playlist.tracks
-                PlaylistSort.Name -> playlist.tracks.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.title })
-                PlaylistSort.Artist ->
+                PlaylistSort.CustomOrder -> {
+                    playlist.tracks
+                }
+
+                PlaylistSort.Name -> {
+                    playlist.tracks.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.title })
+                }
+
+                PlaylistSort.Artist -> {
                     playlist.tracks.sortedWith(
                         compareBy<Track, String>(String.CASE_INSENSITIVE_ORDER) { it.artist }
                             .thenBy(String.CASE_INSENSITIVE_ORDER) { it.title },
                     )
+                }
             }
         }
+    val showPinnedTitle by remember {
+        derivedStateOf {
+            listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 180
+        }
+    }
 
-    Column(
+    Box(
         modifier =
             modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background),
     ) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(top = 72.dp, bottom = MINI_PLAYER_RESERVED_BOTTOM),
+        ) {
+            item {
+                Column(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 28.dp, vertical = 8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    AlbumArt(
+                        playlist.artwork,
+                        Modifier
+                            .fillMaxWidth(0.34f)
+                            .aspectRatio(1f),
+                        RoundedCornerShape(22.dp),
+                    )
+                    Text(
+                        text = playlist.title,
+                        modifier = Modifier.padding(top = 20.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        fontSize = 25.sp,
+                        lineHeight = 31.sp,
+                        fontWeight = FontWeight.Medium,
+                        textAlign = TextAlign.Center,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = stringResource(R.string.tracks_count, tracks.size),
+                        modifier = Modifier.padding(top = 8.dp, bottom = 22.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 15.sp,
+                    )
+                }
+            }
+            item {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                ) {
+                    Column(
+                        modifier = Modifier.padding(start = 20.dp, top = 18.dp, end = 20.dp, bottom = 8.dp),
+                    ) {
+                        SortHeader(
+                            label = sort.label,
+                            options = PlaylistSort.entries.map { it.label },
+                            onOptionSelected = { label ->
+                                PlaylistSort.entries.firstOrNull { it.label == label }?.let {
+                                    sort = it
+                                    preferences.saveSort(SORT_PLAYLIST_PREFIX + playlist.id, it.name)
+                                }
+                            },
+                        )
+                        if (tracks.isEmpty()) {
+                            EmptyInline(stringResource(R.string.no_tracks_found))
+                        }
+                    }
+                }
+            }
+            itemsIndexed(tracks, key = { _, track -> track.id }) { index, track ->
+                Surface(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .animateItem(),
+                    shape =
+                        if (index == tracks.lastIndex) {
+                            RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp)
+                        } else {
+                            RoundedCornerShape(0.dp)
+                        },
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                ) {
+                    PlaylistTrackRow(
+                        track = track,
+                        showDivider = index != tracks.lastIndex,
+                        onClick = { onTrackClick(track, tracks) },
+                        modifier =
+                            Modifier
+                                .padding(horizontal = 20.dp)
+                                .padding(bottom = if (index == tracks.lastIndex) 14.dp else 0.dp),
+                    )
+                }
+            }
+        }
+
         Row(
             modifier =
                 Modifier
+                    .align(Alignment.TopCenter)
                     .fillMaxWidth()
-                    .padding(start = 8.dp, top = 18.dp, end = 8.dp, bottom = 18.dp),
+                    .background(MaterialTheme.colorScheme.background)
+                    .padding(start = 8.dp, top = 18.dp, end = 8.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(
+                    Icons.AutoMirrored.Default.ArrowBack,
+                    contentDescription = stringResource(R.string.back),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
+            Text(
+                text = playlist.title,
+                color = MaterialTheme.colorScheme.primary,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier =
+                    Modifier
+                        .weight(1f)
+                        .alpha(if (showPinnedTitle) 1f else 0f),
+            )
+            IconButton(onClick = onToggleFavorite) {
+                Icon(
+                    if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                    contentDescription = stringResource(R.string.favorite_playlist),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
+            IconButton(onClick = onAddTracks) {
+                Icon(Icons.Default.Add, contentDescription = stringResource(R.string.add_tracks), tint = MaterialTheme.colorScheme.primary)
+            }
+            IconButton(onClick = { }) {
+                Icon(
+                    Icons.Default.MoreVert,
+                    contentDescription = stringResource(R.string.playlist_menu),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SelectTrackScreen(
+    title: String,
+    tracks: List<Track>,
+    onBack: () -> Unit,
+    onDone: (List<Track>) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var selectedIds by rememberSaveable { mutableStateOf(emptyList<Long>()) }
+    val selectedIdSet = remember(selectedIds) { selectedIds.toSet() }
+    val selectedTracks = remember(selectedIdSet, tracks) { tracks.filter { it.id in selectedIdSet } }
+    Column(
+        modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(start = 8.dp, top = 18.dp, end = 8.dp, bottom = 18.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.back), tint = MaterialTheme.colorScheme.primary)
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(title, color = MaterialTheme.colorScheme.primary, fontSize = 24.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                Text(
+                    stringResource(R.string.selected_count_plain, selectedIds.size),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 14.sp,
+                )
+            }
+            TextButton(onClick = { onDone(selectedTracks) }, enabled = selectedIds.isNotEmpty()) {
+                Text(stringResource(R.string.done))
+            }
+        }
+        RoundedPanelList(listState = rememberLazyListState(), topPadding = 0.dp) {
+            items(tracks, key = { it.id }) { track ->
+                SelectTrackRow(
+                    track = track,
+                    selected = track.id in selectedIdSet,
+                    onClick = {
+                        selectedIds = if (track.id in selectedIdSet) selectedIds - track.id else selectedIds + track.id
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AddToPlaylistScreen(
+    track: Track?,
+    playlists: List<PlaylistGroup>,
+    currentQueue: List<Track>,
+    isFavorite: Boolean,
+    onBack: () -> Unit,
+    onCreatePlaylist: (String) -> Unit,
+    onAddToCurrent: () -> Unit,
+    onToggleFavorite: () -> Unit,
+    onAdd: (PlaylistGroup) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var createDialog by rememberSaveable { mutableStateOf(false) }
+    var playlistName by rememberSaveable { mutableStateOf("") }
+    if (createDialog) {
+        AlertDialog(
+            onDismissRequest = { createDialog = false },
+            title = { Text(stringResource(R.string.create_playlist)) },
+            text = {
+                OutlinedTextField(
+                    value = playlistName,
+                    onValueChange = { playlistName = it },
+                    singleLine = true,
+                    label = { Text(stringResource(R.string.playlist_name)) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val name = playlistName.trim()
+                        if (name.isNotEmpty()) {
+                            createDialog = false
+                            playlistName = ""
+                            onCreatePlaylist(name)
+                        }
+                    },
+                    enabled = playlistName.isNotBlank(),
+                ) { Text(stringResource(R.string.done)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { createDialog = false }) { Text(stringResource(R.string.cancel)) }
+            },
+        )
+    }
+    Column(
+        modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(start = 8.dp, top = 18.dp, end = 8.dp, bottom = 18.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onBack) {
@@ -1307,46 +1714,159 @@ private fun PlaylistDetailScreen(
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = playlist.title,
+                    stringResource(R.string.add_to),
                     color = MaterialTheme.colorScheme.primary,
                     fontSize = 26.sp,
                     fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = "${tracks.size} tracks",
+                    track?.title ?: stringResource(R.string.no_track_selected),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 14.sp,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }
-
-        RoundedPanelList(listState = listState, topPadding = 0.dp) {
+        RoundedPanelList(listState = rememberLazyListState(), topPadding = 0.dp) {
             item {
-                SortHeader(
-                    label = sort.label,
-                    options = PlaylistSort.entries.map { it.label },
-                    onOptionSelected = { label ->
-                        PlaylistSort.entries.firstOrNull { it.label == label }?.let {
-                            sort = it
-                            preferences.saveSort(SORT_PLAYLIST_PREFIX + playlist.id, it.name)
-                        }
-                    },
+                AddToActionRow(
+                    icon = Icons.Default.Add,
+                    title = stringResource(R.string.create_new_playlist),
+                    subtitle = track?.title ?: stringResource(R.string.no_track_selected),
+                    enabled = track != null,
+                    showDivider = true,
+                    onClick = { createDialog = true },
                 )
             }
-            items(tracks, key = { it.id }) { track ->
-                TrackRow(
-                    track = track,
-                    onClick = { onTrackClick(track, tracks) },
-                    modifier = Modifier.animateItem(),
+            item {
+                AddToActionRow(
+                    icon = Icons.Default.LibraryMusic,
+                    title = stringResource(R.string.current_playlist),
+                    subtitle =
+                        if (currentQueue.isEmpty()) {
+                            stringResource(
+                                R.string.no_active_playlist,
+                            )
+                        } else {
+                            stringResource(R.string.tracks_count, currentQueue.size)
+                        },
+                    enabled = track != null,
+                    showDivider = true,
+                    onClick = onAddToCurrent,
                 )
             }
-            if (tracks.isEmpty()) {
-                item { EmptyInline("No tracks found") }
+            item {
+                AddToActionRow(
+                    icon = if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                    title = stringResource(R.string.favorite),
+                    subtitle =
+                        if (isFavorite) {
+                            stringResource(
+                                R.string.remove_from_favorite_tracks,
+                            )
+                        } else {
+                            stringResource(R.string.add_to_favorite_tracks)
+                        },
+                    enabled = track != null,
+                    showDivider = true,
+                    onClick = onToggleFavorite,
+                )
             }
+            val custom =
+                playlists.filterNot {
+                    it.id in
+                        setOf(PLAYLIST_RECENTLY_ADDED, PLAYLIST_MOST_PLAYED, PLAYLIST_JUST_PLAYED, PLAYLIST_FAVORITE_TRACK)
+                }
+            if (custom.isEmpty()) {
+                item { EmptyInline(stringResource(R.string.no_custom_playlists_found)) }
+            } else {
+                itemsIndexed(custom, key = { _, playlist -> playlist.id }) { index, playlist ->
+                    PlaylistRowWithDivider(
+                        playlist = playlist,
+                        showDivider = index != custom.lastIndex,
+                        onClick = { onAdd(playlist) },
+                        modifier = Modifier.animateItem(),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AddToActionRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    enabled: Boolean,
+    showDivider: Boolean,
+    onClick: () -> Unit,
+) {
+    Column {
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .clickable(enabled = enabled, onClick = onClick)
+                    .alpha(if (enabled) 1f else 0.5f)
+                    .padding(vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Surface(
+                modifier = Modifier.size(52.dp),
+                shape = RoundedCornerShape(13.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                }
+            }
+            Column(
+                modifier =
+                    Modifier
+                        .weight(1f)
+                        .padding(start = 14.dp),
+            ) {
+                Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 18.sp)
+                Text(
+                    subtitle,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp,
+                )
+            }
+        }
+        if (showDivider) {
+            HorizontalDivider(
+                modifier = Modifier.padding(start = 66.dp),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun SelectTrackRow(
+    track: Track,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Checkbox(checked = selected, onCheckedChange = { onClick() })
+        AlbumArt(track.albumArtUri, Modifier.size(48.dp), RoundedCornerShape(12.dp))
+        Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
+            Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 16.sp)
+            Text(
+                track.artist,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 13.sp,
+            )
         }
     }
 }
@@ -1361,6 +1881,7 @@ private data class FavoriteCardItem(
     val artist: ArtistGroup? = null,
     val album: AlbumGroup? = null,
     val folder: FolderGroup? = null,
+    val playlist: PlaylistGroup? = null,
     val addedAt: Long,
 )
 
@@ -1431,6 +1952,24 @@ private fun LibraryState.favoriteCards(): List<FavoriteCardItem> {
                             )
                     }
             }
+
+            FavoriteType.Playlist -> {
+                playlists
+                    .firstOrNull { it.id == favorite.key && it.id.startsWith(CUSTOM_PLAYLIST_PREFIX) }
+                    ?.let { playlist ->
+                        cards +=
+                            FavoriteCardItem(
+                                type = FavoriteType.Playlist,
+                                key = favorite.key,
+                                title = playlist.title,
+                                subtitle = "${playlist.tracks.size} tracks",
+                                artwork = playlist.artwork,
+                                tracks = playlist.tracks,
+                                playlist = playlist,
+                                addedAt = favorite.addedAt,
+                            )
+                    }
+            }
         }
     }
     val distinctCards = cards.distinctBy { it.type to it.key }
@@ -1461,8 +2000,7 @@ private fun LibraryState.smartPlaylists(): List<PlaylistGroup> {
                 compareByDescending<Track> { trackStats[it.id]?.playCount ?: 0 }
                     .thenByDescending { trackStats[it.id]?.lastPlayed ?: 0L }
                     .thenBy(String.CASE_INSENSITIVE_ORDER) { it.title },
-            )
-            .take(50)
+            ).take(50)
     val justPlayed =
         tracks
             .filter { (trackStats[it.id]?.lastPlayed ?: 0L) > 0L }
@@ -1484,6 +2022,24 @@ private fun LibraryState.smartPlaylists(): List<PlaylistGroup> {
 private fun LibraryState.findPlaylist(id: String): PlaylistGroup? =
     smartPlaylists().firstOrNull { it.id == id }
         ?: playlists.firstOrNull { it.id == id || it.title == id }
+
+private fun LibraryState.customPlaylistComparator(sort: PlaylistListSort): Comparator<PlaylistGroup> =
+    when (sort) {
+        PlaylistListSort.Name -> {
+            compareBy(String.CASE_INSENSITIVE_ORDER) { playlist: PlaylistGroup -> playlist.title }
+        }
+
+        PlaylistListSort.DateAdded -> {
+            compareByDescending<PlaylistGroup> { it.createdAt }
+                .thenBy(String.CASE_INSENSITIVE_ORDER) { it.title }
+        }
+
+        PlaylistListSort.DatePlayed -> {
+            compareByDescending<PlaylistGroup> { playlist ->
+                playlist.tracks.maxOfOrNull { track -> trackStats[track.id]?.lastPlayed ?: 0L } ?: 0L
+            }.thenBy(String.CASE_INSENSITIVE_ORDER) { it.title }
+        }
+    }
 
 @Composable
 private fun TrackTab(
@@ -1520,7 +2076,7 @@ private fun TrackTab(
                 modifier = Modifier.animateItem(),
             )
         }
-        if (tracks.isEmpty()) item { EmptyInline("No tracks found") }
+        if (tracks.isEmpty()) item { EmptyInline(stringResource(R.string.no_tracks_found)) }
     }
 }
 
@@ -1568,7 +2124,7 @@ private fun AlbumTab(
             )
         }
         if (albums.isEmpty()) {
-            item(span = { GridItemSpan(maxLineSpan) }) { EmptyInline("No albums found") }
+            item(span = { GridItemSpan(maxLineSpan) }) { EmptyInline(stringResource(R.string.no_albums_found)) }
         }
     }
 }
@@ -1586,9 +2142,13 @@ private fun AlbumDetailScreen(
     onToggleFavorite: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val preferences = rememberSortPreferences()
+    var subParentSort by rememberSaveable(album.id) {
+        mutableStateOf(preferences.loadEnumSort(SORT_SUB_PARENT_PREFIX + album.id, SubParentSort.Name, SubParentSort.entries))
+    }
     val albumTracks = remember(album.tracks) { album.tracks.sortedForAlbumPlayback() }
     val totalDurationMs = albumTracks.sumOf { it.durationMs.coerceAtLeast(0L) }
-    val albumTrackGroups = remember(albumTracks) { albumTracks.groupForAlbumDetail() }
+    val albumTrackGroups = remember(albumTracks, subParentSort) { albumTracks.groupForAlbumDetail(subParentSort) }
     val listState = rememberLazyListState()
     val collapseProgress by remember {
         derivedStateOf {
@@ -1668,11 +2228,86 @@ private fun AlbumDetailScreen(
             }
 
             item {
-                AlbumTrackList(
+                AlbumTrackListHeader(
                     albumTracks = albumTracks,
                     albumTrackGroups = albumTrackGroups,
+                    subParentSort = subParentSort,
+                    onSubParentSortSelected = {
+                        subParentSort = it
+                        preferences.saveSort(SORT_SUB_PARENT_PREFIX + album.id, it.name)
+                    },
                     onTrackClick = onTrackClick,
                 )
+            }
+            if (albumTracks.isEmpty()) {
+                item {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainer,
+                    ) {
+                        EmptyInline(stringResource(R.string.no_tracks_found))
+                    }
+                }
+            } else {
+                albumTrackGroups.forEachIndexed { groupIndex, group ->
+                    if (albumTrackGroups.size > 1) {
+                        item(key = "album-group-${group.name}") {
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                color = MaterialTheme.colorScheme.surfaceContainer,
+                            ) {
+                                Text(
+                                    text = group.name,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .padding(
+                                                start = 20.dp,
+                                                top = if (groupIndex == 0) 10.dp else 22.dp,
+                                                end = 20.dp,
+                                                bottom = 8.dp,
+                                            ),
+                                )
+                            }
+                        }
+                    }
+                    itemsIndexed(group.tracks, key = { _, track -> "album-${group.name}-${track.id}" }) { index, track ->
+                        val isLastTrack = groupIndex == albumTrackGroups.lastIndex && index == group.tracks.lastIndex
+                        Surface(
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .animateItem(),
+                            shape =
+                                if (isLastTrack) {
+                                    RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp)
+                                } else {
+                                    RoundedCornerShape(0.dp)
+                                },
+                            color = MaterialTheme.colorScheme.surfaceContainer,
+                        ) {
+                            Column(
+                                modifier =
+                                    Modifier
+                                        .padding(horizontal = 20.dp)
+                                        .padding(bottom = if (isLastTrack) 14.dp else 0.dp),
+                            ) {
+                                AlbumTrackRow(
+                                    index = index + 1,
+                                    track = track,
+                                    showDivider = !isLastTrack,
+                                    onClick = { onTrackClick(track, albumTracks) },
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -1709,7 +2344,7 @@ private fun AlbumTopBar(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(onClick = onBack) {
-            Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.primary)
+            Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.back), tint = MaterialTheme.colorScheme.primary)
         }
         Text(
             text = album.title,
@@ -1726,15 +2361,15 @@ private fun AlbumTopBar(
         IconButton(onClick = onToggleFavorite) {
             Icon(
                 if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                contentDescription = "Favorite album",
+                contentDescription = stringResource(R.string.favorite_album),
                 tint = MaterialTheme.colorScheme.primary,
             )
         }
         IconButton(onClick = onSearch) {
-            Icon(Icons.Default.Search, contentDescription = "Search", tint = MaterialTheme.colorScheme.primary)
+            Icon(Icons.Default.Search, contentDescription = stringResource(R.string.search), tint = MaterialTheme.colorScheme.primary)
         }
         IconButton(onClick = onSettings) {
-            Icon(Icons.Default.MoreVert, contentDescription = "Menu", tint = MaterialTheme.colorScheme.primary)
+            Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.menu), tint = MaterialTheme.colorScheme.primary)
         }
     }
 }
@@ -1787,9 +2422,11 @@ private fun AlbumHeader(
 }
 
 @Composable
-private fun AlbumTrackList(
+private fun AlbumTrackListHeader(
     albumTracks: List<Track>,
     albumTrackGroups: List<AlbumTrackGroup>,
+    subParentSort: SubParentSort,
+    onSubParentSortSelected: (SubParentSort) -> Unit,
     onTrackClick: (Track, List<Track>) -> Unit,
 ) {
     Surface(
@@ -1797,42 +2434,26 @@ private fun AlbumTrackList(
             Modifier
                 .fillMaxWidth()
                 .padding(top = 8.dp),
-        shape = RoundedCornerShape(32.dp),
+        shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp),
         color = MaterialTheme.colorScheme.surfaceContainer,
     ) {
         Column(
-            modifier = Modifier.padding(start = 20.dp, top = 18.dp, end = 20.dp, bottom = 18.dp),
+            modifier = Modifier.padding(start = 20.dp, top = 18.dp, end = 20.dp, bottom = 8.dp),
         ) {
             AlbumTrackListActions(
                 albumTracks = albumTracks,
                 onTrackClick = onTrackClick,
             )
-            albumTrackGroups.forEachIndexed { groupIndex, group ->
-                if (albumTrackGroups.size > 1) {
-                    Text(
-                        text = group.name,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(top = if (groupIndex == 0) 18.dp else 26.dp, bottom = 8.dp),
-                    )
-                }
-                group.tracks.forEachIndexed { index, track ->
-                    val isLastTrack = groupIndex == albumTrackGroups.lastIndex && index == group.tracks.lastIndex
-                    AlbumTrackRow(
-                        index = index + 1,
-                        track = track,
-                        showDivider = !isLastTrack,
-                        onClick = { onTrackClick(track, albumTracks) },
-                    )
-                }
+            if (albumTrackGroups.size > 1) {
+                SortHeader(
+                    label = subParentSort.label,
+                    options = SubParentSort.entries.map { it.label },
+                    onOptionSelected = { label ->
+                        SubParentSort.entries.firstOrNull { it.label == label }?.let(onSubParentSortSelected)
+                    },
+                    modifier = Modifier.padding(top = 12.dp),
+                )
             }
-            if (albumTracks.isEmpty()) EmptyInline("No tracks found")
         }
     }
 }
@@ -1854,7 +2475,7 @@ private fun AlbumTrackListActions(
                 },
                 modifier = Modifier.size(42.dp),
             ) {
-                Icon(Icons.Default.Shuffle, contentDescription = "Shuffle")
+                Icon(Icons.Default.Shuffle, contentDescription = stringResource(R.string.shuffle))
             }
         }
         Surface(
@@ -1866,7 +2487,11 @@ private fun AlbumTrackListActions(
                 onClick = { albumTracks.firstOrNull()?.let { onTrackClick(it, albumTracks) } },
                 modifier = Modifier.size(42.dp),
             ) {
-                Icon(Icons.Default.PlayArrow, contentDescription = "Play", tint = MaterialTheme.colorScheme.onPrimary)
+                Icon(
+                    Icons.Default.PlayArrow,
+                    contentDescription = stringResource(R.string.play),
+                    tint = MaterialTheme.colorScheme.onPrimary,
+                )
             }
         }
     }
@@ -1909,7 +2534,7 @@ private fun ArtistTab(
                 modifier = Modifier.animateItem(),
             )
         }
-        if (artists.isEmpty()) item { EmptyInline("No artists found") }
+        if (artists.isEmpty()) item { EmptyInline(stringResource(R.string.no_artists_found)) }
     }
 }
 
@@ -1962,7 +2587,7 @@ private fun ArtistDetailScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onBack) {
-                Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.primary)
+                Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.back), tint = MaterialTheme.colorScheme.primary)
             }
             Text(
                 text = artist.name,
@@ -1976,15 +2601,15 @@ private fun ArtistDetailScreen(
             IconButton(onClick = onToggleFavorite) {
                 Icon(
                     if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                    contentDescription = "Favorite artist",
+                    contentDescription = stringResource(R.string.favorite_artist),
                     tint = MaterialTheme.colorScheme.primary,
                 )
             }
             IconButton(onClick = onSearch) {
-                Icon(Icons.Default.Search, contentDescription = "Search", tint = MaterialTheme.colorScheme.primary)
+                Icon(Icons.Default.Search, contentDescription = stringResource(R.string.search), tint = MaterialTheme.colorScheme.primary)
             }
             IconButton(onClick = onSettings) {
-                Icon(Icons.Default.MoreVert, contentDescription = "Menu", tint = MaterialTheme.colorScheme.primary)
+                Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.menu), tint = MaterialTheme.colorScheme.primary)
             }
         }
 
@@ -2072,7 +2697,7 @@ private fun ArtistTrackTab(
                         },
                         modifier = Modifier.size(42.dp),
                     ) {
-                        Icon(Icons.Default.Shuffle, contentDescription = "Shuffle")
+                        Icon(Icons.Default.Shuffle, contentDescription = stringResource(R.string.shuffle))
                     }
                 }
                 Surface(
@@ -2084,7 +2709,11 @@ private fun ArtistTrackTab(
                         onClick = { tracks.firstOrNull()?.let { onTrackClick(it, tracks) } },
                         modifier = Modifier.size(42.dp),
                     ) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = "Play", tint = MaterialTheme.colorScheme.onPrimary)
+                        Icon(
+                            Icons.Default.PlayArrow,
+                            contentDescription = stringResource(R.string.play),
+                            tint = MaterialTheme.colorScheme.onPrimary,
+                        )
                     }
                 }
             }
@@ -2129,7 +2758,7 @@ private fun ArtistTrackTab(
             }
         }
 
-        if (tracks.isEmpty()) item { EmptyInline("No tracks found") }
+        if (tracks.isEmpty()) item { EmptyInline(stringResource(R.string.no_tracks_found)) }
     }
 }
 
@@ -2195,7 +2824,7 @@ private fun ArtistAlbumTab(
             )
         }
         if (albums.isEmpty()) {
-            item(span = { GridItemSpan(maxLineSpan) }) { EmptyInline("No albums found") }
+            item(span = { GridItemSpan(maxLineSpan) }) { EmptyInline(stringResource(R.string.no_albums_found)) }
         }
     }
 }
@@ -2266,7 +2895,7 @@ private fun FolderDetailScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onBack) {
-                Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.primary)
+                Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.back), tint = MaterialTheme.colorScheme.primary)
             }
             Text(
                 text = folder.name,
@@ -2280,15 +2909,15 @@ private fun FolderDetailScreen(
             IconButton(onClick = onToggleFolderFavorite) {
                 Icon(
                     if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                    contentDescription = "Favorite folder",
+                    contentDescription = stringResource(R.string.favorite_folder),
                     tint = MaterialTheme.colorScheme.primary,
                 )
             }
             IconButton(onClick = onSearch) {
-                Icon(Icons.Default.Search, contentDescription = "Search", tint = MaterialTheme.colorScheme.primary)
+                Icon(Icons.Default.Search, contentDescription = stringResource(R.string.search), tint = MaterialTheme.colorScheme.primary)
             }
             IconButton(onClick = onSettings) {
-                Icon(Icons.Default.MoreVert, contentDescription = "Menu", tint = MaterialTheme.colorScheme.primary)
+                Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.menu), tint = MaterialTheme.colorScheme.primary)
             }
         }
         IndexedListWithRail(listState = listState, topPadding = 0.dp) {
@@ -2305,7 +2934,7 @@ private fun FolderDetailScreen(
                     onClick = { onTrackClick(track, folder.tracks) },
                 )
             }
-            if (folder.tracks.isEmpty()) item { EmptyInline("No tracks found") }
+            if (folder.tracks.isEmpty()) item { EmptyInline(stringResource(R.string.no_tracks_found)) }
         }
     }
 }
@@ -2393,13 +3022,14 @@ private fun RoundedGridPanel(content: LazyGridScope.() -> Unit) {
 @Composable
 private fun SortHeader(
     label: String,
+    modifier: Modifier = Modifier,
     options: List<String> = emptyList(),
     onOptionSelected: (String) -> Unit = {},
 ) {
     var expanded by remember { mutableStateOf(false) }
     Box(
         modifier =
-            Modifier
+            modifier
                 .fillMaxWidth()
                 .padding(bottom = 14.dp),
     ) {
@@ -2467,12 +3097,12 @@ private fun DetailSortHeader(
         )
         Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceVariant) {
             IconButton(onClick = onShuffle, modifier = Modifier.size(42.dp)) {
-                Icon(Icons.Default.Shuffle, contentDescription = "Shuffle")
+                Icon(Icons.Default.Shuffle, contentDescription = stringResource(R.string.shuffle))
             }
         }
         Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceVariant) {
             IconButton(onClick = onPlay, modifier = Modifier.size(42.dp)) {
-                Icon(Icons.Default.PlayArrow, contentDescription = "Play")
+                Icon(Icons.Default.PlayArrow, contentDescription = stringResource(R.string.play))
             }
         }
     }
@@ -2518,7 +3148,7 @@ private fun AlbumTrackRow(
                 modifier = Modifier.padding(end = 8.dp),
             )
             IconButton(onClick = { }, modifier = Modifier.size(42.dp)) {
-                Icon(Icons.Default.MoreVert, contentDescription = "Track menu")
+                Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.track_menu))
             }
         }
         if (showDivider) {
@@ -2558,7 +3188,7 @@ private fun AlbumGroup.releaseYear(): Int = tracks.mapNotNull { it.year.takeIf {
 
 private fun AlbumGroup.yearLabel(): String = releaseYear().takeIf { it > 0 }?.toString() ?: "${tracks.size} tracks"
 
-private fun List<Track>.groupForAlbumDetail(): List<AlbumTrackGroup> {
+private fun List<Track>.groupForAlbumDetail(sort: SubParentSort = SubParentSort.Name): List<AlbumTrackGroup> {
     if (any { it.discNumber > 0 }) {
         return groupBy { it.discNumber.takeIf { disc -> disc > 0 } ?: 1 }
             .map { (discNumber, tracks) ->
@@ -2575,7 +3205,20 @@ private fun List<Track>.groupForAlbumDetail(): List<AlbumTrackGroup> {
                 name = folder.displayFolderName(),
                 tracks = tracks.sortedWith(albumTrackComparator()),
             )
-        }.sortedWith { first, second -> first.name.compareNaturally(second.name) }
+        }.sortedWith { first, second ->
+            when (sort) {
+                SubParentSort.Name -> {
+                    first.name.compareNaturally(second.name)
+                }
+
+                SubParentSort.DateAdded -> {
+                    (second.tracks.maxOfOrNull { it.dateAddedMs } ?: 0L)
+                        .compareTo(first.tracks.maxOfOrNull { it.dateAddedMs } ?: 0L)
+                        .takeIf { it != 0 }
+                        ?: first.name.compareNaturally(second.name)
+                }
+            }
+        }
 }
 
 private fun albumTrackComparator(): Comparator<Track> =
@@ -2769,7 +3412,7 @@ private fun TrackRow(
             )
         }
         IconButton(onClick = { }) {
-            Icon(Icons.Default.MoreVert, contentDescription = "Track menu")
+            Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.track_menu))
         }
     }
 }
@@ -2826,6 +3469,48 @@ private fun MediaGroupRow(
                 overflow = TextOverflow.Ellipsis,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 13.sp,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlaylistTrackRow(
+    track: Track,
+    showDivider: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier) {
+        TrackRow(
+            track = track,
+            onClick = onClick,
+        )
+        if (showDivider) {
+            HorizontalDivider(
+                modifier = Modifier.padding(start = 66.dp),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlaylistRowWithDivider(
+    playlist: PlaylistGroup,
+    showDivider: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier) {
+        PlaylistRow(
+            playlist = playlist,
+            onClick = onClick,
+        )
+        if (showDivider) {
+            HorizontalDivider(
+                modifier = Modifier.padding(start = 68.dp),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
             )
         }
     }
@@ -2980,8 +3665,7 @@ private fun AlphabetRail(
                         .offset {
                             val popupY = activeLetterY.roundToInt() - 32.dp.roundToPx()
                             IntOffset(x = -58.dp.roundToPx(), y = popupY)
-                        }
-                        .size(52.dp),
+                        }.size(52.dp),
                 shape = RoundedCornerShape(18.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.72f),
             ) {

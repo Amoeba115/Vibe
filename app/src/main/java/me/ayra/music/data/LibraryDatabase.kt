@@ -13,11 +13,13 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         FavoriteEntity::class,
         FavoriteItemEntity::class,
         TrackStatsEntity::class,
+        CustomPlaylistEntity::class,
+        CustomPlaylistTrackEntity::class,
         AlbumCacheEntity::class,
         ArtistCacheEntity::class,
         VgmMetadataEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = false,
 )
 abstract class LibraryDatabase : RoomDatabase() {
@@ -34,7 +36,7 @@ abstract class LibraryDatabase : RoomDatabase() {
                     LibraryDatabase::class.java,
                     "music_library.db",
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                     .fallbackToDestructiveMigration(false)
                     .build()
                     .also { instance = it }
@@ -92,6 +94,33 @@ abstract class LibraryDatabase : RoomDatabase() {
                     )
                     """.trimIndent(),
                 )
+            }
+        }
+
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS custom_playlists (
+                        playlist_id TEXT NOT NULL PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        created_at INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS custom_playlist_tracks (
+                        playlist_id TEXT NOT NULL,
+                        track_id INTEGER NOT NULL,
+                        position INTEGER NOT NULL,
+                        added_at INTEGER NOT NULL,
+                        PRIMARY KEY(playlist_id, track_id)
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_custom_playlist_tracks_playlist_id ON custom_playlist_tracks(playlist_id)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_custom_playlist_tracks_track_id ON custom_playlist_tracks(track_id)")
             }
         }
     }

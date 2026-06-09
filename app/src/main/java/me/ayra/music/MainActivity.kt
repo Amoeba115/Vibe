@@ -55,6 +55,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.ayra.music.data.FavoriteEntity
 import me.ayra.music.data.FavoriteItemEntity
+import me.ayra.music.data.CustomPlaylistEntity
+import me.ayra.music.data.CustomPlaylistTrackEntity
 import me.ayra.music.data.LibraryDao
 import me.ayra.music.data.LibraryDatabase
 import me.ayra.music.data.LibrarySource
@@ -172,6 +174,7 @@ data class PlaylistGroup(
     val title: String,
     val tracks: List<Track>,
     val artwork: Uri?,
+    val createdAt: Long = 0L,
 )
 
 data class TrackStats(
@@ -192,6 +195,7 @@ object FavoriteType {
     const val Artist = "artist"
     const val Folder = "folder"
     const val Album = "album"
+    const val Playlist = "playlist"
 }
 
 data class LibraryState(
@@ -578,6 +582,49 @@ class MusicViewModel(
         }
     }
 
+    fun createPlaylist(
+        name: String,
+        tracks: List<Track>,
+    ) {
+        val normalizedName = name.trim()
+        if (normalizedName.isEmpty()) return
+        viewModelScope.launch {
+            libraryScanner.createPlaylist(normalizedName, tracks)
+            val visibleTracks = _library.value.tracks
+            _library.update { state ->
+                state.copy(playlists = libraryScanner.buildPlaylists(visibleTracks))
+            }
+        }
+    }
+
+    fun addTracksToPlaylist(
+        playlistId: String,
+        tracks: List<Track>,
+    ) {
+        if (tracks.isEmpty()) return
+        viewModelScope.launch {
+            libraryScanner.addTracksToPlaylist(playlistId, tracks)
+            val visibleTracks = _library.value.tracks
+            _library.update { state ->
+                state.copy(playlists = libraryScanner.buildPlaylists(visibleTracks))
+            }
+        }
+    }
+
+    fun addTracksToCurrentQueue(tracks: List<Track>) {
+        val player = controller ?: return
+        if (tracks.isEmpty()) return
+        val currentQueue = _playerState.value.queue
+        val existingIds = currentQueue.mapTo(mutableSetOf()) { it.id }
+        val newTracks = tracks.filter { existingIds.add(it.id) }
+        if (newTracks.isEmpty()) return
+        val updatedQueue = currentQueue + newTracks
+        player.addMediaItems(newTracks.map { it.toMediaItem() })
+        saveLastQueue(updatedQueue)
+        _playerState.update { it.copy(queue = updatedQueue) }
+        publishPlayerState()
+    }
+
     private fun publishPlayerState() {
         val player = controller ?: return
         val queue =
@@ -728,14 +775,17 @@ class LibraryScanner(
     private val dao = LibraryDatabase.get(context).libraryDao()
     private val mediaStoreScanner = MediaStoreScanner(context)
     private val vgmFileScanner = VgmFileScanner(context)
+    private var customPlaylistsCache: List<PlaylistGroup> = emptyList()
 
     suspend fun loadCachedLibrary(): CachedLibrary =
         withContext(Dispatchers.IO) {
             val cachedTracks = dao.loadTracks()
             val favoriteItems = dao.loadLibraryFavorites()
             val trackStats = dao.loadTrackStats().toTrackStatsMap()
+            val tracks = cachedTracks.map { it.toTrack() }
+            customPlaylistsCache = dao.loadCustomPlaylists(tracks)
             CachedLibrary(
-                tracks = cachedTracks.map { it.toTrack() },
+                tracks = tracks,
                 favorites = favoriteItems.trackIds(),
                 favoriteItems = favoriteItems,
                 trackStats = trackStats,
@@ -793,8 +843,10 @@ class LibraryScanner(
 
             val cachedTracks = dao.loadTracks()
             dao.replaceDerivedCaches(cachedTracks)
+            val tracks = cachedTracks.map { it.toTrack() }
+            customPlaylistsCache = dao.loadCustomPlaylists(tracks)
             CachedLibrary(
-                tracks = cachedTracks.map { it.toTrack() },
+                tracks = tracks,
                 favorites = favorites,
                 favoriteItems = favoriteItems,
                 trackStats = dao.loadTrackStats().toTrackStatsMap(),
@@ -855,11 +907,66 @@ class LibraryScanner(
             )
         }
 
+    suspend fun createPlaylist(
+        name: String,
+        tracks: List<Track>,
+    ) = withContext(Dispatchers.IO) {
+        val now = System.currentTimeMillis()
+        val id = "custom-$now"
+        dao.upsertCustomPlaylist(CustomPlaylistEntity(id, name, now))
+        dao.replaceCustomPlaylistTracks(
+            id,
+            tracks.distinctBy { it.id }.mapIndexed { index, track ->
+                CustomPlaylistTrackEntity(id, track.id, index, now)
+            },
+        )
+        customPlaylistsCache = dao.loadCustomPlaylists(dao.loadTracks().map { it.toTrack() })
+    }
+
+    suspend fun addTracksToPlaylist(
+        playlistId: String,
+        tracks: List<Track>,
+    ) = withContext(Dispatchers.IO) {
+        val existing = dao.loadCustomPlaylistTracks().filter { it.playlistId == playlistId }
+        val existingIds = existing.map { it.trackId }.toSet()
+        val now = System.currentTimeMillis()
+        val additions =
+            tracks
+                .distinctBy { it.id }
+                .filterNot { it.id in existingIds }
+                .mapIndexed { index, track ->
+                    CustomPlaylistTrackEntity(playlistId, track.id, existing.size + index, now)
+                }
+        if (additions.isNotEmpty()) {
+            dao.upsertCustomPlaylistTracks(additions)
+            customPlaylistsCache = dao.loadCustomPlaylists(dao.loadTracks().map { it.toTrack() })
+        }
+    }
+
     fun buildPlaylists(tracks: List<Track>): List<PlaylistGroup> {
         if (tracks.isEmpty()) return emptyList()
-        return listOf(
+        return customPlaylistsCache.filter { playlist -> playlist.tracks.any { track -> track in tracks } } + listOf(
             PlaylistGroup("recently-added", "Recently added", tracks.take(50), tracks.firstOrNull()?.albumArtUri),
             PlaylistGroup("most-played", "Most played", tracks.sortedBy { it.title }.take(50), tracks.getOrNull(1)?.albumArtUri),
+        )
+    }
+}
+
+private suspend fun LibraryDao.loadCustomPlaylists(tracks: List<Track>): List<PlaylistGroup> {
+    val tracksById = tracks.associateBy { it.id }
+    val playlistTracks = loadCustomPlaylistTracks().groupBy { it.playlistId }
+    return loadCustomPlaylists().map { playlist ->
+        val items =
+            playlistTracks[playlist.playlistId]
+                .orEmpty()
+                .sortedBy { it.position }
+                .mapNotNull { tracksById[it.trackId] }
+        PlaylistGroup(
+            id = playlist.playlistId,
+            title = playlist.name,
+            tracks = items,
+            artwork = items.firstOrNull()?.albumArtUri,
+            createdAt = playlist.createdAt,
         )
     }
 }
@@ -1258,6 +1365,7 @@ fun MusicApp(
             MainScreen(
                 library = library,
                 navigator = navigator,
+                currentQueue = playerState.queue,
                 onRequestPermission = {
                     if (ContextCompat.checkSelfPermission(context, permission) != PackageManager.PERMISSION_GRANTED) {
                         permissionLauncher.launch(permission)
@@ -1273,6 +1381,9 @@ fun MusicApp(
                 onToggleFavoriteItem = viewModel::toggleFavoriteItem,
                 onRescan = viewModel::rescanLibrary,
                 onHiddenFoldersChanged = viewModel::setHiddenFolders,
+                onCreatePlaylist = viewModel::createPlaylist,
+                onAddTracksToPlaylist = viewModel::addTracksToPlaylist,
+                onAddTracksToCurrentQueue = viewModel::addTracksToCurrentQueue,
                 initialTabIndex = lastHomeTab,
                 onTabSelected = { tabIndex ->
                     lastHomeTab = tabIndex
@@ -1287,6 +1398,7 @@ fun MusicApp(
                     expandRequest = playerExpandRequest,
                     onExpandRequestConsumed = { playerExpandRequest = 0 },
                     onSettings = { navigator.navigate(MainRoute.Settings) },
+                    onAddTo = { track -> navigator.navigate(MainRoute.AddToPlaylist(track.id)) },
                     onToggleFavorite = { playerState.currentTrack?.id?.let(viewModel::toggleFavorite) },
                     onPlayPause = viewModel::togglePlayPause,
                     onPrevious = viewModel::previous,
