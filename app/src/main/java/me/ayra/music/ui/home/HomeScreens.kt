@@ -5,11 +5,16 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -182,7 +187,12 @@ fun MainScreen(
                     .background(MaterialTheme.colorScheme.background)
                     .windowInsetsPadding(WindowInsets.statusBars),
         ) {
-            AnimatedVisibility(visible = currentRoute == MainRoute.Home, label = "home-host") {
+            AnimatedVisibility(
+                visible = currentRoute == MainRoute.Home,
+                enter = fadeIn(animationSpec = tween(290)),
+                exit = fadeOut(animationSpec = tween(290)),
+                label = "home-host",
+            ) {
                 HomeScreen(
                     library = library,
                     sharedTransitionScope = this@SharedTransitionLayout,
