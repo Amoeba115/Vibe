@@ -19,6 +19,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -31,6 +32,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
@@ -100,6 +102,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -107,6 +110,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
@@ -175,6 +179,12 @@ private const val SORT_FOLDER = "folder"
 private const val ALBUM_SNAP_EXPAND_THRESHOLD = 0.35f
 private const val ALBUM_SNAP_FLING_DELTA_PX = 72
 private val HOME_TAB_WIDTH = 104.dp
+private val MINI_PLAYER_RESERVED_BOTTOM = 116.dp
+
+private data class AlphabetIndex(
+    val letter: Char,
+    val position: Int,
+)
 
 private fun MainRoute.saveableStateKey(searchStateVersion: Int): String =
     when (this) {
@@ -1339,7 +1349,11 @@ private fun TrackTab(
         mutableStateOf(preferences.loadEnumSort(SORT_TRACK, TrackSort.Name, TrackSort.entries))
     }
     val tracks = remember(library.tracks, sort) { library.tracks.sortedBy(sort) }
-    IndexedListWithRail(listState = listState) {
+    val alphabetIndexes =
+        remember(tracks, sort) {
+            if (sort == TrackSort.Name) tracks.alphabetIndexes(positionOffset = 1) { it.title } else emptyList()
+        }
+    IndexedListWithRail(listState = listState, alphabetIndexes = alphabetIndexes) {
         item {
             SortHeader(
                 label = sort.label,
@@ -1722,7 +1736,11 @@ private fun ArtistTab(
         mutableStateOf(preferences.loadEnumSort(SORT_ARTIST, ArtistSort.Name, ArtistSort.entries))
     }
     val artists = remember(library.artists, sort) { library.artists.sortedBy(sort) }
-    IndexedListWithRail(listState = listState) {
+    val alphabetIndexes =
+        remember(artists, sort) {
+            if (sort == ArtistSort.Name) artists.alphabetIndexes(positionOffset = 1) { it.name } else emptyList()
+        }
+    IndexedListWithRail(listState = listState, alphabetIndexes = alphabetIndexes) {
         item {
             SortHeader(
                 label = sort.label,
@@ -2046,7 +2064,11 @@ private fun FolderTab(
         mutableStateOf(preferences.loadEnumSort(SORT_FOLDER, FolderSort.Name, FolderSort.entries))
     }
     val folders = remember(library.folders, sort) { library.folders.sortedBy(sort) }
-    IndexedListWithRail(listState = listState) {
+    val alphabetIndexes =
+        remember(folders, sort) {
+            if (sort == FolderSort.Name) folders.alphabetIndexes(positionOffset = 1) { it.name } else emptyList()
+        }
+    IndexedListWithRail(listState = listState, alphabetIndexes = alphabetIndexes) {
         item {
             SortHeader(
                 label = sort.label,
@@ -2145,16 +2167,36 @@ private fun FolderDetailScreen(
 private fun IndexedListWithRail(
     listState: LazyListState,
     topPadding: Dp = 14.dp,
+    alphabetIndexes: List<AlphabetIndex> = emptyList(),
     content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit,
 ) {
-    Box {
-        RoundedPanelList(listState = listState, topPadding = topPadding, content = content)
-        AlphabetRail(
-            modifier =
-                Modifier
-                    .padding(top = topPadding + 16.dp)
-                    .align(Alignment.CenterEnd),
+    val coroutineScope = rememberCoroutineScope()
+    val showAlphabetRail = alphabetIndexes.isNotEmpty()
+    BoxWithConstraints {
+        val railTopPadding = topPadding + 16.dp
+        val railBottomPadding = MINI_PLAYER_RESERVED_BOTTOM
+        val railHeight = (maxHeight - railTopPadding - railBottomPadding).coerceAtLeast(180.dp)
+        RoundedPanelList(
+            listState = listState,
+            topPadding = topPadding,
+            showAlphabetRail = showAlphabetRail,
+            content = content,
         )
+        if (showAlphabetRail) {
+            AlphabetRail(
+                indexes = alphabetIndexes,
+                railHeight = railHeight,
+                onIndexSelected = { index ->
+                    coroutineScope.launch {
+                        listState.scrollToItem(index.position)
+                    }
+                },
+                modifier =
+                    Modifier
+                        .padding(top = railTopPadding)
+                        .align(Alignment.TopEnd),
+            )
+        }
     }
 }
 
@@ -2162,6 +2204,7 @@ private fun IndexedListWithRail(
 private fun RoundedPanelList(
     listState: LazyListState,
     topPadding: Dp = 14.dp,
+    showAlphabetRail: Boolean = false,
     content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit,
 ) {
     LazyColumn(
@@ -2176,8 +2219,8 @@ private fun RoundedPanelList(
             PaddingValues(
                 start = 12.dp,
                 top = 14.dp,
-                end = 12.dp,
-                bottom = 116.dp,
+                end = if (showAlphabetRail) 46.dp else 12.dp,
+                bottom = MINI_PLAYER_RESERVED_BOTTOM,
             ),
         content = content,
     )
@@ -2508,6 +2551,28 @@ private fun List<FolderGroup>.sortedBy(sort: FolderSort): List<FolderGroup> =
         }
     }
 
+private fun <T> List<T>.alphabetIndexes(
+    positionOffset: Int,
+    label: (T) -> String,
+): List<AlphabetIndex> {
+    val indexes = mutableListOf<AlphabetIndex>()
+    var lastLetter: Char? = null
+    forEachIndexed { index, item ->
+        val letter = label(item).firstAlphabetLetterOrNull() ?: return@forEachIndexed
+        if (letter != lastLetter) {
+            indexes += AlphabetIndex(letter = letter, position = index + positionOffset)
+            lastLetter = letter
+        }
+    }
+    return indexes
+}
+
+private fun String.firstAlphabetLetterOrNull(): Char? =
+    trim()
+        .firstOrNull { it.isLetter() }
+        ?.uppercaseChar()
+        ?.takeIf { it in 'A'..'Z' }
+
 private fun String.compareNaturally(other: String): Int {
     val firstParts = Regex("\\d+|\\D+").findAll(lowercase()).map { it.value }.toList()
     val secondParts = Regex("\\d+|\\D+").findAll(other.lowercase()).map { it.value }.toList()
@@ -2738,21 +2803,90 @@ private fun ArtworkCard(
 }
 
 @Composable
-private fun AlphabetRail(modifier: Modifier = Modifier) {
-    Surface(
-        modifier =
-            modifier
-                .padding(end = 8.dp, bottom = 96.dp)
-                .width(24.dp),
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f),
-    ) {
-        Column(
-            modifier = Modifier,
-            horizontalAlignment = Alignment.CenterHorizontally,
+private fun AlphabetRail(
+    indexes: List<AlphabetIndex>,
+    railHeight: Dp,
+    onIndexSelected: (AlphabetIndex) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val letters = remember(indexes) { indexes.map { it.letter }.distinct() }
+    val indexByLetter = remember(indexes) { indexes.associateBy { it.letter } }
+    val density = LocalDensity.current
+    val itemHeightPx = with(density) { (railHeight / 26).toPx() }
+    var activeLetter by remember { mutableStateOf<Char?>(null) }
+    var activeLetterY by remember { mutableStateOf(0f) }
+
+    fun selectAt(y: Float) {
+        val letterIndex = (y / itemHeightPx).toInt().coerceIn(0, 25)
+        val letter = ('A'.code + letterIndex).toChar()
+        activeLetter = letter
+        activeLetterY = (letterIndex + 0.5f) * itemHeightPx
+        indexByLetter[letter]?.let(onIndexSelected)
+    }
+
+    Box(modifier = modifier.padding(end = 8.dp)) {
+        activeLetter?.let { letter ->
+            Surface(
+                modifier =
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .offset {
+                            val popupY = activeLetterY.roundToInt() - 32.dp.roundToPx()
+                            IntOffset(x = -58.dp.roundToPx(), y = popupY)
+                        }
+                        .size(52.dp),
+                shape = RoundedCornerShape(18.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.72f),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        text = letter.toString(),
+                        color = MaterialTheme.colorScheme.primary,
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
+        }
+        Surface(
+            modifier =
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .width(24.dp)
+                    .height(railHeight)
+                    .pointerInput(indexByLetter, railHeight) {
+                        detectDragGestures(
+                            onDragStart = { offset -> selectAt(offset.y) },
+                            onDragEnd = { activeLetter = null },
+                            onDragCancel = { activeLetter = null },
+                            onDrag = { change, _ ->
+                                change.consume()
+                                selectAt(change.position.y)
+                            },
+                        )
+                    },
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f),
         ) {
-            ('A'..'Z').forEach {
-                Text(it.toString(), fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.SpaceEvenly,
+            ) {
+                ('A'..'Z').forEach { letter ->
+                    val enabled = letter in letters
+                    Text(
+                        letter.toString(),
+                        fontSize = 10.sp,
+                        color =
+                            if (enabled) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.32f)
+                            },
+                        fontWeight = if (enabled) FontWeight.SemiBold else FontWeight.Normal,
+                    )
+                }
             }
         }
     }
