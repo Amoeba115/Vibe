@@ -85,10 +85,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -108,13 +110,13 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
-import me.ayra.music.R
 import me.ayra.music.AlbumGroup
 import me.ayra.music.ArtistGroup
 import me.ayra.music.FavoriteType
 import me.ayra.music.FolderGroup
 import me.ayra.music.LibraryState
 import me.ayra.music.PlaylistGroup
+import me.ayra.music.R
 import me.ayra.music.Track
 import me.ayra.music.ui.navigation.MainRoute
 import me.ayra.music.ui.navigation.MusicNavigator
@@ -174,6 +176,20 @@ private const val ALBUM_SNAP_EXPAND_THRESHOLD = 0.35f
 private const val ALBUM_SNAP_FLING_DELTA_PX = 72
 private val HOME_TAB_WIDTH = 104.dp
 
+private fun MainRoute.saveableStateKey(searchStateVersion: Int): String =
+    when (this) {
+        MainRoute.Home -> "home"
+        MainRoute.Search -> "search:$searchStateVersion"
+        is MainRoute.SearchTracks -> "search-tracks:$query"
+        is MainRoute.SearchArtists -> "search-artists:$query"
+        is MainRoute.SearchAlbums -> "search-albums:$query"
+        MainRoute.Settings -> "settings"
+        is MainRoute.Album -> "album:$id"
+        is MainRoute.Artist -> "artist:$name"
+        is MainRoute.Folder -> "folder:$path"
+        is MainRoute.Playlist -> "playlist:$id"
+    }
+
 @OptIn(ExperimentalAnimationApi::class, ExperimentalSharedTransitionApi::class)
 @Composable
 fun MainScreen(
@@ -189,7 +205,26 @@ fun MainScreen(
     onTabSelected: (Int) -> Unit,
 ) {
     val currentRoute = navigator.currentRoute
-    BackHandler(enabled = navigator.canGoBack()) { navigator.back() }
+    val detailStateHolder = rememberSaveableStateHolder()
+    var searchStateVersion by rememberSaveable { mutableIntStateOf(0) }
+    var usePopTransition by remember { mutableStateOf(false) }
+
+    fun navigate(route: MainRoute) {
+        usePopTransition = false
+        navigator.navigate(route)
+    }
+
+    fun back() {
+        val leavingRoute = navigator.currentRoute
+        usePopTransition = true
+        navigator.back()
+        if (leavingRoute == MainRoute.Search) {
+            searchStateVersion += 1
+            detailStateHolder.removeState(leavingRoute.saveableStateKey(searchStateVersion - 1))
+        }
+    }
+
+    BackHandler(enabled = navigator.canGoBack()) { back() }
 
     SharedTransitionLayout {
         Box(
@@ -210,14 +245,14 @@ fun MainScreen(
                     sharedTransitionScope = this@SharedTransitionLayout,
                     animatedVisibilityScope = this,
                     onRequestPermission = onRequestPermission,
-                    onSettings = { navigator.navigate(MainRoute.Settings) },
+                    onSettings = { navigate(MainRoute.Settings) },
                     onTrackClick = onTrackClick,
                     onToggleFavorite = onToggleFavorite,
                     onToggleFavoriteItem = onToggleFavoriteItem,
-                    onFolderClick = { navigator.navigate(MainRoute.Folder(it.path)) },
-                    onAlbumClick = { navigator.navigate(MainRoute.Album(it.id)) },
-                    onArtistClick = { navigator.navigate(MainRoute.Artist(it.name)) },
-                    onSearch = { navigator.navigate(MainRoute.Search) },
+                    onFolderClick = { navigate(MainRoute.Folder(it.path)) },
+                    onAlbumClick = { navigate(MainRoute.Album(it.id)) },
+                    onArtistClick = { navigate(MainRoute.Artist(it.name)) },
+                    onSearch = { navigate(MainRoute.Search) },
                     initialTabIndex = initialTabIndex,
                     onTabSelected = onTabSelected,
                     modifier = Modifier.fillMaxSize(),
@@ -227,31 +262,36 @@ fun MainScreen(
             AnimatedContent(
                 targetState = currentRoute,
                 transitionSpec = {
-                    if (targetState != MainRoute.Home) {
-                        modernEnter() togetherWith modernExit()
-                    } else {
+                    if (usePopTransition) {
                         modernPopEnter() togetherWith modernPopExit()
+                    } else {
+                        modernEnter() togetherWith modernExit()
                     }.using(SizeTransform(clip = false))
                 },
                 label = "detail-nav",
             ) { route ->
-                DetailHost(
-                    route = route,
-                    library = library,
-                    sharedTransitionScope = this@SharedTransitionLayout,
-                    animatedVisibilityScope = this,
-                    onBack = navigator::back,
-                    onSettings = { navigator.navigate(MainRoute.Settings) },
-                    onSearch = { navigator.navigate(MainRoute.Search) },
-                    onTrackClick = onTrackClick,
-                    onToggleFavorite = onToggleFavorite,
-                    onToggleFavoriteItem = onToggleFavoriteItem,
-                    onRescan = onRescan,
-                    onHiddenFoldersChanged = onHiddenFoldersChanged,
-                    onShowAllTracks = { navigator.navigate(MainRoute.SearchTracks(it)) },
-                    onAlbumClick = { navigator.navigate(MainRoute.Album(it.id)) },
-                    modifier = Modifier.fillMaxSize(),
-                )
+                detailStateHolder.SaveableStateProvider(route.saveableStateKey(searchStateVersion)) {
+                    DetailHost(
+                        route = route,
+                        library = library,
+                        sharedTransitionScope = this@SharedTransitionLayout,
+                        animatedVisibilityScope = this,
+                        onBack = { back() },
+                        onSettings = { navigate(MainRoute.Settings) },
+                        onSearch = { navigate(MainRoute.Search) },
+                        onTrackClick = onTrackClick,
+                        onToggleFavorite = onToggleFavorite,
+                        onToggleFavoriteItem = onToggleFavoriteItem,
+                        onRescan = onRescan,
+                        onHiddenFoldersChanged = onHiddenFoldersChanged,
+                        onShowAllTracks = { navigate(MainRoute.SearchTracks(it)) },
+                        onShowAllArtists = { navigate(MainRoute.SearchArtists(it)) },
+                        onShowAllAlbums = { navigate(MainRoute.SearchAlbums(it)) },
+                        onAlbumClick = { navigate(MainRoute.Album(it.id)) },
+                        onArtistClick = { navigate(MainRoute.Artist(it.name)) },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
             }
         }
     }
@@ -272,7 +312,10 @@ private fun DetailHost(
     onRescan: () -> Unit,
     onHiddenFoldersChanged: (Set<String>) -> Unit,
     onShowAllTracks: (String) -> Unit,
+    onShowAllArtists: (String) -> Unit,
+    onShowAllAlbums: (String) -> Unit,
     onAlbumClick: (AlbumGroup) -> Unit,
+    onArtistClick: (ArtistGroup) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     when (route) {
@@ -286,6 +329,10 @@ private fun DetailHost(
                 onBack = onBack,
                 onTrackClick = onTrackClick,
                 onShowAllTracks = onShowAllTracks,
+                onShowAllArtists = onShowAllArtists,
+                onShowAllAlbums = onShowAllAlbums,
+                onArtistClick = onArtistClick,
+                onAlbumClick = onAlbumClick,
                 modifier = modifier,
             )
         }
@@ -296,6 +343,26 @@ private fun DetailHost(
                 library = library,
                 onBack = onBack,
                 onTrackClick = onTrackClick,
+                modifier = modifier,
+            )
+        }
+
+        is MainRoute.SearchArtists -> {
+            SearchArtistResultsScreen(
+                query = route.query,
+                library = library,
+                onBack = onBack,
+                onArtistClick = onArtistClick,
+                modifier = modifier,
+            )
+        }
+
+        is MainRoute.SearchAlbums -> {
+            SearchAlbumResultsScreen(
+                query = route.query,
+                library = library,
+                onBack = onBack,
+                onAlbumClick = onAlbumClick,
                 modifier = modifier,
             )
         }
@@ -451,7 +518,11 @@ private fun HomeScreen(
             }
             Box {
                 IconButton(onClick = { menuExpanded = true }) {
-                    Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.menu), tint = MaterialTheme.colorScheme.primary)
+                    Icon(
+                        Icons.Default.MoreVert,
+                        contentDescription = stringResource(R.string.menu),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
                 }
                 DropdownMenu(
                     expanded = menuExpanded,
@@ -596,6 +667,10 @@ private fun SearchScreen(
     onBack: () -> Unit,
     onTrackClick: (Track, List<Track>) -> Unit,
     onShowAllTracks: (String) -> Unit,
+    onShowAllArtists: (String) -> Unit,
+    onShowAllAlbums: (String) -> Unit,
+    onArtistClick: (ArtistGroup) -> Unit,
+    onAlbumClick: (AlbumGroup) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var query by rememberSaveable { mutableStateOf("") }
@@ -680,13 +755,15 @@ private fun SearchScreen(
                 if (trackResults.isNotEmpty()) {
                     item {
                         SearchPanel {
-                            trackResults.take(4).forEach { track ->
+                            trackResults.take(4).forEachIndexed { index, track ->
                                 TrackRow(
                                     track = track,
                                     onClick = { onTrackClick(track, trackResults) },
                                 )
+                                if (index != trackResults.take(4).lastIndex) SearchDivider()
                             }
                             if (trackResults.size > 4) {
+                                SearchDivider()
                                 Text(
                                     stringResource(R.string.show_all),
                                     modifier =
@@ -707,14 +784,31 @@ private fun SearchScreen(
 
                 item { SectionTitle("Artist (${artistResults.size})") }
                 if (artistResults.isNotEmpty()) {
-                    items(artistResults.take(3), key = { it.name }) { artist ->
+                    item {
                         SearchPanel {
-                            MediaGroupRow(
-                                artwork = artist.tracks.firstOrNull()?.albumArtUri,
-                                title = artist.name,
-                                subtitle = "${artist.albums} albums ${artist.tracks.size} tracks",
-                                onClick = { artist.tracks.firstOrNull()?.let { onTrackClick(it, artist.tracks) } },
-                            )
+                            artistResults.take(4).forEachIndexed { index, artist ->
+                                MediaGroupRow(
+                                    artwork = artist.tracks.firstOrNull()?.albumArtUri,
+                                    title = artist.name,
+                                    subtitle = "${artist.albums} albums ${artist.tracks.size} tracks",
+                                    onClick = { onArtistClick(artist) },
+                                )
+                                if (index != artistResults.take(4).lastIndex) SearchDivider()
+                            }
+                            if (artistResults.size > 4) {
+                                SearchDivider()
+                                Text(
+                                    stringResource(R.string.show_all),
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .clickable { onShowAllArtists(normalizedQuery) }
+                                            .padding(vertical = 12.dp),
+                                    textAlign = TextAlign.Center,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
                         }
                     }
                 } else {
@@ -725,12 +819,27 @@ private fun SearchScreen(
                 if (albumResults.isNotEmpty()) {
                     item {
                         SearchPanel {
-                            albumResults.take(4).forEach { album ->
+                            albumResults.take(4).forEachIndexed { index, album ->
                                 MediaGroupRow(
                                     artwork = album.tracks.firstOrNull()?.albumArtUri,
                                     title = album.title,
                                     subtitle = album.artist,
-                                    onClick = { album.tracks.firstOrNull()?.let { onTrackClick(it, album.tracks) } },
+                                    onClick = { onAlbumClick(album) },
+                                )
+                                if (index != albumResults.take(4).lastIndex) SearchDivider()
+                            }
+                            if (albumResults.size > 4) {
+                                SearchDivider()
+                                Text(
+                                    stringResource(R.string.show_all),
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .clickable { onShowAllAlbums(normalizedQuery) }
+                                            .padding(vertical = 12.dp),
+                                    textAlign = TextAlign.Center,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary,
                                 )
                             }
                         }
@@ -801,6 +910,22 @@ private fun SearchTrackResultsScreen(
         }
 
         RoundedPanelList(listState = rememberLazyListState(), topPadding = 0.dp) {
+            item {
+                DetailSortHeader(
+                    label = "${trackResults.size} tracks",
+                    onPlay = {
+                        trackResults.firstOrNull()?.let {
+                            onTrackClick(it, trackResults)
+                        }
+                    },
+                    onShuffle = {
+                        val shuffled = trackResults.shuffled()
+                        shuffled.firstOrNull()?.let {
+                            onTrackClick(it, shuffled)
+                        }
+                    },
+                )
+            }
             items(trackResults, key = { it.id }) { track ->
                 TrackRow(
                     track = track,
@@ -812,6 +937,138 @@ private fun SearchTrackResultsScreen(
                 item { EmptyInline(stringResource(R.string.no_tracks_found)) }
             }
         }
+    }
+}
+
+@Composable
+private fun SearchArtistResultsScreen(
+    query: String,
+    library: LibraryState,
+    onBack: () -> Unit,
+    onArtistClick: (ArtistGroup) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val normalizedQuery = query.trim()
+    val artistResults =
+        remember(normalizedQuery, library.artists) {
+            if (normalizedQuery.isBlank()) {
+                emptyList()
+            } else {
+                library.artists.filter { it.name.contains(normalizedQuery, ignoreCase = true) }
+            }
+        }
+
+    SearchGroupResultsScreen(
+        title = stringResource(R.string.search_results),
+        subtitle = "$normalizedQuery | ${artistResults.size}",
+        onBack = onBack,
+        modifier = modifier,
+    ) {
+        item { SortHeader("${artistResults.size} artists") }
+        itemsIndexed(artistResults, key = { _, artist -> artist.name }) { index, artist ->
+            MediaGroupRow(
+                artwork = artist.tracks.firstOrNull()?.albumArtUri,
+                title = artist.name,
+                subtitle = "${artist.albums} albums ${artist.tracks.size} tracks",
+                onClick = { onArtistClick(artist) },
+                modifier = Modifier.animateItem(),
+            )
+            if (index != artistResults.lastIndex) SearchDivider()
+        }
+        if (artistResults.isEmpty()) {
+            item { EmptyInline("No artists found") }
+        }
+    }
+}
+
+@Composable
+private fun SearchAlbumResultsScreen(
+    query: String,
+    library: LibraryState,
+    onBack: () -> Unit,
+    onAlbumClick: (AlbumGroup) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val normalizedQuery = query.trim()
+    val albumResults =
+        remember(normalizedQuery, library.albums) {
+            if (normalizedQuery.isBlank()) {
+                emptyList()
+            } else {
+                library.albums.filter {
+                    it.title.contains(normalizedQuery, ignoreCase = true) ||
+                        it.artist.contains(normalizedQuery, ignoreCase = true)
+                }
+            }
+        }
+
+    SearchGroupResultsScreen(
+        title = stringResource(R.string.search_results),
+        subtitle = "$normalizedQuery | ${albumResults.size}",
+        onBack = onBack,
+        modifier = modifier,
+    ) {
+        item { SortHeader("${albumResults.size} albums") }
+        itemsIndexed(albumResults, key = { _, album -> album.id }) { index, album ->
+            MediaGroupRow(
+                artwork = album.tracks.firstOrNull()?.albumArtUri,
+                title = album.title,
+                subtitle = album.artist,
+                onClick = { onAlbumClick(album) },
+                modifier = Modifier.animateItem(),
+            )
+            if (index != albumResults.lastIndex) SearchDivider()
+        }
+        if (albumResults.isEmpty()) {
+            item { EmptyInline("No albums found") }
+        }
+    }
+}
+
+@Composable
+private fun SearchGroupResultsScreen(
+    title: String,
+    subtitle: String,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit,
+) {
+    Column(
+        modifier =
+            modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background),
+    ) {
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = 8.dp, top = 18.dp, end = 12.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.back), tint = MaterialTheme.colorScheme.primary)
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = subtitle,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 14.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+
+        RoundedPanelList(listState = rememberLazyListState(), topPadding = 0.dp, content = content)
     }
 }
 
@@ -1915,7 +2172,13 @@ private fun RoundedPanelList(
                 .padding(top = topPadding)
                 .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
                 .background(MaterialTheme.colorScheme.surfaceContainer),
-        contentPadding = PaddingValues(start = 20.dp, top = 14.dp, end = 46.dp, bottom = 116.dp),
+        contentPadding =
+            PaddingValues(
+                start = 12.dp,
+                top = 14.dp,
+                end = 12.dp,
+                bottom = 116.dp,
+            ),
         content = content,
     )
 }
@@ -2518,6 +2781,14 @@ private fun SearchPanel(content: @Composable ColumnScope.() -> Unit) {
                 content = content,
             )
         },
+    )
+}
+
+@Composable
+private fun SearchDivider() {
+    HorizontalDivider(
+        modifier = Modifier.padding(start = 60.dp),
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
     )
 }
 
