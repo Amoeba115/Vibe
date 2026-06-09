@@ -124,8 +124,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import me.ayra.music.R
 import me.ayra.music.PlayerState
+import me.ayra.music.R
 import me.ayra.music.Track
 import me.ayra.music.util.MusicPreferences
 import java.util.Collections
@@ -217,6 +217,7 @@ fun PlayerSheet(
     playerState: PlayerState,
     isFavorite: Boolean,
     expandRequest: Int,
+    onExpandRequestConsumed: () -> Unit = {},
     onSettings: () -> Unit,
     onToggleFavorite: () -> Unit,
     onPlayPause: () -> Unit,
@@ -228,6 +229,17 @@ fun PlayerSheet(
     onRepeat: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
+    val preferences = remember(context) { MusicPreferences(context) }
+    var miniPlayerStyle by remember { mutableStateOf(preferences.loadMiniPlayerStyle()) }
+    DisposableEffect(preferences) {
+        val listener =
+            android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+                miniPlayerStyle = preferences.loadMiniPlayerStyle()
+            }
+        preferences.registerSettingsListener(listener)
+        onDispose { preferences.unregisterSettingsListener(listener) }
+    }
     val density = LocalDensity.current
     val coroutineScope = rememberCoroutineScope()
     val miniPlayerHeight = 68.dp
@@ -244,8 +256,9 @@ fun PlayerSheet(
         val collapsedOffsetPx =
             with(density) {
                 (maxHeight - miniPlayerHeight - navigationBarBottom).toPx().coerceAtLeast(0f)
-            }
-        val miniHorizontalPadding = 10.dp
+        }
+        val floatingMiniPlayer = miniPlayerStyle != MusicPreferences.MINI_PLAYER_STYLE_FILLED
+        val miniHorizontalPadding = if (floatingMiniPlayer) 10.dp else 0.dp
         val maxCoverSize = maxWidth - 48.dp
 
         SideEffect {
@@ -261,6 +274,7 @@ fun PlayerSheet(
             if (expandRequest > 0) {
                 upperContent = PlayerUpperContent.Cover
                 draggableState.animateTo(PlayerSheetAnchor.Expanded)
+                onExpandRequestConsumed()
             }
         }
 
@@ -285,7 +299,9 @@ fun PlayerSheet(
         val offsetPx = draggableState.offset.takeIf { !it.isNaN() } ?: collapsedOffsetPx
         val progress = (1f - (offsetPx / collapsedOffsetPx.coerceAtLeast(1f))).coerceIn(0f, 1f)
         val sheetState = PlayerSheetState(progress)
-        val cornerRadius = lerp(28.dp, 0.dp, progress)
+        val topCornerRadius = lerp(24.dp, 12.dp, progress)
+        val bottomCollapsedRadius = if (floatingMiniPlayer) 24.dp else 0.dp
+        val bottomCornerRadius = lerp(bottomCollapsedRadius, 12.dp, progress)
         val horizontalPadding = lerp(miniHorizontalPadding, 0.dp, progress)
         val sheetHeight = lerp(miniPlayerHeight, maxHeight, progress)
 
@@ -344,7 +360,13 @@ fun PlayerSheet(
                                 animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
                             ),
                     ),
-            shape = RoundedCornerShape(cornerRadius),
+            shape =
+                RoundedCornerShape(
+                    topStart = topCornerRadius,
+                    topEnd = topCornerRadius,
+                    bottomStart = bottomCornerRadius,
+                    bottomEnd = bottomCornerRadius,
+                ),
         )
     }
 }

@@ -296,8 +296,7 @@ class HybridPlayer(
         playWhenReady = false
     }
 
-    private fun childRepeatMode(): Int =
-        if (repeatMode == Player.REPEAT_MODE_ONE) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
+    private fun childRepeatMode(): Int = Player.REPEAT_MODE_OFF
 
     private fun createVgmPlayer(looper: Looper): Player? {
         return runCatching {

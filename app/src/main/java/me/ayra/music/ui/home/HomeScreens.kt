@@ -183,6 +183,8 @@ fun MainScreen(
     onTrackClick: (Track, List<Track>) -> Unit,
     onToggleFavorite: (Long) -> Unit,
     onToggleFavoriteItem: (String, String) -> Unit,
+    onRescan: () -> Unit,
+    onHiddenFoldersChanged: (Set<String>) -> Unit,
     initialTabIndex: Int,
     onTabSelected: (Int) -> Unit,
 ) {
@@ -244,6 +246,9 @@ fun MainScreen(
                     onTrackClick = onTrackClick,
                     onToggleFavorite = onToggleFavorite,
                     onToggleFavoriteItem = onToggleFavoriteItem,
+                    onRescan = onRescan,
+                    onHiddenFoldersChanged = onHiddenFoldersChanged,
+                    onShowAllTracks = { navigator.navigate(MainRoute.SearchTracks(it)) },
                     onAlbumClick = { navigator.navigate(MainRoute.Album(it.id)) },
                     modifier = Modifier.fillMaxSize(),
                 )
@@ -264,6 +269,9 @@ private fun DetailHost(
     onTrackClick: (Track, List<Track>) -> Unit,
     onToggleFavorite: (Long) -> Unit,
     onToggleFavoriteItem: (String, String) -> Unit,
+    onRescan: () -> Unit,
+    onHiddenFoldersChanged: (Set<String>) -> Unit,
+    onShowAllTracks: (String) -> Unit,
     onAlbumClick: (AlbumGroup) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -277,6 +285,17 @@ private fun DetailHost(
                 library = library,
                 onBack = onBack,
                 onTrackClick = onTrackClick,
+                onShowAllTracks = onShowAllTracks,
+                modifier = modifier,
+            )
+        }
+
+        is MainRoute.SearchTracks -> {
+            SearchTrackResultsScreen(
+                query = route.query,
+                library = library,
+                onBack = onBack,
+                onTrackClick = onTrackClick,
                 modifier = modifier,
             )
         }
@@ -284,6 +303,9 @@ private fun DetailHost(
         MainRoute.Settings -> {
             SettingsScreen(
                 onBack = onBack,
+                library = library,
+                onRescan = onRescan,
+                onHiddenFoldersChanged = onHiddenFoldersChanged,
                 modifier = modifier,
             )
         }
@@ -573,6 +595,7 @@ private fun SearchScreen(
     library: LibraryState,
     onBack: () -> Unit,
     onTrackClick: (Track, List<Track>) -> Unit,
+    onShowAllTracks: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var query by rememberSaveable { mutableStateOf("") }
@@ -665,13 +688,15 @@ private fun SearchScreen(
                             }
                             if (trackResults.size > 4) {
                                 Text(
-                                    "Show all",
+                                    stringResource(R.string.show_all),
                                     modifier =
                                         Modifier
                                             .fillMaxWidth()
+                                            .clickable { onShowAllTracks(normalizedQuery) }
                                             .padding(vertical = 12.dp),
                                     textAlign = TextAlign.Center,
                                     fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary,
                                 )
                             }
                         }
@@ -713,6 +738,78 @@ private fun SearchScreen(
                 } else {
                     item { SearchEmpty("No albums found") }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SearchTrackResultsScreen(
+    query: String,
+    library: LibraryState,
+    onBack: () -> Unit,
+    onTrackClick: (Track, List<Track>) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val normalizedQuery = query.trim()
+    val trackResults =
+        remember(normalizedQuery, library.tracks) {
+            if (normalizedQuery.isBlank()) {
+                emptyList()
+            } else {
+                library.tracks.filter {
+                    it.title.contains(normalizedQuery, ignoreCase = true) ||
+                        it.artist.contains(normalizedQuery, ignoreCase = true) ||
+                        it.album.contains(normalizedQuery, ignoreCase = true)
+                }
+            }
+        }
+
+    Column(
+        modifier =
+            modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background),
+    ) {
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = 8.dp, top = 18.dp, end = 12.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.back), tint = MaterialTheme.colorScheme.primary)
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.search_results),
+                    color = MaterialTheme.colorScheme.primary,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = "$normalizedQuery | ${trackResults.size}",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 14.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+
+        RoundedPanelList(listState = rememberLazyListState(), topPadding = 0.dp) {
+            items(trackResults, key = { it.id }) { track ->
+                TrackRow(
+                    track = track,
+                    onClick = { onTrackClick(track, trackResults) },
+                    modifier = Modifier.animateItem(),
+                )
+            }
+            if (trackResults.isEmpty()) {
+                item { EmptyInline(stringResource(R.string.no_tracks_found)) }
             }
         }
     }

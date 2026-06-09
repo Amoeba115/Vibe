@@ -1,5 +1,6 @@
 package me.ayra.music.ui.navigation
 
+import android.net.Uri
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.mutableStateListOf
@@ -55,6 +56,7 @@ private fun MainRoute.toKey(): String =
     when (this) {
         MainRoute.Home -> "home"
         MainRoute.Search -> "search"
+        is MainRoute.SearchTracks -> "searchTracks:${Uri.encode(query)}"
         MainRoute.Settings -> "settings"
         is MainRoute.Album -> "album:$id"
         is MainRoute.Artist -> "artist:$name"
@@ -66,6 +68,7 @@ private fun String.toMainRoute(): MainRoute? =
     when {
         this == "home" -> MainRoute.Home
         this == "search" -> MainRoute.Search
+        startsWith("searchTracks:") -> MainRoute.SearchTracks(Uri.decode(removePrefix("searchTracks:")))
         this == "settings" -> MainRoute.Settings
         startsWith("album:") -> removePrefix("album:").toLongOrNull()?.let(MainRoute::Album)
         startsWith("artist:") -> MainRoute.Artist(removePrefix("artist:"))

@@ -3,6 +3,7 @@ package me.ayra.music.ui.navigation
 sealed interface MainRoute {
     data object Home : MainRoute
     data object Search : MainRoute
+    data class SearchTracks(val query: String) : MainRoute
     data object Settings : MainRoute
 
     data class Album(val id: Long) : MainRoute

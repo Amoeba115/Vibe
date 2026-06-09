@@ -29,10 +29,18 @@
     <string name="use_amoled_mode_subtitle">Use black background and surfaces in dark theme</string>
     <string name="disable_album_dynamic_color">Disable album dynamic color</string>
     <string name="disable_album_dynamic_color_subtitle">Use Material You colors for mini and fullscreen player instead of artwork palette</string>
+    <string name="mini_player_style">Mini Player style</string>
+    <string name="mini_player_style_subtitle">Choose how the collapsed player is shaped</string>
+    <string name="mini_player_style_floating">Floating rounded</string>
+    <string name="mini_player_style_filled">Filled square</string>
     <string name="play_speed">Play speed</string>
     <string name="play_speed_subtitle">Playback speed for Media3 playback</string>
     <string name="crossfade_each_track">Crossfade each track</string>
     <string name="crossfade_each_track_subtitle">Saved for playback transition behavior</string>
+    <string name="stop_on_recent_close">Stop player app when app closed from recent</string>
+    <string name="stop_on_recent_close_subtitle">Stop playback service when the task is removed</string>
+    <string name="pause_when_volume_zero">Pause when volume is zero</string>
+    <string name="pause_when_volume_zero_subtitle">Pause playback while the music stream volume is muted</string>
     <string name="disabled">Disabled</string>
     <string name="loop_mode">Loop mode</string>
     <string name="loop_mode_subtitle">Loop behavior for vgmstream formats</string>
@@ -65,8 +73,14 @@
     <string name="channel_output_stereo34">Stereo 3/4</string>
     <string name="scanner">Scanner</string>
     <string name="scanner_subtitle">Local device audio from MediaStore and enabled file scanners</string>
+    <string name="scan_now">Click to re-scan</string>
+    <string name="scanning">Scanning local music</string>
     <string name="cache">Cache</string>
     <string name="cache_subtitle">Room cache with background refresh</string>
+    <string name="hide_folder">Hide folder</string>
+    <string name="hidden_count">%1$d hidden</string>
+    <string name="selected_count">%1$d selected</string>
+    <string name="select_folder">Select folder</string>
     <string name="enabled">Enabled</string>
     <string name="app">App</string>
     <string name="about_app_subtitle">Material You local music player</string>
@@ -76,4 +90,8 @@
     <string name="favorite">Favorite</string>
     <string name="playlist">Playlist</string>
     <string name="track">Track</string>
+    <string name="show_all">Show all</string>
+    <string name="search_results">Search results</string>
+    <string name="no_tracks_found">No tracks found</string>
+    <string name="no_folders_found">No folders found</string>
 </resources>

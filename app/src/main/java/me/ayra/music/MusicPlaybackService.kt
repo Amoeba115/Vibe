@@ -28,6 +28,11 @@ class MusicPlaybackService : MediaSessionService() {
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         val player = mediaSession?.player
+        if (me.ayra.music.util.MusicPreferences(this).loadStopOnTaskRemoved()) {
+            player?.stop()
+            stopSelf()
+            return
+        }
         if (player == null || !player.playWhenReady) {
             stopSelf()
         }

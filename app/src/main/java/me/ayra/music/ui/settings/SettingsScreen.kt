@@ -57,6 +57,7 @@ import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
@@ -92,7 +93,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import me.ayra.music.BuildConfig
+import me.ayra.music.FolderGroup
+import me.ayra.music.LibraryState
 import me.ayra.music.R
+import me.ayra.music.ui.player.AlbumArt
 import me.ayra.music.ui.theme.LocalThemeState
 import me.ayra.music.ui.theme.THEME_SEED_NEUTRAL
 import me.ayra.music.ui.theme.THEME_SEED_SYSTEM
@@ -111,6 +115,7 @@ private enum class SettingsCategory(
     LookAndFeel(R.string.look_and_feel),
     Player(R.string.player),
     Library(R.string.library),
+    HideFolders(R.string.hide_folder, depth = 2),
     Vgmstream(R.string.vgmstream),
     About(R.string.about),
 }
@@ -140,16 +145,43 @@ private val channelOutputOptions =
         OptionItem("Stereo34", R.string.channel_output_stereo34),
     )
 
+private val miniPlayerStyleOptions =
+    listOf(
+        OptionItem(MusicPreferences.MINI_PLAYER_STYLE_FLOATING, R.string.mini_player_style_floating),
+        OptionItem(MusicPreferences.MINI_PLAYER_STYLE_FILLED, R.string.mini_player_style_filled),
+    )
+
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
+    library: LibraryState,
+    onRescan: () -> Unit,
+    onHiddenFoldersChanged: (Set<String>) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var selectedCategory by rememberSaveable { mutableStateOf<SettingsCategory?>(null) }
     val title = selectedCategory?.titleRes?.let { stringResource(it) } ?: stringResource(R.string.settings)
 
+    fun backInSettings() {
+        selectedCategory =
+            when (selectedCategory) {
+                null -> {
+                    onBack()
+                    null
+                }
+
+                SettingsCategory.HideFolders -> {
+                    SettingsCategory.Library
+                }
+
+                else -> {
+                    null
+                }
+            }
+    }
+
     BackHandler {
-        if (selectedCategory == null) onBack() else selectedCategory = null
+        backInSettings()
     }
 
     Box(
@@ -173,20 +205,47 @@ fun SettingsScreen(
             label = "settings-category",
         ) { category ->
             when (category) {
-                null -> SettingsCategoryList(onCategorySelected = { selectedCategory = it })
-                SettingsCategory.LookAndFeel -> LookAndFeelSettings()
-                SettingsCategory.Player -> PlayerSettings()
-                SettingsCategory.Library -> LibrarySettings()
-                SettingsCategory.Vgmstream -> VgmstreamSettings()
-                SettingsCategory.About -> AboutSettings()
+                null -> {
+                    SettingsCategoryList(onCategorySelected = { selectedCategory = it })
+                }
+
+                SettingsCategory.LookAndFeel -> {
+                    LookAndFeelSettings()
+                }
+
+                SettingsCategory.Player -> {
+                    PlayerSettings()
+                }
+
+                SettingsCategory.Library -> {
+                    LibrarySettings(
+                        library = library,
+                        onScan = onRescan,
+                        onHideFolders = { selectedCategory = SettingsCategory.HideFolders },
+                    )
+                }
+
+                SettingsCategory.HideFolders -> {
+                    HideFolderSettings(
+                        folders = library.allFolders,
+                        hiddenFolders = library.hiddenFolders,
+                        onHiddenFoldersChanged = onHiddenFoldersChanged,
+                    )
+                }
+
+                SettingsCategory.Vgmstream -> {
+                    VgmstreamSettings()
+                }
+
+                SettingsCategory.About -> {
+                    AboutSettings()
+                }
             }
         }
 
         SettingsHeader(
             title = title,
-            onBack = {
-                if (selectedCategory == null) onBack() else selectedCategory = null
-            },
+            onBack = { backInSettings() },
             modifier = Modifier.align(Alignment.TopCenter),
         )
     }
@@ -292,6 +351,22 @@ private fun LookAndFeelSettings() {
     val followSystem = themeMode == ThemeMode.Auto
     val darkMode = themeMode == ThemeMode.Dark || (followSystem && systemDark)
     var disableAlbumDynamicColor by rememberSaveable { mutableStateOf(preferences.loadDisableAlbumDynamicColor()) }
+    var miniPlayerStyle by rememberSaveable { mutableStateOf(preferences.loadMiniPlayerStyle()) }
+    var miniPlayerStyleDialog by rememberSaveable { mutableStateOf(false) }
+
+    if (miniPlayerStyleDialog) {
+        SingleChoiceDialog(
+            title = stringResource(R.string.mini_player_style),
+            options = miniPlayerStyleOptions,
+            selectedValue = miniPlayerStyle,
+            onDismiss = { miniPlayerStyleDialog = false },
+            onSelect = {
+                miniPlayerStyle = it
+                preferences.saveMiniPlayerStyle(it)
+                miniPlayerStyleDialog = false
+            },
+        )
+    }
 
     Column(
         modifier =
@@ -304,6 +379,7 @@ private fun LookAndFeelSettings() {
         Spacer(Modifier.height(14.dp))
         MusicPhonePreview(
             colorScheme = previewScheme,
+            miniPlayerStyle = miniPlayerStyle,
             modifier =
                 Modifier
                     .fillMaxWidth(0.55f)
@@ -411,6 +487,15 @@ private fun LookAndFeelSettings() {
                     preferences.saveDisableAlbumDynamicColor(it)
                 },
             )
+            SettingsDivider()
+            SettingsValueRow(
+                title = stringResource(R.string.mini_player_style),
+                subtitle = stringResource(R.string.mini_player_style_subtitle),
+                value =
+                    miniPlayerStyleOptions.firstOrNull { it.value == miniPlayerStyle }?.let { stringResource(it.labelRes) }
+                        ?: stringResource(R.string.mini_player_style_floating),
+                onClick = { miniPlayerStyleDialog = true },
+            )
         }
         Spacer(Modifier.height(116.dp))
     }
@@ -421,9 +506,31 @@ private fun PlayerSettings() {
     val preferences = rememberPreferences()
     var speed by rememberSaveable { mutableFloatStateOf(preferences.loadPlaybackSpeed()) }
     var crossfadeSeconds by rememberSaveable { mutableIntStateOf(preferences.loadCrossfadeSeconds()) }
+    var stopOnTaskRemoved by rememberSaveable { mutableStateOf(preferences.loadStopOnTaskRemoved()) }
+    var pauseWhenVolumeZero by rememberSaveable { mutableStateOf(preferences.loadPauseWhenVolumeZero()) }
 
     SettingsPage {
         SettingsGroup {
+            SettingsSwitchRow(
+                title = stringResource(R.string.stop_on_recent_close),
+                subtitle = stringResource(R.string.stop_on_recent_close_subtitle),
+                checked = stopOnTaskRemoved,
+                onCheckedChange = {
+                    stopOnTaskRemoved = it
+                    preferences.saveStopOnTaskRemoved(it)
+                },
+            )
+            SettingsDivider()
+            SettingsSwitchRow(
+                title = stringResource(R.string.pause_when_volume_zero),
+                subtitle = stringResource(R.string.pause_when_volume_zero_subtitle),
+                checked = pauseWhenVolumeZero,
+                onCheckedChange = {
+                    pauseWhenVolumeZero = it
+                    preferences.savePauseWhenVolumeZero(it)
+                },
+            )
+            SettingsDivider()
             SliderSettingRow(
                 title = stringResource(R.string.play_speed),
                 subtitle = stringResource(R.string.play_speed_subtitle),
@@ -598,21 +705,167 @@ private fun VgmstreamSettings() {
 }
 
 @Composable
-private fun LibrarySettings() {
+private fun LibrarySettings(
+    library: LibraryState,
+    onScan: () -> Unit,
+    onHideFolders: () -> Unit,
+) {
     SettingsPage {
         SettingsGroup {
-            SettingsValueRow(
-                stringResource(R.string.scanner),
-                stringResource(R.string.scanner_subtitle),
-                stringResource(R.string.enabled),
+            ScanSettingsRow(
+                scanning = library.scanning,
+                trackCount = library.tracks.size,
+                onClick = onScan,
             )
             SettingsDivider()
             SettingsValueRow(
-                stringResource(R.string.cache),
-                stringResource(R.string.cache_subtitle),
-                stringResource(R.string.enabled),
+                title = stringResource(R.string.hide_folder),
+                subtitle = stringResource(R.string.select_folder),
+                value = stringResource(R.string.hidden_count, library.hiddenFolders.size),
+                onClick = onHideFolders,
             )
         }
+    }
+}
+
+@Composable
+private fun HideFolderSettings(
+    folders: List<FolderGroup>,
+    hiddenFolders: Set<String>,
+    onHiddenFoldersChanged: (Set<String>) -> Unit,
+) {
+    SettingsPage {
+        Text(
+            text = stringResource(R.string.selected_count, hiddenFolders.size),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(18.dp),
+        )
+        SettingsGroup {
+            if (folders.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.no_folders_found),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(18.dp),
+                )
+            } else {
+                folders.forEachIndexed { index, folder ->
+                    HideFolderRow(
+                        folder = folder,
+                        selected = folder.path in hiddenFolders,
+                        onClick = {
+                            val updated =
+                                if (folder.path in hiddenFolders) {
+                                    hiddenFolders - folder.path
+                                } else {
+                                    hiddenFolders + folder.path
+                                }
+                            onHiddenFoldersChanged(updated)
+                        },
+                    )
+                    if (index != folders.lastIndex) {
+                        SettingsDivider()
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ScanSettingsRow(
+    scanning: Boolean,
+    trackCount: Int,
+    onClick: () -> Unit,
+) {
+    Column(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clickable(enabled = !scanning, onClick = onClick)
+                .padding(horizontal = 18.dp, vertical = 16.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.scanner),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = if (scanning) stringResource(R.string.scanning) else stringResource(R.string.scan_now),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            Text(
+                text = trackCount.toString(),
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+            )
+        }
+        if (scanning) {
+            Spacer(Modifier.height(12.dp))
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        }
+    }
+}
+
+@Composable
+private fun HideFolderRow(
+    folder: FolderGroup,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onClick)
+                .padding(horizontal = 18.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            if (selected) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
+            contentDescription = null,
+            tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier =
+                Modifier
+                    .padding(end = 12.dp)
+                    .size(24.dp),
+        )
+        AlbumArt(
+            folder.tracks.firstOrNull()?.albumArtUri,
+            Modifier.size(48.dp),
+            RoundedCornerShape(12.dp),
+        )
+        Column(
+            modifier =
+                Modifier
+                    .weight(1f)
+                    .padding(start = 14.dp),
+        ) {
+            Text(
+                text = folder.name,
+                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(3.dp))
+            Text(
+                text = folder.path,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Text(
+            text = folder.tracks.size.toString(),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyMedium,
+        )
     }
 }
 
@@ -1032,9 +1285,18 @@ private fun ColorCircleItem(
 @Composable
 private fun MusicPhonePreview(
     colorScheme: ColorScheme,
+    miniPlayerStyle: String,
     modifier: Modifier = Modifier,
 ) {
     MaterialTheme(colorScheme = colorScheme) {
+        val floatingMiniPlayer = miniPlayerStyle != MusicPreferences.MINI_PLAYER_STYLE_FILLED
+        val miniPlayerPadding = if (floatingMiniPlayer) 12.dp else 0.dp
+        val miniPlayerShape =
+            if (floatingMiniPlayer) {
+                RoundedCornerShape(21.dp)
+            } else {
+                RoundedCornerShape(topStart = 21.dp, topEnd = 21.dp, bottomStart = 0.dp, bottomEnd = 0.dp)
+            }
         Surface(
             modifier = modifier,
             shape = RoundedCornerShape(20.dp),
@@ -1117,8 +1379,12 @@ private fun MusicPhonePreview(
                     }
                 }
                 Surface(
-                    modifier = Modifier.fillMaxWidth().padding(12.dp).height(42.dp),
-                    shape = RoundedCornerShape(21.dp),
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(miniPlayerPadding)
+                            .height(42.dp),
+                    shape = miniPlayerShape,
                     color = MaterialTheme.colorScheme.primaryContainer,
                 ) {
                     Row(modifier = Modifier.padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {

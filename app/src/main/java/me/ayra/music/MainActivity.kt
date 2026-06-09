@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
+import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -186,11 +187,14 @@ object FavoriteType {
 
 data class LibraryState(
     val loading: Boolean = false,
+    val scanning: Boolean = false,
     val permissionGranted: Boolean = false,
+    val allTracks: List<Track> = emptyList(),
     val tracks: List<Track> = emptyList(),
     val favorites: Set<Long> = emptySet(),
     val favoriteItems: List<FavoriteItem> = emptyList(),
     val playlists: List<PlaylistGroup> = emptyList(),
+    val hiddenFolders: Set<String> = emptySet(),
     val error: String? = null,
 ) {
     val favoriteTracks: List<Track> get() = tracks.filter { it.id in favorites }
@@ -218,6 +222,12 @@ data class LibraryState(
                 .groupBy { it.folder.ifBlank { "Unknown folder" } }
                 .map { (path, items) -> FolderGroup(path.substringAfterLast('/').ifBlank { path }, path, items) }
                 .sortedBy { it.path.lowercase(Locale.getDefault()) }
+    val allFolders: List<FolderGroup>
+        get() =
+            allTracks
+                .groupBy { it.folder.ifBlank { "Unknown folder" } }
+                .map { (path, items) -> FolderGroup(path.substringAfterLast('/').ifBlank { path }, path, items) }
+                .sortedBy { it.path.lowercase(Locale.getDefault()) }
 }
 
 data class PlayerState(
@@ -241,8 +251,9 @@ class MusicViewModel(
     private var lastSavedTrackId = -1L
     private val settingsListener =
         SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-            if (key == MusicPreferences.KEY_PLAYBACK_SPEED) {
-                controller?.setPlaybackSpeed(preferences.loadPlaybackSpeed())
+            when (key) {
+                MusicPreferences.KEY_PLAYBACK_SPEED -> controller?.setPlaybackSpeed(preferences.loadPlaybackSpeed())
+                MusicPreferences.KEY_HIDDEN_FOLDERS -> applyHiddenFolders()
             }
         }
 
@@ -258,6 +269,7 @@ class MusicViewModel(
         viewModelScope.launch {
             while (true) {
                 publishPlayerState()
+                pauseIfVolumeZero(application)
                 delay(500)
             }
         }
@@ -307,26 +319,30 @@ class MusicViewModel(
     }
 
     fun loadLibrary(permissionGranted: Boolean) {
-        _library.update { it.copy(permissionGranted = permissionGranted, loading = permissionGranted, error = null) }
+        _library.update { it.copy(permissionGranted = permissionGranted, loading = permissionGranted, scanning = permissionGranted, error = null) }
         viewModelScope.launch {
             var activeSnapshot = emptyList<TrackSnapshot>()
             runCatching { libraryScanner.loadCachedLibrary() }
                 .onSuccess { cached ->
                     activeSnapshot = cached.snapshot
+                    val hiddenFolders = preferences.loadHiddenFolders()
+                    val visibleTracks = cached.tracks.filterVisible(hiddenFolders)
                     _library.update {
                         it.copy(
                             loading = permissionGranted && cached.tracks.isEmpty(),
-                            tracks = cached.tracks,
+                            allTracks = cached.tracks,
+                            tracks = visibleTracks,
                             favorites = cached.favorites,
                             favoriteItems = cached.favoriteItems,
-                            playlists = libraryScanner.buildPlaylists(cached.tracks),
+                            playlists = libraryScanner.buildPlaylists(visibleTracks),
+                            hiddenFolders = hiddenFolders,
                             error = null,
                         )
                     }
-                    restoreOrSyncPlayerQueue(cached.tracks)
+                    restoreOrSyncPlayerQueue(visibleTracks)
                 }
             if (!permissionGranted) {
-                _library.update { it.copy(loading = false) }
+                _library.update { it.copy(loading = false, scanning = false) }
                 return@launch
             }
 
@@ -337,40 +353,58 @@ class MusicViewModel(
                             if (activeSnapshot.isNotEmpty()) return@withContext
                             if (partial.snapshot == activeSnapshot) return@withContext
                             activeSnapshot = partial.snapshot
+                            val hiddenFolders = preferences.loadHiddenFolders()
+                            val visibleTracks = partial.tracks.filterVisible(hiddenFolders)
                             _library.update {
                                 it.copy(
                                     loading = false,
-                                    tracks = partial.tracks,
+                                    allTracks = partial.tracks,
+                                    tracks = visibleTracks,
                                     favorites = partial.favorites,
                                     favoriteItems = partial.favoriteItems,
-                                    playlists = libraryScanner.buildPlaylists(partial.tracks),
+                                    playlists = libraryScanner.buildPlaylists(visibleTracks),
+                                    hiddenFolders = hiddenFolders,
                                     error = null,
                                 )
                             }
-                            restoreOrSyncPlayerQueue(partial.tracks)
+                            restoreOrSyncPlayerQueue(visibleTracks)
                         }
                     }
                 }
             }.onSuccess { refreshed ->
                 if (refreshed.snapshot == activeSnapshot) {
-                    _library.update { it.copy(loading = false, error = null) }
+                    _library.update { it.copy(loading = false, scanning = false, error = null) }
                     return@onSuccess
                 }
+                val hiddenFolders = preferences.loadHiddenFolders()
+                val visibleTracks = refreshed.tracks.filterVisible(hiddenFolders)
                 _library.update {
                     it.copy(
                         loading = false,
-                        tracks = refreshed.tracks,
+                        scanning = false,
+                        allTracks = refreshed.tracks,
+                        tracks = visibleTracks,
                         favorites = refreshed.favorites,
                         favoriteItems = refreshed.favoriteItems,
-                        playlists = libraryScanner.buildPlaylists(refreshed.tracks),
+                        playlists = libraryScanner.buildPlaylists(visibleTracks),
+                        hiddenFolders = hiddenFolders,
                         error = null,
                     )
                 }
-                restoreOrSyncPlayerQueue(refreshed.tracks)
+                restoreOrSyncPlayerQueue(visibleTracks)
             }.onFailure { throwable ->
-                _library.update { it.copy(loading = false, error = throwable.message ?: "Unable to load music") }
+                _library.update { it.copy(loading = false, scanning = false, error = throwable.message ?: "Unable to load music") }
             }
         }
+    }
+
+    fun rescanLibrary() {
+        loadLibrary(_library.value.permissionGranted)
+    }
+
+    fun setHiddenFolders(folders: Set<String>) {
+        preferences.saveHiddenFolders(folders)
+        applyHiddenFolders()
     }
 
     fun playTrack(
@@ -431,6 +465,29 @@ class MusicViewModel(
         player.shuffleModeEnabled = enabled
         preferences.saveShuffleEnabled(enabled)
         _playerState.update { it.copy(shuffle = enabled) }
+    }
+
+    private fun pauseIfVolumeZero(context: Context) {
+        val player = controller ?: return
+        if (!preferences.loadPauseWhenVolumeZero() || !player.isPlaying) return
+        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+        if (audioManager.getStreamVolume(AudioManager.STREAM_MUSIC) == 0) {
+            player.pause()
+        }
+    }
+
+    private fun applyHiddenFolders() {
+        val hiddenFolders = preferences.loadHiddenFolders()
+        _library.update { state ->
+            val sourceTracks = state.allTracks.ifEmpty { state.tracks }
+            val tracks = sourceTracks.filterVisible(hiddenFolders)
+            state.copy(
+                allTracks = sourceTracks,
+                tracks = tracks,
+                playlists = libraryScanner.buildPlaylists(tracks),
+                hiddenFolders = hiddenFolders,
+            )
+        }
     }
 
     fun toggleRepeat() {
@@ -838,6 +895,11 @@ class MediaStoreScanner(
     }
 }
 
+private fun List<Track>.filterVisible(hiddenFolders: Set<String>): List<Track> {
+    if (hiddenFolders.isEmpty()) return this
+    return filterNot { track -> track.folder in hiddenFolders }
+}
+
 private data class TrackMetadata(
     val discNumber: Int,
     val trackNumber: Int,
@@ -1094,12 +1156,14 @@ fun MusicApp(
     val preferences = remember(context) { MusicPreferences(context) }
     var lastHomeTab by rememberSaveable { mutableStateOf(preferences.loadLastTab(HomeTab.Favorite.ordinal)) }
     val hidePlayerSheet = navigator.currentRoute == MainRoute.Settings
+    var playerExpandRequest by rememberSaveable { mutableIntStateOf(0) }
 
     LaunchedEffect(openPlayerRequest) {
         if (openPlayerRequest > 0) {
             while (navigator.canGoBack()) {
                 navigator.back()
             }
+            playerExpandRequest = openPlayerRequest
         }
     }
 
@@ -1124,6 +1188,8 @@ fun MusicApp(
                 onTrackClick = viewModel::playTrack,
                 onToggleFavorite = viewModel::toggleFavorite,
                 onToggleFavoriteItem = viewModel::toggleFavoriteItem,
+                onRescan = viewModel::rescanLibrary,
+                onHiddenFoldersChanged = viewModel::setHiddenFolders,
                 initialTabIndex = lastHomeTab,
                 onTabSelected = { tabIndex ->
                     lastHomeTab = tabIndex
@@ -1135,7 +1201,8 @@ fun MusicApp(
                 PlayerSheet(
                     playerState = playerState,
                     isFavorite = playerState.currentTrack?.id in library.favorites,
-                    expandRequest = openPlayerRequest,
+                    expandRequest = playerExpandRequest,
+                    onExpandRequestConsumed = { playerExpandRequest = 0 },
                     onSettings = { navigator.navigate(MainRoute.Settings) },
                     onToggleFavorite = { playerState.currentTrack?.id?.let(viewModel::toggleFavorite) },
                     onPlayPause = viewModel::togglePlayPause,
