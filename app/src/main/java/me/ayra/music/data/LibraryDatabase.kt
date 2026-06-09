@@ -12,11 +12,12 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         TrackEntity::class,
         FavoriteEntity::class,
         FavoriteItemEntity::class,
+        TrackStatsEntity::class,
         AlbumCacheEntity::class,
         ArtistCacheEntity::class,
         VgmMetadataEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = false,
 )
 abstract class LibraryDatabase : RoomDatabase() {
@@ -33,7 +34,7 @@ abstract class LibraryDatabase : RoomDatabase() {
                     LibraryDatabase::class.java,
                     "music_library.db",
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                     .fallbackToDestructiveMigration(false)
                     .build()
                     .also { instance = it }
@@ -76,6 +77,21 @@ abstract class LibraryDatabase : RoomDatabase() {
         private val MIGRATION_5_6 = object : Migration(5, 6) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE tracks ADD COLUMN date_added_ms INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS track_stats (
+                        track_id INTEGER NOT NULL PRIMARY KEY,
+                        play_count INTEGER NOT NULL DEFAULT 0,
+                        last_played INTEGER NOT NULL DEFAULT 0,
+                        skip_count INTEGER NOT NULL DEFAULT 0
+                    )
+                    """.trimIndent(),
+                )
             }
         }
     }

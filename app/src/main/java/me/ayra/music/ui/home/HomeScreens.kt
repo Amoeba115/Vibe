@@ -172,10 +172,23 @@ private enum class FolderSort(
     DateAdded("Date added"),
 }
 
+private enum class PlaylistSort(
+    val label: String,
+) {
+    CustomOrder("Custom order"),
+    Name("Name"),
+    Artist("Artist"),
+}
+
 private const val SORT_TRACK = "track"
 private const val SORT_ALBUM = "album"
 private const val SORT_ARTIST = "artist"
 private const val SORT_FOLDER = "folder"
+private const val SORT_PLAYLIST_PREFIX = "playlist_"
+private const val PLAYLIST_RECENTLY_ADDED = "recently-added"
+private const val PLAYLIST_MOST_PLAYED = "most-played"
+private const val PLAYLIST_JUST_PLAYED = "just-played"
+private const val PLAYLIST_FAVORITE_TRACK = "favorite-track"
 private const val ALBUM_SNAP_EXPAND_THRESHOLD = 0.35f
 private const val ALBUM_SNAP_FLING_DELTA_PX = 72
 private val HOME_TAB_WIDTH = 104.dp
@@ -262,6 +275,7 @@ fun MainScreen(
                     onFolderClick = { navigate(MainRoute.Folder(it.path)) },
                     onAlbumClick = { navigate(MainRoute.Album(it.id)) },
                     onArtistClick = { navigate(MainRoute.Artist(it.name)) },
+                    onPlaylistClick = { navigate(MainRoute.Playlist(it.id)) },
                     onSearch = { navigate(MainRoute.Search) },
                     initialTabIndex = initialTabIndex,
                     onTabSelected = onTabSelected,
@@ -448,7 +462,17 @@ private fun DetailHost(
         }
 
         is MainRoute.Playlist -> {
-            Box(modifier = modifier)
+            val playlist = library.findPlaylist(route.id)
+            if (playlist == null) {
+                Box(modifier = modifier)
+            } else {
+                PlaylistDetailScreen(
+                    playlist = playlist,
+                    onBack = onBack,
+                    onTrackClick = onTrackClick,
+                    modifier = modifier,
+                )
+            }
         }
     }
 }
@@ -466,6 +490,7 @@ private fun HomeScreen(
     onFolderClick: (FolderGroup) -> Unit,
     onAlbumClick: (AlbumGroup) -> Unit,
     onArtistClick: (ArtistGroup) -> Unit,
+    onPlaylistClick: (PlaylistGroup) -> Unit,
     onSearch: () -> Unit,
     initialTabIndex: Int,
     onTabSelected: (Int) -> Unit,
@@ -589,7 +614,10 @@ private fun HomeScreen(
                         }
 
                         HomeTab.Playlist -> {
-                            PlaylistTab(library, onTrackClick)
+                            PlaylistTab(
+                                library = library,
+                                onPlaylistClick = onPlaylistClick,
+                            )
                         }
 
                         HomeTab.Track -> {
@@ -1176,12 +1204,12 @@ private fun FavoriteTab(
 @Composable
 private fun PlaylistTab(
     library: LibraryState,
-    onTrackClick: (Track, List<Track>) -> Unit,
+    onPlaylistClick: (PlaylistGroup) -> Unit,
 ) {
-    val smartPlaylists = remember(library.tracks, library.favoriteTracks) { library.smartPlaylists() }
+    val smartPlaylists = remember(library.tracks, library.favoriteItems, library.trackStats) { library.smartPlaylists() }
     val customPlaylists =
         library.playlists.filterNot { playlist ->
-            smartPlaylists.any { it.title == playlist.title }
+            smartPlaylists.any { it.id == playlist.id }
         }
     if (library.tracks.isEmpty()) {
         EmptyPanel("Create playlists and they will appear here.")
@@ -1208,7 +1236,7 @@ private fun PlaylistTab(
                         modifier =
                             Modifier
                                 .width(150.dp)
-                                .clickable { playlist.tracks.firstOrNull()?.let { onTrackClick(it, playlist.tracks) } },
+                                .clickable { onPlaylistClick(playlist) },
                     )
                 }
             }
@@ -1228,9 +1256,96 @@ private fun PlaylistTab(
             items(customPlaylists, key = { it.title }) { playlist ->
                 PlaylistRow(
                     playlist = playlist,
-                    onClick = { playlist.tracks.firstOrNull()?.let { onTrackClick(it, playlist.tracks) } },
+                    onClick = { onPlaylistClick(playlist) },
                     modifier = Modifier.animateItem(),
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlaylistDetailScreen(
+    playlist: PlaylistGroup,
+    onBack: () -> Unit,
+    onTrackClick: (Track, List<Track>) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val listState = rememberLazyListState()
+    val preferences = rememberSortPreferences()
+    var sort by rememberSaveable(playlist.id) {
+        mutableStateOf(preferences.loadEnumSort(SORT_PLAYLIST_PREFIX + playlist.id, PlaylistSort.CustomOrder, PlaylistSort.entries))
+    }
+    val tracks =
+        remember(playlist.tracks, sort) {
+            when (sort) {
+                PlaylistSort.CustomOrder -> playlist.tracks
+                PlaylistSort.Name -> playlist.tracks.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.title })
+                PlaylistSort.Artist ->
+                    playlist.tracks.sortedWith(
+                        compareBy<Track, String>(String.CASE_INSENSITIVE_ORDER) { it.artist }
+                            .thenBy(String.CASE_INSENSITIVE_ORDER) { it.title },
+                    )
+            }
+        }
+
+    Column(
+        modifier =
+            modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background),
+    ) {
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = 8.dp, top = 18.dp, end = 8.dp, bottom = 18.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.back), tint = MaterialTheme.colorScheme.primary)
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = playlist.title,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontSize = 26.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = "${tracks.size} tracks",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 14.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+
+        RoundedPanelList(listState = listState, topPadding = 0.dp) {
+            item {
+                SortHeader(
+                    label = sort.label,
+                    options = PlaylistSort.entries.map { it.label },
+                    onOptionSelected = { label ->
+                        PlaylistSort.entries.firstOrNull { it.label == label }?.let {
+                            sort = it
+                            preferences.saveSort(SORT_PLAYLIST_PREFIX + playlist.id, it.name)
+                        }
+                    },
+                )
+            }
+            items(tracks, key = { it.id }) { track ->
+                TrackRow(
+                    track = track,
+                    onClick = { onTrackClick(track, tracks) },
+                    modifier = Modifier.animateItem(),
+                )
+            }
+            if (tracks.isEmpty()) {
+                item { EmptyInline("No tracks found") }
             }
         }
     }
@@ -1329,14 +1444,46 @@ private fun LibraryState.favoriteCards(): List<FavoriteCardItem> {
 
 private fun LibraryState.smartPlaylists(): List<PlaylistGroup> {
     if (tracks.isEmpty()) return emptyList()
-    val justPlayed = tracks.take(20)
+    val latestDateAdded = tracks.maxOfOrNull { it.dateAddedMs } ?: 0L
+    val recentlyAdded =
+        if (latestDateAdded <= 0L) {
+            tracks.sortedByDescending { it.dateAddedMs }.take(50)
+        } else {
+            val windowStart = latestDateAdded - 7L * 24L * 60L * 60L * 1_000L
+            tracks
+                .filter { it.dateAddedMs >= windowStart }
+                .sortedByDescending { it.dateAddedMs }
+        }
+    val mostPlayed =
+        tracks
+            .filter { (trackStats[it.id]?.playCount ?: 0) > 0 }
+            .sortedWith(
+                compareByDescending<Track> { trackStats[it.id]?.playCount ?: 0 }
+                    .thenByDescending { trackStats[it.id]?.lastPlayed ?: 0L }
+                    .thenBy(String.CASE_INSENSITIVE_ORDER) { it.title },
+            )
+            .take(50)
+    val justPlayed =
+        tracks
+            .filter { (trackStats[it.id]?.lastPlayed ?: 0L) > 0L }
+            .sortedByDescending { trackStats[it.id]?.lastPlayed ?: 0L }
+            .take(50)
+    val favoriteTracksByDate =
+        favoriteItems
+            .filter { it.type == FavoriteType.Track }
+            .sortedByDescending { it.addedAt }
+            .mapNotNull { favorite -> favorite.key.toLongOrNull()?.let { trackId -> tracks.firstOrNull { it.id == trackId } } }
     return listOf(
-        PlaylistGroup("Recently added", tracks.take(50), tracks.firstOrNull()?.albumArtUri),
-        PlaylistGroup("Most played", tracks.sortedBy { it.title.lowercase() }.take(50), tracks.getOrNull(1)?.albumArtUri),
-        PlaylistGroup("Just played", justPlayed, justPlayed.firstOrNull()?.albumArtUri),
-        PlaylistGroup("Favorite track", favoriteTracks, favoriteTracks.firstOrNull()?.albumArtUri),
+        PlaylistGroup(PLAYLIST_RECENTLY_ADDED, "Recently added", recentlyAdded, recentlyAdded.firstOrNull()?.albumArtUri),
+        PlaylistGroup(PLAYLIST_MOST_PLAYED, "Most played", mostPlayed, mostPlayed.firstOrNull()?.albumArtUri),
+        PlaylistGroup(PLAYLIST_JUST_PLAYED, "Just played", justPlayed, justPlayed.firstOrNull()?.albumArtUri),
+        PlaylistGroup(PLAYLIST_FAVORITE_TRACK, "Favorite track", favoriteTracksByDate, favoriteTracksByDate.firstOrNull()?.albumArtUri),
     )
 }
+
+private fun LibraryState.findPlaylist(id: String): PlaylistGroup? =
+    smartPlaylists().firstOrNull { it.id == id }
+        ?: playlists.firstOrNull { it.id == id || it.title == id }
 
 @Composable
 private fun TrackTab(

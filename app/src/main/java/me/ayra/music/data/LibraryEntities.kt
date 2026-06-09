@@ -65,6 +65,19 @@ data class FavoriteItemEntity(
     val addedAt: Long,
 )
 
+@Entity(tableName = "track_stats")
+data class TrackStatsEntity(
+    @PrimaryKey
+    @ColumnInfo(name = "track_id")
+    val trackId: Long,
+    @ColumnInfo(name = "play_count")
+    val playCount: Int = 0,
+    @ColumnInfo(name = "last_played")
+    val lastPlayed: Long = 0L,
+    @ColumnInfo(name = "skip_count")
+    val skipCount: Int = 0,
+)
+
 @Entity(tableName = "album_cache")
 data class AlbumCacheEntity(
     @PrimaryKey

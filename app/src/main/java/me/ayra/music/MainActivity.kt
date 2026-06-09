@@ -60,6 +60,7 @@ import me.ayra.music.data.LibraryDatabase
 import me.ayra.music.data.LibrarySource
 import me.ayra.music.data.ScannedTrack
 import me.ayra.music.data.TrackSnapshot
+import me.ayra.music.data.TrackStatsEntity
 import me.ayra.music.data.toEntity
 import me.ayra.music.data.toSnapshot
 import me.ayra.music.data.toTrack
@@ -167,9 +168,17 @@ data class FolderGroup(
 )
 
 data class PlaylistGroup(
+    val id: String,
     val title: String,
     val tracks: List<Track>,
     val artwork: Uri?,
+)
+
+data class TrackStats(
+    val trackId: Long,
+    val playCount: Int = 0,
+    val lastPlayed: Long = 0L,
+    val skipCount: Int = 0,
 )
 
 data class FavoriteItem(
@@ -194,6 +203,7 @@ data class LibraryState(
     val favorites: Set<Long> = emptySet(),
     val favoriteItems: List<FavoriteItem> = emptyList(),
     val playlists: List<PlaylistGroup> = emptyList(),
+    val trackStats: Map<Long, TrackStats> = emptyMap(),
     val hiddenFolders: Set<String> = emptySet(),
     val error: String? = null,
 ) {
@@ -335,6 +345,7 @@ class MusicViewModel(
                             favorites = cached.favorites,
                             favoriteItems = cached.favoriteItems,
                             playlists = libraryScanner.buildPlaylists(visibleTracks),
+                            trackStats = cached.trackStats,
                             hiddenFolders = hiddenFolders,
                             error = null,
                         )
@@ -363,6 +374,7 @@ class MusicViewModel(
                                     favorites = partial.favorites,
                                     favoriteItems = partial.favoriteItems,
                                     playlists = libraryScanner.buildPlaylists(visibleTracks),
+                                    trackStats = partial.trackStats,
                                     hiddenFolders = hiddenFolders,
                                     error = null,
                                 )
@@ -387,6 +399,7 @@ class MusicViewModel(
                         favorites = refreshed.favorites,
                         favoriteItems = refreshed.favoriteItems,
                         playlists = libraryScanner.buildPlaylists(visibleTracks),
+                        trackStats = refreshed.trackStats,
                         hiddenFolders = hiddenFolders,
                         error = null,
                     )
@@ -420,6 +433,7 @@ class MusicViewModel(
         player.setMediaItems(queue.map { it.toMediaItem() }, startIndex, 0L)
         player.prepare()
         player.play()
+        recordTrackPlayed(track.id)
         _playerState.update { it.copy(queue = queue) }
         publishPlayerState()
     }
@@ -434,6 +448,7 @@ class MusicViewModel(
     fun previous() {
         val player = controller ?: return
         if (player.mediaItemCount == 0) return
+        _playerState.value.currentTrack?.id?.let(::recordTrackSkipped)
         if (player.hasPreviousMediaItem()) {
             player.seekToPreviousMediaItem()
         } else {
@@ -445,6 +460,7 @@ class MusicViewModel(
     fun next() {
         val player = controller ?: return
         if (player.mediaItemCount == 0) return
+        _playerState.value.currentTrack?.id?.let(::recordTrackSkipped)
         if (player.hasNextMediaItem()) {
             player.seekToNextMediaItem()
         } else {
@@ -465,6 +481,27 @@ class MusicViewModel(
         player.shuffleModeEnabled = enabled
         preferences.saveShuffleEnabled(enabled)
         _playerState.update { it.copy(shuffle = enabled) }
+    }
+
+    private fun recordTrackPlayed(trackId: Long) {
+        val now = System.currentTimeMillis()
+        _library.update { state ->
+            val current = state.trackStats[trackId] ?: TrackStats(trackId)
+            state.copy(trackStats = state.trackStats + (trackId to current.copy(playCount = current.playCount + 1, lastPlayed = now)))
+        }
+        viewModelScope.launch {
+            libraryScanner.recordTrackPlayed(trackId, now)
+        }
+    }
+
+    private fun recordTrackSkipped(trackId: Long) {
+        _library.update { state ->
+            val current = state.trackStats[trackId] ?: TrackStats(trackId)
+            state.copy(trackStats = state.trackStats + (trackId to current.copy(skipCount = current.skipCount + 1)))
+        }
+        viewModelScope.launch {
+            libraryScanner.recordTrackSkipped(trackId)
+        }
     }
 
     private fun pauseIfVolumeZero(context: Context) {
@@ -651,6 +688,7 @@ data class CachedLibrary(
     val tracks: List<Track>,
     val favorites: Set<Long>,
     val favoriteItems: List<FavoriteItem>,
+    val trackStats: Map<Long, TrackStats>,
     val snapshot: List<TrackSnapshot> = emptyList(),
 )
 
@@ -673,6 +711,17 @@ private fun List<FavoriteItem>.trackIds(): Set<Long> =
         .mapNotNull { it.key.toLongOrNull() }
         .toSet()
 
+private fun List<TrackStatsEntity>.toTrackStatsMap(): Map<Long, TrackStats> =
+    associate { entity ->
+        entity.trackId to
+            TrackStats(
+                trackId = entity.trackId,
+                playCount = entity.playCount,
+                lastPlayed = entity.lastPlayed,
+                skipCount = entity.skipCount,
+            )
+    }
+
 class LibraryScanner(
     context: Context,
 ) {
@@ -684,10 +733,12 @@ class LibraryScanner(
         withContext(Dispatchers.IO) {
             val cachedTracks = dao.loadTracks()
             val favoriteItems = dao.loadLibraryFavorites()
+            val trackStats = dao.loadTrackStats().toTrackStatsMap()
             CachedLibrary(
                 tracks = cachedTracks.map { it.toTrack() },
                 favorites = favoriteItems.trackIds(),
                 favoriteItems = favoriteItems,
+                trackStats = trackStats,
                 snapshot = cachedTracks.map { it.toSnapshot() },
             )
         }
@@ -696,6 +747,7 @@ class LibraryScanner(
         withContext(Dispatchers.IO) {
             val favoriteItems = dao.loadLibraryFavorites()
             val favorites = favoriteItems.trackIds()
+            val trackStats = dao.loadTrackStats().toTrackStatsMap()
             val audioTracks =
                 mediaStoreScanner.loadTracks(dao) { partialTracks ->
                     val sortedPartial = partialTracks.sortedForLibrary()
@@ -704,6 +756,7 @@ class LibraryScanner(
                             tracks = sortedPartial.map { it.track },
                             favorites = favorites,
                             favoriteItems = favoriteItems,
+                            trackStats = trackStats,
                             snapshot = sortedPartial.map { it.toSnapshot() },
                         ),
                     )
@@ -720,6 +773,7 @@ class LibraryScanner(
                                 tracks = sortedPartial.map { it.track },
                                 favorites = favorites,
                                 favoriteItems = favoriteItems,
+                                trackStats = trackStats,
                                 snapshot = sortedPartial.map { it.toSnapshot() },
                             ),
                         )
@@ -743,6 +797,7 @@ class LibraryScanner(
                 tracks = cachedTracks.map { it.toTrack() },
                 favorites = favorites,
                 favoriteItems = favoriteItems,
+                trackStats = dao.loadTrackStats().toTrackStatsMap(),
                 snapshot = cachedTracks.map { it.toSnapshot() },
             )
         }
@@ -772,11 +827,39 @@ class LibraryScanner(
         }
     }
 
+    suspend fun recordTrackPlayed(
+        trackId: Long,
+        playedAt: Long,
+    ) = withContext(Dispatchers.IO) {
+        val current = dao.loadTrackStats(trackId)
+        dao.upsertTrackStats(
+            TrackStatsEntity(
+                trackId = trackId,
+                playCount = (current?.playCount ?: 0) + 1,
+                lastPlayed = playedAt,
+                skipCount = current?.skipCount ?: 0,
+            ),
+        )
+    }
+
+    suspend fun recordTrackSkipped(trackId: Long) =
+        withContext(Dispatchers.IO) {
+            val current = dao.loadTrackStats(trackId)
+            dao.upsertTrackStats(
+                TrackStatsEntity(
+                    trackId = trackId,
+                    playCount = current?.playCount ?: 0,
+                    lastPlayed = current?.lastPlayed ?: 0L,
+                    skipCount = (current?.skipCount ?: 0) + 1,
+                ),
+            )
+        }
+
     fun buildPlaylists(tracks: List<Track>): List<PlaylistGroup> {
         if (tracks.isEmpty()) return emptyList()
         return listOf(
-            PlaylistGroup("Recently added", tracks.take(50), tracks.firstOrNull()?.albumArtUri),
-            PlaylistGroup("Most played", tracks.sortedBy { it.title }.take(50), tracks.getOrNull(1)?.albumArtUri),
+            PlaylistGroup("recently-added", "Recently added", tracks.take(50), tracks.firstOrNull()?.albumArtUri),
+            PlaylistGroup("most-played", "Most played", tracks.sortedBy { it.title }.take(50), tracks.getOrNull(1)?.albumArtUri),
         )
     }
 }

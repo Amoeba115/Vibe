@@ -43,6 +43,15 @@ interface LibraryDao {
     @Query("DELETE FROM favorite_items WHERE type = :type AND favorite_key = :key")
     suspend fun deleteFavoriteItem(type: String, key: String)
 
+    @Query("SELECT * FROM track_stats")
+    suspend fun loadTrackStats(): List<TrackStatsEntity>
+
+    @Query("SELECT * FROM track_stats WHERE track_id = :trackId")
+    suspend fun loadTrackStats(trackId: Long): TrackStatsEntity?
+
+    @Upsert
+    suspend fun upsertTrackStats(stats: TrackStatsEntity)
+
     @Upsert
     suspend fun upsertAlbums(albums: List<AlbumCacheEntity>)
 
