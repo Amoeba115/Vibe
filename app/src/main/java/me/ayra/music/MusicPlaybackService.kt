@@ -88,7 +88,9 @@ class MusicPlaybackService : MediaSessionService() {
         return if (BuildConfig.IS_VGM_BUILD) {
             HybridPlayer(this)
         } else {
-            ExoPlayer.Builder(this).build()
+            ExoPlayer.Builder(this).build().apply {
+                setPlaybackSpeed(me.ayra.music.util.MusicPreferences(this@MusicPlaybackService).loadPlaybackSpeed())
+            }
         }
     }
 }

@@ -1,17 +1,20 @@
 package me.ayra.music
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.SimpleBasePlayer
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import me.ayra.music.util.MusicPreferences
 
 @UnstableApi
 class HybridPlayer(
@@ -20,9 +23,14 @@ class HybridPlayer(
 ) : SimpleBasePlayer(looper) {
     private val appContext = context.applicationContext
     private val applicationHandler = Handler(looper)
+    private val preferences = MusicPreferences(appContext)
     private val exoPlayer = ExoPlayer.Builder(appContext).setLooper(looper).build()
     private val vgmPlayer: Player? = createVgmPlayer(looper)
     private val stateLock = Any()
+    private val settingsListener =
+        SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+            applyVgmSettings()
+        }
 
     private var activePlayer: Player? = null
     private var playlist: List<MediaItem> = emptyList()
@@ -32,6 +40,7 @@ class HybridPlayer(
     private var repeatMode = Player.REPEAT_MODE_OFF
     private var shuffleModeEnabled = false
     private var volume = 1f
+    private var playbackParameters = PlaybackParameters.DEFAULT
     private var released = false
 
     private val childListener = object : Player.Listener {
@@ -44,6 +53,7 @@ class HybridPlayer(
     }
 
     init {
+        preferences.registerSettingsListener(settingsListener)
         exoPlayer.addListener(childListener)
         vgmPlayer?.addListener(childListener)
     }
@@ -73,6 +83,7 @@ class HybridPlayer(
             .setRepeatMode(repeatMode)
             .setShuffleModeEnabled(shuffleModeEnabled)
             .setVolume(volume)
+            .setPlaybackParameters(playbackParameters)
             .build()
     }
 
@@ -220,6 +231,16 @@ class HybridPlayer(
         return immediateFuture()
     }
 
+    override fun handleSetPlaybackParameters(playbackParameters: PlaybackParameters): ListenableFuture<Any> {
+        this.playbackParameters = playbackParameters
+        exoPlayer.playbackParameters = playbackParameters
+        if (activePlayer === exoPlayer) {
+            activePlayer?.playbackParameters = playbackParameters
+        }
+        invalidateState()
+        return immediateFuture()
+    }
+
     override fun handleStop(): ListenableFuture<Any> {
         stopChildren()
         invalidateState()
@@ -231,6 +252,7 @@ class HybridPlayer(
             released = true
             exoPlayer.removeListener(childListener)
             vgmPlayer?.removeListener(childListener)
+            preferences.unregisterSettingsListener(settingsListener)
             exoPlayer.release()
             vgmPlayer?.release()
         }
@@ -249,6 +271,9 @@ class HybridPlayer(
         nextPlayer.repeatMode = repeatMode
         nextPlayer.shuffleModeEnabled = shuffleModeEnabled
         nextPlayer.volume = volume
+        if (nextPlayer === exoPlayer) {
+            nextPlayer.playbackParameters = playbackParameters
+        }
         nextPlayer.setMediaItem(item, pendingStartPositionMs)
         nextPlayer.prepare()
         if (playWhenReady) nextPlayer.play()
@@ -271,13 +296,57 @@ class HybridPlayer(
 
     private fun createVgmPlayer(looper: Looper): Player? {
         return runCatching {
-            val settingsClass = Class.forName("me.ayra.vgmstream.VgmSettings")
-            val settings = settingsClass.getConstructor().newInstance()
+            val settings = createVgmSettings()
+            val settingsClass = settings.javaClass
             val adapterClass = Class.forName("me.ayra.vgmstream.media3.VgmPlayerAdapter")
             adapterClass
                 .getConstructor(Context::class.java, settingsClass, Looper::class.java)
                 .newInstance(appContext, settings, looper) as Player
         }.getOrNull()
+    }
+
+    private fun applyVgmSettings() {
+        val player = vgmPlayer ?: return
+        runCatching {
+            val settings = createVgmSettings()
+            player.javaClass.getMethod("setSettings", settings.javaClass).invoke(player, settings)
+        }
+    }
+
+    private fun createVgmSettings(): Any {
+        val settingsClass = Class.forName("me.ayra.vgmstream.VgmSettings")
+        val loopModeClass = Class.forName("me.ayra.vgmstream.LoopMode")
+        val channelOutputClass = Class.forName("me.ayra.vgmstream.ChannelOutput")
+        val loopModeName =
+            preferences
+                .loadVgmLoopMode()
+                .takeUnless { it == MusicPreferences.VGM_LOOP_FOLLOW_APP }
+                ?: "Normal"
+        val loopModeConstants = loopModeClass.enumConstants.orEmpty()
+        val loopMode = loopModeConstants.firstOrNull { (it as Enum<*>).name == loopModeName }
+            ?: loopModeConstants.first { (it as Enum<*>).name == "Normal" }
+        val channelOutputName = preferences.loadVgmChannelOutput()
+        val channelOutputConstants = channelOutputClass.enumConstants.orEmpty()
+        val channelOutput = channelOutputConstants.firstOrNull { (it as Enum<*>).name == channelOutputName }
+            ?: channelOutputConstants.first { (it as Enum<*>).name == "Auto" }
+        return settingsClass
+            .getConstructor(
+                Double::class.javaPrimitiveType,
+                Long::class.javaPrimitiveType,
+                loopModeClass,
+                Long::class.javaPrimitiveType,
+                Boolean::class.javaPrimitiveType,
+                Int::class.javaPrimitiveType,
+                channelOutputClass,
+            ).newInstance(
+                preferences.loadVgmLoopCount().toDouble(),
+                preferences.loadVgmFadeLengthSeconds() * 1_000L,
+                loopMode,
+                preferences.loadVgmFadeDelaySeconds() * 1_000L,
+                preferences.loadVgmDisableSubsongs(),
+                if (preferences.loadVgmDownmixEnabled()) preferences.loadVgmDownmixChannels() else 0,
+                channelOutput,
+            )
     }
 
     private fun Uri.isVgmUri(): Boolean {
@@ -346,6 +415,7 @@ class HybridPlayer(
             .add(Player.COMMAND_GET_AUDIO_ATTRIBUTES)
             .add(Player.COMMAND_GET_VOLUME)
             .add(Player.COMMAND_SET_VOLUME)
+            .add(Player.COMMAND_SET_SPEED_AND_PITCH)
             .add(Player.COMMAND_GET_TEXT)
             .add(Player.COMMAND_GET_TRACKS)
             .add(Player.COMMAND_RELEASE)

@@ -6,6 +6,7 @@ import android.content.ComponentName
 import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -68,6 +69,7 @@ import me.ayra.music.ui.navigation.MainRoute
 import me.ayra.music.ui.navigation.rememberMusicNavigator
 import me.ayra.music.ui.player.PlayerSheet
 import me.ayra.music.ui.theme.MusicTheme
+import me.ayra.music.ui.theme.ThemeMode
 import me.ayra.music.util.MusicPreferences
 import java.io.File
 import java.util.Locale
@@ -82,7 +84,31 @@ class MainActivity : ComponentActivity() {
         consumeOpenPlayerIntent(intent)
         enableEdgeToEdge()
         setContent {
-            MusicTheme {
+            val preferences = remember(this) { MusicPreferences(this) }
+            var themeMode by remember {
+                mutableStateOf(
+                    ThemeMode.entries.firstOrNull { it.name == preferences.loadThemeMode() } ?: ThemeMode.Auto,
+                )
+            }
+            var themeColorSeed by remember { mutableStateOf(preferences.loadThemeColorSeed()) }
+            var amoledMode by remember { mutableStateOf(preferences.loadAmoledMode()) }
+            MusicTheme(
+                themeMode = themeMode,
+                themeColorSeed = themeColorSeed,
+                amoledMode = amoledMode,
+                onThemeModeChange = {
+                    themeMode = it
+                    preferences.saveThemeMode(it.name)
+                },
+                onThemeColorSeedChange = {
+                    themeColorSeed = it
+                    preferences.saveThemeColorSeed(it)
+                },
+                onAmoledModeChange = {
+                    amoledMode = it
+                    preferences.saveAmoledMode(it)
+                },
+            ) {
                 MusicApp(openPlayerRequest = openPlayerRequest)
             }
         }
@@ -213,6 +239,12 @@ class MusicViewModel(
     private var controller: MediaController? = null
     private var restoredTrack = false
     private var lastSavedTrackId = -1L
+    private val settingsListener =
+        SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == MusicPreferences.KEY_PLAYBACK_SPEED) {
+                controller?.setPlaybackSpeed(preferences.loadPlaybackSpeed())
+            }
+        }
 
     private val _library = MutableStateFlow(LibraryState())
     val library: StateFlow<LibraryState> = _library.asStateFlow()
@@ -221,6 +253,7 @@ class MusicViewModel(
     val playerState: StateFlow<PlayerState> = _playerState.asStateFlow()
 
     init {
+        preferences.registerSettingsListener(settingsListener)
         connectController(application)
         viewModelScope.launch {
             while (true) {
@@ -239,6 +272,7 @@ class MusicViewModel(
                         val connectedController = runCatching { future.get() }.getOrNull() ?: return@addListener
                         controller =
                             connectedController.also { mediaController ->
+                                mediaController.setPlaybackSpeed(preferences.loadPlaybackSpeed())
                                 mediaController.addListener(
                                     object : Player.Listener {
                                         override fun onIsPlayingChanged(isPlaying: Boolean) = publishPlayerState()
@@ -506,6 +540,7 @@ class MusicViewModel(
     }
 
     override fun onCleared() {
+        preferences.unregisterSettingsListener(settingsListener)
         controller?.release()
         controller = null
         controllerFuture?.let(MediaController::releaseFuture)
