@@ -194,6 +194,13 @@ private enum class PlaylistListSort(
     DatePlayed("Date played"),
 }
 
+private enum class SelectPickerTab {
+    Track,
+    Album,
+    Artist,
+    Folder,
+}
+
 private enum class SubParentSort(
     val label: String,
 ) {
@@ -1618,8 +1625,75 @@ private fun SelectTrackScreen(
     modifier: Modifier = Modifier,
 ) {
     var selectedIds by rememberSaveable { mutableStateOf(emptyList<Long>()) }
+    var selectedTab by rememberSaveable { mutableStateOf(SelectPickerTab.Track) }
+    var detailRoute by rememberSaveable { mutableStateOf<String?>(null) }
     val selectedIdSet = remember(selectedIds) { selectedIds.toSet() }
     val selectedTracks = remember(selectedIdSet, tracks) { tracks.filter { it.id in selectedIdSet } }
+    val albums = remember(tracks) {
+        tracks
+            .groupBy { it.albumId }
+            .map { (_, items) -> AlbumGroup(items.first().albumId, items.first().album, items.first().artist, items) }
+            .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.title })
+    }
+    val artists = remember(tracks) {
+        tracks
+            .groupBy { it.artist.ifBlank { "Unknown artist" } }
+            .map { (name, items) -> ArtistGroup(name, items.map { it.albumId }.distinct().size, items) }
+            .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+    }
+    val folders = remember(tracks) {
+        tracks
+            .groupBy { it.folder.ifBlank { "Unknown folder" } }
+            .map { (path, items) -> FolderGroup(path.substringAfterLast('/').ifBlank { path }, path, items) }
+            .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+    }
+    val detailTracks =
+        remember(detailRoute, albums, artists, folders) {
+            when {
+                detailRoute?.startsWith("album:") == true -> {
+                    val albumId = detailRoute?.removePrefix("album:")?.toLongOrNull()
+                    albums.firstOrNull { it.id == albumId }?.tracks.orEmpty()
+                }
+
+                detailRoute?.startsWith("artist:") == true -> {
+                    val name = detailRoute?.removePrefix("artist:").orEmpty()
+                    artists.firstOrNull { it.name == name }?.tracks.orEmpty()
+                }
+
+                detailRoute?.startsWith("folder:") == true -> {
+                    val path = detailRoute?.removePrefix("folder:").orEmpty()
+                    folders.firstOrNull { it.path == path }?.tracks.orEmpty()
+                }
+
+                else -> {
+                    emptyList()
+                }
+            }
+        }
+    val detailTitle =
+        when {
+            detailRoute?.startsWith("album:") == true -> {
+                val albumId = detailRoute?.removePrefix("album:")?.toLongOrNull()
+                albums.firstOrNull { it.id == albumId }?.title
+            }
+
+            detailRoute?.startsWith("artist:") == true -> {
+                val name = detailRoute?.removePrefix("artist:").orEmpty()
+                artists.firstOrNull { it.name == name }?.name
+            }
+
+            detailRoute?.startsWith("folder:") == true -> {
+                val path = detailRoute?.removePrefix("folder:").orEmpty()
+                folders.firstOrNull { it.path == path }?.name
+            }
+
+            else -> {
+                null
+            }
+        }
+    BackHandler(enabled = detailRoute != null) {
+        detailRoute = null
+    }
     Column(
         modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
     ) {
@@ -1627,11 +1701,11 @@ private fun SelectTrackScreen(
             modifier = Modifier.fillMaxWidth().padding(start = 8.dp, top = 18.dp, end = 8.dp, bottom = 18.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onBack) {
+            IconButton(onClick = { if (detailRoute != null) detailRoute = null else onBack() }) {
                 Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.back), tint = MaterialTheme.colorScheme.primary)
             }
             Column(modifier = Modifier.weight(1f)) {
-                Text(title, color = MaterialTheme.colorScheme.primary, fontSize = 24.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                Text(detailTitle ?: title, color = MaterialTheme.colorScheme.primary, fontSize = 24.sp, fontWeight = FontWeight.Bold, maxLines = 1)
                 Text(
                     stringResource(R.string.selected_count_plain, selectedIds.size),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1642,19 +1716,123 @@ private fun SelectTrackScreen(
                 Text(stringResource(R.string.done))
             }
         }
+
+        if (detailRoute == null) {
+            SelectPickerTabs(
+                selectedTab = selectedTab,
+                onSelected = { selectedTab = it },
+            )
+        }
+
         RoundedPanelList(listState = rememberLazyListState(), topPadding = 0.dp) {
-            items(tracks, key = { it.id }) { track ->
-                SelectTrackRow(
-                    track = track,
-                    selected = track.id in selectedIdSet,
-                    onClick = {
-                        selectedIds = if (track.id in selectedIdSet) selectedIds - track.id else selectedIds + track.id
-                    },
+            if (detailRoute != null) {
+                items(detailTracks, key = { it.id }) { track ->
+                    SelectTrackRow(
+                        track = track,
+                        selected = track.id in selectedIdSet,
+                        onClick = {
+                            selectedIds = if (track.id in selectedIdSet) selectedIds - track.id else selectedIds + track.id
+                        },
+                    )
+                }
+                if (detailTracks.isEmpty()) item { EmptyInline(stringResource(R.string.no_tracks_found)) }
+            } else {
+                when (selectedTab) {
+                    SelectPickerTab.Track -> {
+                        items(tracks, key = { it.id }) { track ->
+                            SelectTrackRow(
+                                track = track,
+                                selected = track.id in selectedIdSet,
+                                onClick = {
+                                    selectedIds = if (track.id in selectedIdSet) selectedIds - track.id else selectedIds + track.id
+                                },
+                            )
+                        }
+                        if (tracks.isEmpty()) item { EmptyInline(stringResource(R.string.no_tracks_found)) }
+                    }
+
+                    SelectPickerTab.Album -> {
+                        items(albums, key = { it.id }) { album ->
+                            MediaGroupRow(
+                                artwork = album.tracks.firstOrNull()?.albumArtUri,
+                                title = album.title,
+                                subtitle = "${album.artist} | ${album.tracks.size} tracks",
+                                onClick = { detailRoute = "album:${album.id}" },
+                                modifier = Modifier.animateItem(),
+                            )
+                        }
+                        if (albums.isEmpty()) item { EmptyInline(stringResource(R.string.no_albums_found)) }
+                    }
+
+                    SelectPickerTab.Artist -> {
+                        items(artists, key = { it.name }) { artist ->
+                            MediaGroupRow(
+                                artwork = artist.tracks.firstOrNull()?.albumArtUri,
+                                title = artist.name,
+                                subtitle = "${artist.albums} albums | ${artist.tracks.size} tracks",
+                                onClick = { detailRoute = "artist:${artist.name}" },
+                                modifier = Modifier.animateItem(),
+                            )
+                        }
+                        if (artists.isEmpty()) item { EmptyInline(stringResource(R.string.no_artists_found)) }
+                    }
+
+                    SelectPickerTab.Folder -> {
+                        items(folders, key = { it.path }) { folder ->
+                            MediaGroupRow(
+                                artwork = folder.tracks.firstOrNull()?.albumArtUri,
+                                title = folder.name,
+                                subtitle = folder.path,
+                                folder = true,
+                                onClick = { detailRoute = "folder:${folder.path}" },
+                                modifier = Modifier.animateItem(),
+                            )
+                        }
+                        if (folders.isEmpty()) item { EmptyInline(stringResource(R.string.no_folders_found)) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SelectPickerTabs(
+    selectedTab: SelectPickerTab,
+    onSelected: (SelectPickerTab) -> Unit,
+) {
+    LazyRow(
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(horizontal = 20.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        items(SelectPickerTab.entries, key = { it.name }) { tab ->
+            val selected = selectedTab == tab
+            Surface(
+                shape = RoundedCornerShape(18.dp),
+                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainer,
+                contentColor = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.clickable { onSelected(tab) },
+            ) {
+                Text(
+                    text = tab.label(),
+                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp),
+                    fontSize = 15.sp,
+                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                 )
             }
         }
     }
 }
+
+@Composable
+private fun SelectPickerTab.label(): String =
+    when (this) {
+        SelectPickerTab.Track -> stringResource(R.string.track)
+        SelectPickerTab.Album -> stringResource(R.string.album)
+        SelectPickerTab.Artist -> stringResource(R.string.artist)
+        SelectPickerTab.Folder -> stringResource(R.string.folder)
+    }
 
 @Composable
 private fun AddToPlaylistScreen(

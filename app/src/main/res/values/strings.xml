@@ -90,6 +90,9 @@
     <string name="favorite">Favorite</string>
     <string name="playlist">Playlist</string>
     <string name="track">Track</string>
+    <string name="album">Album</string>
+    <string name="artist">Artist</string>
+    <string name="folder">Folder</string>
     <string name="search">Search</string>
     <string name="close">Close</string>
     <string name="allow_music_access">Allow music access</string>
