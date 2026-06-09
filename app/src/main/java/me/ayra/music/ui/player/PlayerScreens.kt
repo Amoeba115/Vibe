@@ -15,8 +15,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.background
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.AnchoredDraggableDefaults
 import androidx.compose.foundation.gestures.AnchoredDraggableState
@@ -89,8 +89,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.pointerInput
@@ -965,17 +965,17 @@ private fun QueueTrackRow(
                 .padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = index.toString(),
-            modifier =
-                Modifier
-                    .size(width = 34.dp, height = 48.dp)
-                    .wrapContentSize(Alignment.Center),
-            textAlign = TextAlign.Center,
-            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-            fontSize = 16.sp,
-            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-        )
+        Box(
+            modifier = Modifier.size(width = 34.dp, height = 48.dp),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            Text(
+                text = index.toString(),
+                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 16.sp,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+            )
+        }
         AlbumArt(track.albumArtUri, Modifier.size(48.dp), RoundedCornerShape(12.dp))
         Column(
             modifier =
@@ -1060,11 +1060,12 @@ private fun SeekBar(
             val trackHeight = with(density) { 4.dp.toPx() }
             val thumbRadius = with(density) { 5.dp.toPx() }
             val centerY = size.height / 2f
-            val progress = if (safeDuration > 0L) {
-                (sliderValue / safeDuration.toFloat()).coerceIn(0f, 1f)
-            } else {
-                0f
-            }
+            val progress =
+                if (safeDuration > 0L) {
+                    (sliderValue / safeDuration.toFloat()).coerceIn(0f, 1f)
+                } else {
+                    0f
+                }
             val thumbX = size.width * progress
             val activeColor = if (enabled && safeDuration > 0L) accent else onSurface.copy(alpha = 0.35f)
             val inactiveColor = if (enabled && safeDuration > 0L) accent.copy(alpha = 0.18f) else onSurface.copy(alpha = 0.15f)

@@ -78,19 +78,21 @@ fun SettingsScreen(
     }
 
     Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
+        modifier =
+            modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background),
     ) {
         AnimatedContent(
             targetState = selectedCategory,
             transitionSpec = {
                 val forward = (targetState?.depth ?: 0) > (initialState?.depth ?: 0)
-                val direction = if (forward) {
-                    AnimatedContentTransitionScope.SlideDirection.Left
-                } else {
-                    AnimatedContentTransitionScope.SlideDirection.Right
-                }
+                val direction =
+                    if (forward) {
+                        AnimatedContentTransitionScope.SlideDirection.Left
+                    } else {
+                        AnimatedContentTransitionScope.SlideDirection.Right
+                    }
                 (
                     slideIntoContainer(direction, animationSpec = tween(220)) + fadeIn(animationSpec = tween(180))
                 ).togetherWith(
@@ -100,42 +102,63 @@ fun SettingsScreen(
             label = "settings-category",
         ) { category ->
             when (category) {
-                null -> SettingsCategoryList(onCategorySelected = { selectedCategory = it })
-                SettingsCategory.LookAndFeel -> SettingsPage {
-                    SettingsGroup {
-                        SettingsValueRow("Dynamic color", "Uses your Material You system palette", "System")
-                        SettingsDivider()
-                        SettingsValueRow("Background", "Use Material You background colors", "Enabled")
+                null -> {
+                    SettingsCategoryList(onCategorySelected = { selectedCategory = it })
+                }
+
+                SettingsCategory.LookAndFeel -> {
+                    SettingsPage {
+                        SettingsGroup {
+                            SettingsValueRow("Dynamic color", "Uses your Material You system palette", "System")
+                            SettingsDivider()
+                            SettingsValueRow("Background", "Use Material You background colors", "Enabled")
+                        }
                     }
                 }
-                SettingsCategory.Player -> SettingsPage {
-                    SettingsGroup {
-                        SettingsValueRow("Playback core", "Media3 session and notification playback", "Media3")
-                        SettingsDivider()
-                        SettingsValueRow("Queue restore", "Restore last active playlist on launch", "Enabled")
+
+                SettingsCategory.Player -> {
+                    SettingsPage {
+                        SettingsGroup {
+                            SettingsValueRow("Playback core", "Media3 session and notification playback", "Media3")
+                            SettingsDivider()
+                            SettingsValueRow("Queue restore", "Restore last active playlist on launch", "Enabled")
+                        }
                     }
                 }
-                SettingsCategory.Library -> SettingsPage {
-                    SettingsGroup {
-                        SettingsValueRow("Scanner", "Local device audio from MediaStore", "Enabled")
-                        SettingsDivider()
-                        SettingsValueRow("Cache", "Room cache with background refresh", "Enabled")
+
+                SettingsCategory.Library -> {
+                    SettingsPage {
+                        SettingsGroup {
+                            SettingsValueRow("Scanner", "Local device audio from MediaStore", "Enabled")
+                            SettingsDivider()
+                            SettingsValueRow("Cache", "Room cache with background refresh", "Enabled")
+                        }
                     }
                 }
-                SettingsCategory.Vgmstream -> SettingsPage {
-                    SettingsGroup {
-                        SettingsValueRow("File scan", "Adds vgmstream formats from storage", if (BuildConfig.IS_VGM_BUILD) "Enabled" else "Unavailable")
-                        SettingsDivider()
-                        SettingsValueRow("Playback", "Uses vgmstream-media3 adapter for game audio", "Hybrid")
-                        SettingsDivider()
-                        SettingsValueRow("Loop mode", "Normal loop behavior for supported formats", "Default")
+
+                SettingsCategory.Vgmstream -> {
+                    SettingsPage {
+                        SettingsGroup {
+                            SettingsValueRow(
+                                "File scan",
+                                "Adds vgmstream formats from storage",
+                                if (BuildConfig.IS_VGM_BUILD) "Enabled" else "Unavailable",
+                            )
+                            SettingsDivider()
+                            SettingsValueRow("Playback", "Uses vgmstream-media3 adapter for game audio", "Hybrid")
+                            SettingsDivider()
+                            SettingsValueRow("Loop mode", "Normal loop behavior for supported formats", "Default")
+                        }
                     }
                 }
-                SettingsCategory.About -> SettingsPage {
-                    SettingsGroup {
-                        SettingsValueRow("App", "Material You local music player", "Music")
-                        SettingsDivider()
-                        SettingsValueRow("Version", "Current installed build", "1.0")
+
+                SettingsCategory.About -> {
+                    SettingsPage {
+                        SettingsGroup {
+                            SettingsValueRow("App", "Material You local music player", "Music")
+                            SettingsDivider()
+                            SettingsValueRow("Version", "Current installed build", "1.0")
+                        }
                     }
                 }
             }
@@ -228,10 +251,11 @@ private fun SettingsHeader(
     modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.background.copy(alpha = 0.96f))
-            .padding(start = 8.dp, top = 18.dp, end = 20.dp, bottom = 10.dp),
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.background)
+                .padding(start = 8.dp, top = 18.dp, end = 20.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(onClick = onBack) {
@@ -262,10 +286,11 @@ private fun SettingsSectionTitle(title: String) {
 @Composable
 private fun SettingsGroup(content: @Composable () -> Unit) {
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
     ) {
         content()
     }
@@ -279,10 +304,11 @@ private fun SettingsNavigationRow(
     onClick: () -> Unit,
 ) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 18.dp, vertical = 16.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onClick)
+                .padding(horizontal = 18.dp, vertical = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Surface(
@@ -295,11 +321,16 @@ private fun SettingsNavigationRow(
             }
         }
         Column(
-            modifier = Modifier
-                .weight(1f)
-                .padding(start = 14.dp),
+            modifier =
+                Modifier
+                    .weight(1f)
+                    .padding(start = 14.dp),
         ) {
-            Text(title, color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
+            Text(
+                title,
+                color = MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+            )
             Spacer(Modifier.height(4.dp))
             Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
         }
@@ -314,13 +345,18 @@ private fun SettingsValueRow(
     value: String,
 ) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 18.dp, vertical = 16.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp, vertical = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(title, color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
+            Text(
+                title,
+                color = MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+            )
             Spacer(Modifier.height(4.dp))
             Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
         }
