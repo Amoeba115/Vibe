@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackParameters
@@ -53,6 +54,7 @@ class HybridPlayer(
     }
 
     init {
+        exoPlayer.setAudioAttributes(musicAudioAttributes(), true)
         preferences.registerSettingsListener(settingsListener)
         exoPlayer.addListener(childListener)
         vgmPlayer?.addListener(childListener)
@@ -379,6 +381,12 @@ class HybridPlayer(
 
     private fun immediateFuture(): ListenableFuture<Any> =
         Futures.immediateFuture(Unit)
+
+    private fun musicAudioAttributes(): AudioAttributes =
+        AudioAttributes.Builder()
+            .setUsage(C.USAGE_MEDIA)
+            .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+            .build()
 
     private fun maybeAdvanceAfterEnded(playbackState: Int) {
         if (playbackState != Player.STATE_ENDED || !playWhenReady) return

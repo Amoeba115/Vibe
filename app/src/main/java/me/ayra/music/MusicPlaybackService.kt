@@ -3,6 +3,7 @@ package me.ayra.music
 import android.app.PendingIntent
 import android.content.Intent
 import androidx.media3.common.C
+import androidx.media3.common.AudioAttributes
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -98,10 +99,17 @@ class MusicPlaybackService : MediaSessionService() {
             }
         } else {
             ExoPlayer.Builder(this).build().apply {
+                setAudioAttributes(musicAudioAttributes(), true)
                 setPlaybackSpeed(preferences.loadPlaybackSpeed())
                 shuffleModeEnabled = preferences.loadShuffleEnabled()
                 repeatMode = preferences.loadRepeatMode()
             }
         }
     }
+
+    private fun musicAudioAttributes(): AudioAttributes =
+        AudioAttributes.Builder()
+            .setUsage(C.USAGE_MEDIA)
+            .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+            .build()
 }

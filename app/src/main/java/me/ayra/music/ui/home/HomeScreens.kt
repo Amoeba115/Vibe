@@ -93,10 +93,12 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
@@ -272,6 +274,7 @@ fun MainScreen(
     library: LibraryState,
     navigator: MusicNavigator,
     currentQueue: List<Track>,
+    currentTrackId: Long?,
     onRequestPermission: () -> Unit,
     onTrackClick: (Track, List<Track>) -> Unit,
     onToggleFavorite: (Long) -> Unit,
@@ -291,10 +294,13 @@ fun MainScreen(
     initialTabIndex: Int,
     onTabSelected: (Int) -> Unit,
 ) {
+    val context = LocalContext.current
     val currentRoute = navigator.currentRoute
     val detailStateHolder = rememberSaveableStateHolder()
     var searchStateVersion by rememberSaveable { mutableIntStateOf(0) }
     var usePopTransition by remember { mutableStateOf(false) }
+    var trackMenuTrack by remember { mutableStateOf<Track?>(null) }
+    var deleteMenuTrack by remember { mutableStateOf<Track?>(null) }
 
     fun navigate(route: MainRoute) {
         usePopTransition = false
@@ -331,6 +337,7 @@ fun MainScreen(
                     library = library,
                     sharedTransitionScope = this@SharedTransitionLayout,
                     animatedVisibilityScope = this,
+                    currentTrackId = currentTrackId,
                     onRequestPermission = onRequestPermission,
                     onSettings = { navigate(MainRoute.Settings) },
                     onTrackClick = onTrackClick,
@@ -348,6 +355,7 @@ fun MainScreen(
                     onDeleteTracksPermanently = onDeleteTracksPermanently,
                     onAddTracksToRoute = onAddTracksToRoute,
                     onPlaylistEditModeChanged = onPlaylistEditModeChanged,
+                    onTrackMenu = { trackMenuTrack = it },
                     initialTabIndex = initialTabIndex,
                     onTabSelected = onTabSelected,
                     modifier = Modifier.fillMaxSize(),
@@ -372,6 +380,7 @@ fun MainScreen(
                         currentQueue = currentQueue,
                         sharedTransitionScope = this@SharedTransitionLayout,
                         animatedVisibilityScope = this,
+                        currentTrackId = currentTrackId,
                         onBack = { back() },
                         onSettings = { navigate(MainRoute.Settings) },
                         onSearch = { navigate(MainRoute.Search) },
@@ -397,9 +406,45 @@ fun MainScreen(
                         onDeleteTracksPermanently = onDeleteTracksPermanently,
                         onAddTracksToRoute = onAddTracksToRoute,
                         onPlaylistEditModeChanged = onPlaylistEditModeChanged,
+                        onTrackMenu = { trackMenuTrack = it },
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
+            }
+            trackMenuTrack?.let { track ->
+                TrackActionSheet(
+                    track = track,
+                    onDismiss = { trackMenuTrack = null },
+                    onAdd = {
+                        trackMenuTrack = null
+                        onAddTracksToRoute(listOf(track))
+                    },
+                    onDelete = {
+                        trackMenuTrack = null
+                        deleteMenuTrack = track
+                    },
+                    onShare = {
+                        trackMenuTrack = null
+                        shareTracks(context, listOf(track))
+                    },
+                    onAlbum = {
+                        trackMenuTrack = null
+                        library.albums.firstOrNull { it.id == track.albumId }?.let { navigate(MainRoute.Album(it.id)) }
+                    },
+                    onArtist = {
+                        trackMenuTrack = null
+                        library.artists.firstOrNull { it.name == track.artist }?.let { navigate(MainRoute.Artist(it.name)) }
+                    },
+                )
+            }
+            deleteMenuTrack?.let { track ->
+                ConfirmPermanentDeleteDialog(
+                    onConfirm = {
+                        deleteMenuTrack = null
+                        onDeleteTracksPermanently(listOf(track))
+                    },
+                    onDismiss = { deleteMenuTrack = null },
+                )
             }
         }
     }
@@ -412,6 +457,7 @@ private fun DetailHost(
     currentQueue: List<Track>,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
+    currentTrackId: Long?,
     onBack: () -> Unit,
     onSettings: () -> Unit,
     onSearch: () -> Unit,
@@ -437,6 +483,7 @@ private fun DetailHost(
     onDeleteTracksPermanently: (List<Track>) -> Unit,
     onAddTracksToRoute: (List<Track>) -> Unit,
     onPlaylistEditModeChanged: (Boolean) -> Unit,
+    onTrackMenu: (Track) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     when (route) {
@@ -449,6 +496,8 @@ private fun DetailHost(
                 library = library,
                 onBack = onBack,
                 onTrackClick = onTrackClick,
+                currentTrackId = currentTrackId,
+                onTrackMenu = onTrackMenu,
                 onShowAllTracks = onShowAllTracks,
                 onShowAllArtists = onShowAllArtists,
                 onShowAllAlbums = onShowAllAlbums,
@@ -464,6 +513,8 @@ private fun DetailHost(
                 library = library,
                 onBack = onBack,
                 onTrackClick = onTrackClick,
+                currentTrackId = currentTrackId,
+                onTrackMenu = onTrackMenu,
                 modifier = modifier,
             )
         }
@@ -509,6 +560,8 @@ private fun DetailHost(
                     onSettings = onSettings,
                     onSearch = onSearch,
                     onTrackClick = onTrackClick,
+                    currentTrackId = currentTrackId,
+                    onTrackMenu = onTrackMenu,
                     sharedTransitionScope = sharedTransitionScope,
                     animatedVisibilityScope = animatedVisibilityScope,
                     isFavorite = library.isFavoriteItem(FavoriteType.Album, album.id.toString()),
@@ -530,6 +583,8 @@ private fun DetailHost(
                     onSettings = onSettings,
                     onSearch = onSearch,
                     onTrackClick = onTrackClick,
+                    currentTrackId = currentTrackId,
+                    onTrackMenu = onTrackMenu,
                     onAlbumClick = onAlbumClick,
                     isFavorite = library.isFavoriteItem(FavoriteType.Artist, artist.name),
                     onToggleFavorite = { onToggleFavoriteItem(FavoriteType.Artist, artist.name) },
@@ -550,6 +605,8 @@ private fun DetailHost(
                     onSettings = onSettings,
                     onSearch = onSearch,
                     onTrackClick = onTrackClick,
+                    currentTrackId = currentTrackId,
+                    onTrackMenu = onTrackMenu,
                     onToggleFavorite = onToggleFavorite,
                     isFavorite = library.isFavoriteItem(FavoriteType.Folder, folder.path),
                     onToggleFolderFavorite = { onToggleFavoriteItem(FavoriteType.Folder, folder.path) },
@@ -567,6 +624,8 @@ private fun DetailHost(
                     playlist = playlist,
                     onBack = onBack,
                     onTrackClick = onTrackClick,
+                    currentTrackId = currentTrackId,
+                    onTrackMenu = onTrackMenu,
                     isFavorite = library.isFavoriteItem(FavoriteType.Playlist, playlist.id),
                     onToggleFavorite = { onToggleFavoriteItem(FavoriteType.Playlist, playlist.id) },
                     onAddTracks = { onAddTracksToPlaylistRoute(playlist.id) },
@@ -671,6 +730,7 @@ private fun HomeScreen(
     library: LibraryState,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
+    currentTrackId: Long?,
     onRequestPermission: () -> Unit,
     onSettings: () -> Unit,
     onTrackClick: (Track, List<Track>) -> Unit,
@@ -688,6 +748,7 @@ private fun HomeScreen(
     onDeleteTracksPermanently: (List<Track>) -> Unit,
     onAddTracksToRoute: (List<Track>) -> Unit,
     onPlaylistEditModeChanged: (Boolean) -> Unit,
+    onTrackMenu: (Track) -> Unit,
     initialTabIndex: Int,
     onTabSelected: (Int) -> Unit,
     modifier: Modifier = Modifier,
@@ -707,6 +768,8 @@ private fun HomeScreen(
     var contentEditSelectedCount by rememberSaveable { mutableIntStateOf(0) }
     var contentEditAllSelected by rememberSaveable { mutableStateOf(false) }
     var contentEditSelectAllRequest by rememberSaveable { mutableIntStateOf(0) }
+    var contentEditStartRequest by rememberSaveable { mutableIntStateOf(0) }
+    var contentEditStartTab by rememberSaveable { mutableStateOf<HomeTab?>(null) }
     val customPlaylists =
         remember(library.playlists) {
             library.playlists.filter { it.id.startsWith(CUSTOM_PLAYLIST_PREFIX) }
@@ -732,6 +795,8 @@ private fun HomeScreen(
         if (!contentEditMode) {
             contentEditSelectedCount = 0
             contentEditAllSelected = false
+        } else {
+            contentEditStartTab = null
         }
     }
 
@@ -868,6 +933,16 @@ private fun HomeScreen(
                                     }
                                 },
                             )
+                        } else {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.edit)) },
+                                leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
+                                onClick = {
+                                    menuExpanded = false
+                                    contentEditStartTab = tabs[pagerState.currentPage]
+                                    contentEditStartRequest += 1
+                                },
+                            )
                         }
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.settings)) },
@@ -912,11 +987,20 @@ private fun HomeScreen(
                     modifier = Modifier.fillMaxSize(),
                     userScrollEnabled = !anyEditMode,
                 ) { page ->
-                    when (tabs[page]) {
+                    val pageTab = tabs[page]
+                    val pageEditStartRequest =
+                        if (contentEditStartTab == pageTab && pagerState.currentPage == page) {
+                            contentEditStartRequest
+                        } else {
+                            0
+                        }
+                    when (pageTab) {
                         HomeTab.Favorite -> {
                             FavoriteTab(
                                 library = library,
                                 onTrackClick = onTrackClick,
+                                currentTrackId = currentTrackId,
+                                onTrackMenu = onTrackMenu,
                                 onArtistClick = onArtistClick,
                                 onAlbumClick = onAlbumClick,
                                 onFolderClick = onFolderClick,
@@ -925,6 +1009,7 @@ private fun HomeScreen(
                                 onAddTracksToRoute = onAddTracksToRoute,
                                 onToggleFavoriteItem = onToggleFavoriteItem,
                                 onEditModeChanged = { contentEditMode = it },
+                                editStartRequest = pageEditStartRequest,
                                 selectAllRequest = contentEditSelectAllRequest,
                                 onEditSelectionChanged = { count, allSelected ->
                                     contentEditSelectedCount = count
@@ -961,10 +1046,13 @@ private fun HomeScreen(
                             TrackTab(
                                 library = library,
                                 onTrackClick = onTrackClick,
+                                currentTrackId = currentTrackId,
+                                onTrackMenu = onTrackMenu,
                                 onReplaceCurrentQueue = onReplaceCurrentQueue,
                                 onAddTracksToRoute = onAddTracksToRoute,
                                 onDeleteTracksPermanently = onDeleteTracksPermanently,
                                 onEditModeChanged = { contentEditMode = it },
+                                editStartRequest = pageEditStartRequest,
                                 selectAllRequest = contentEditSelectAllRequest,
                                 onEditSelectionChanged = { count, allSelected ->
                                     contentEditSelectedCount = count
@@ -979,10 +1067,13 @@ private fun HomeScreen(
                                 sharedTransitionScope = sharedTransitionScope,
                                 animatedVisibilityScope = animatedVisibilityScope,
                                 onAlbumClick = onAlbumClick,
+                                currentTrackId = currentTrackId,
+                                onTrackMenu = onTrackMenu,
                                 onReplaceCurrentQueue = onReplaceCurrentQueue,
                                 onAddTracksToRoute = onAddTracksToRoute,
                                 onDeleteTracksPermanently = onDeleteTracksPermanently,
                                 onEditModeChanged = { contentEditMode = it },
+                                editStartRequest = pageEditStartRequest,
                                 selectAllRequest = contentEditSelectAllRequest,
                                 onEditSelectionChanged = { count, allSelected ->
                                     contentEditSelectedCount = count
@@ -995,10 +1086,13 @@ private fun HomeScreen(
                             ArtistTab(
                                 library = library,
                                 onArtistClick = onArtistClick,
+                                currentTrackId = currentTrackId,
+                                onTrackMenu = onTrackMenu,
                                 onReplaceCurrentQueue = onReplaceCurrentQueue,
                                 onAddTracksToRoute = onAddTracksToRoute,
                                 onDeleteTracksPermanently = onDeleteTracksPermanently,
                                 onEditModeChanged = { contentEditMode = it },
+                                editStartRequest = pageEditStartRequest,
                                 selectAllRequest = contentEditSelectAllRequest,
                                 onEditSelectionChanged = { count, allSelected ->
                                     contentEditSelectedCount = count
@@ -1011,10 +1105,13 @@ private fun HomeScreen(
                             FolderTab(
                                 library = library,
                                 onFolderClick = onFolderClick,
+                                currentTrackId = currentTrackId,
+                                onTrackMenu = onTrackMenu,
                                 onReplaceCurrentQueue = onReplaceCurrentQueue,
                                 onAddTracksToRoute = onAddTracksToRoute,
                                 onDeleteTracksPermanently = onDeleteTracksPermanently,
                                 onEditModeChanged = { contentEditMode = it },
+                                editStartRequest = pageEditStartRequest,
                                 selectAllRequest = contentEditSelectAllRequest,
                                 onEditSelectionChanged = { count, allSelected ->
                                     contentEditSelectedCount = count
@@ -1088,6 +1185,8 @@ private fun SearchScreen(
     library: LibraryState,
     onBack: () -> Unit,
     onTrackClick: (Track, List<Track>) -> Unit,
+    currentTrackId: Long?,
+    onTrackMenu: (Track) -> Unit,
     onShowAllTracks: (String) -> Unit,
     onShowAllArtists: (String) -> Unit,
     onShowAllAlbums: (String) -> Unit,
@@ -1181,6 +1280,8 @@ private fun SearchScreen(
                                 TrackRow(
                                     track = track,
                                     onClick = { onTrackClick(track, trackResults) },
+                                    currentTrackId = currentTrackId,
+                                    onMenuClick = { onTrackMenu(track) },
                                 )
                                 if (index != trackResults.take(4).lastIndex) SearchDivider()
                             }
@@ -1280,6 +1381,8 @@ private fun SearchTrackResultsScreen(
     library: LibraryState,
     onBack: () -> Unit,
     onTrackClick: (Track, List<Track>) -> Unit,
+    currentTrackId: Long?,
+    onTrackMenu: (Track) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val normalizedQuery = query.trim()
@@ -1350,10 +1453,12 @@ private fun SearchTrackResultsScreen(
             }
             items(trackResults, key = { it.id }) { track ->
                 TrackRow(
-                    track = track,
-                    onClick = { onTrackClick(track, trackResults) },
-                    modifier = Modifier.animateItem(),
-                )
+                track = track,
+                onClick = { onTrackClick(track, trackResults) },
+                currentTrackId = currentTrackId,
+                onMenuClick = { onTrackMenu(track) },
+                modifier = Modifier.animateItem(),
+            )
             }
             if (trackResults.isEmpty()) {
                 item { EmptyInline(stringResource(R.string.no_tracks_found)) }
@@ -1541,6 +1646,8 @@ private fun LoadingState() {
 private fun FavoriteTab(
     library: LibraryState,
     onTrackClick: (Track, List<Track>) -> Unit,
+    currentTrackId: Long?,
+    onTrackMenu: (Track) -> Unit,
     onArtistClick: (ArtistGroup) -> Unit,
     onAlbumClick: (AlbumGroup) -> Unit,
     onFolderClick: (FolderGroup) -> Unit,
@@ -1549,6 +1656,7 @@ private fun FavoriteTab(
     onAddTracksToRoute: (List<Track>) -> Unit,
     onToggleFavoriteItem: (String, String) -> Unit,
     onEditModeChanged: (Boolean) -> Unit,
+    editStartRequest: Int,
     selectAllRequest: Int,
     onEditSelectionChanged: (Int, Boolean) -> Unit,
 ) {
@@ -1569,6 +1677,9 @@ private fun FavoriteTab(
     LaunchedEffect(editMode) {
         onEditModeChanged(editMode)
         if (!editMode) selectedKeys = emptyList()
+    }
+    LaunchedEffect(editStartRequest) {
+        if (editStartRequest > 0 && favoriteCards.isNotEmpty()) editMode = true
     }
     LaunchedEffect(editMode, selectedKeys, favoriteCards) {
         onEditSelectionChanged(
@@ -1909,6 +2020,8 @@ private fun PlaylistDetailScreen(
     playlist: PlaylistGroup,
     onBack: () -> Unit,
     onTrackClick: (Track, List<Track>) -> Unit,
+    currentTrackId: Long?,
+    onTrackMenu: (Track) -> Unit,
     isFavorite: Boolean,
     onToggleFavorite: () -> Unit,
     onAddTracks: () -> Unit,
@@ -2148,6 +2261,8 @@ private fun PlaylistDetailScreen(
                             track = track,
                             showDivider = index != tracks.lastIndex,
                             onClick = { onTrackClick(track, tracks) },
+                            currentTrackId = currentTrackId,
+                            onMenuClick = { onTrackMenu(track) },
                             onLongClick =
                                 if (isCustomPlaylist) {
                                     {
@@ -2943,10 +3058,13 @@ private fun LibraryState.customPlaylistComparator(sort: PlaylistListSort): Compa
 private fun TrackTab(
     library: LibraryState,
     onTrackClick: (Track, List<Track>) -> Unit,
+    currentTrackId: Long?,
+    onTrackMenu: (Track) -> Unit,
     onReplaceCurrentQueue: (List<Track>) -> Unit,
     onAddTracksToRoute: (List<Track>) -> Unit,
     onDeleteTracksPermanently: (List<Track>) -> Unit,
     onEditModeChanged: (Boolean) -> Unit,
+    editStartRequest: Int,
     selectAllRequest: Int,
     onEditSelectionChanged: (Int, Boolean) -> Unit,
 ) {
@@ -2963,6 +3081,9 @@ private fun TrackTab(
     LaunchedEffect(editMode) {
         onEditModeChanged(editMode)
         if (!editMode) selectedIds = emptyList()
+    }
+    LaunchedEffect(editStartRequest) {
+        if (editStartRequest > 0 && tracks.isNotEmpty()) editMode = true
     }
     LaunchedEffect(editMode, selectedIds, tracks) {
         onEditSelectionChanged(
@@ -3023,6 +3144,8 @@ private fun TrackTab(
                     TrackRow(
                         track = track,
                         onClick = { onTrackClick(track, tracks) },
+                        currentTrackId = currentTrackId,
+                        onMenuClick = { onTrackMenu(track) },
                         onLongClick = {
                             editMode = true
                             selectedIds = listOf(track.id)
@@ -3063,10 +3186,13 @@ private fun AlbumTab(
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
     onAlbumClick: (AlbumGroup) -> Unit,
+    currentTrackId: Long?,
+    onTrackMenu: (Track) -> Unit,
     onReplaceCurrentQueue: (List<Track>) -> Unit,
     onAddTracksToRoute: (List<Track>) -> Unit,
     onDeleteTracksPermanently: (List<Track>) -> Unit,
     onEditModeChanged: (Boolean) -> Unit,
+    editStartRequest: Int,
     selectAllRequest: Int,
     onEditSelectionChanged: (Int, Boolean) -> Unit,
 ) {
@@ -3083,6 +3209,9 @@ private fun AlbumTab(
     LaunchedEffect(editMode) {
         onEditModeChanged(editMode)
         if (!editMode) selectedIds = emptyList()
+    }
+    LaunchedEffect(editStartRequest) {
+        if (editStartRequest > 0 && albums.isNotEmpty()) editMode = true
     }
     LaunchedEffect(editMode, selectedIds, albums) {
         onEditSelectionChanged(
@@ -3180,6 +3309,8 @@ private fun AlbumDetailScreen(
     onSettings: () -> Unit,
     onSearch: () -> Unit,
     onTrackClick: (Track, List<Track>) -> Unit,
+    currentTrackId: Long?,
+    onTrackMenu: (Track) -> Unit,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
     isFavorite: Boolean,
@@ -3347,6 +3478,8 @@ private fun AlbumDetailScreen(
                                     track = track,
                                     showDivider = !isLastTrack,
                                     onClick = { onTrackClick(track, albumTracks) },
+                                    currentTrackId = currentTrackId,
+                                    onMenuClick = { onTrackMenu(track) },
                                 )
                             }
                         }
@@ -3545,10 +3678,13 @@ private fun AlbumTrackListActions(
 private fun ArtistTab(
     library: LibraryState,
     onArtistClick: (ArtistGroup) -> Unit,
+    currentTrackId: Long?,
+    onTrackMenu: (Track) -> Unit,
     onReplaceCurrentQueue: (List<Track>) -> Unit,
     onAddTracksToRoute: (List<Track>) -> Unit,
     onDeleteTracksPermanently: (List<Track>) -> Unit,
     onEditModeChanged: (Boolean) -> Unit,
+    editStartRequest: Int,
     selectAllRequest: Int,
     onEditSelectionChanged: (Int, Boolean) -> Unit,
 ) {
@@ -3566,6 +3702,9 @@ private fun ArtistTab(
     LaunchedEffect(editMode) {
         onEditModeChanged(editMode)
         if (!editMode) selectedNames = emptyList()
+    }
+    LaunchedEffect(editStartRequest) {
+        if (editStartRequest > 0 && artists.isNotEmpty()) editMode = true
     }
     LaunchedEffect(editMode, selectedNames, artists) {
         onEditSelectionChanged(
@@ -3665,6 +3804,8 @@ private fun ArtistDetailScreen(
     onSettings: () -> Unit,
     onSearch: () -> Unit,
     onTrackClick: (Track, List<Track>) -> Unit,
+    currentTrackId: Long?,
+    onTrackMenu: (Track) -> Unit,
     onAlbumClick: (AlbumGroup) -> Unit,
     isFavorite: Boolean,
     onToggleFavorite: () -> Unit,
@@ -3767,6 +3908,8 @@ private fun ArtistDetailScreen(
                         albums = artistAlbums,
                         tracks = artistTracks,
                         onTrackClick = onTrackClick,
+                        currentTrackId = currentTrackId,
+                        onTrackMenu = onTrackMenu,
                     )
                 }
 
@@ -3786,6 +3929,8 @@ private fun ArtistTrackTab(
     albums: List<AlbumGroup>,
     tracks: List<Track>,
     onTrackClick: (Track, List<Track>) -> Unit,
+    currentTrackId: Long?,
+    onTrackMenu: (Track) -> Unit,
 ) {
     LazyColumn(
         modifier =
@@ -3865,6 +4010,8 @@ private fun ArtistTrackTab(
                         track = track,
                         showDivider = !isLastTrack,
                         onClick = { onTrackClick(track, albumTracks) },
+                        currentTrackId = currentTrackId,
+                        onMenuClick = { onTrackMenu(track) },
                     )
                 }
             }
@@ -3945,10 +4092,13 @@ private fun ArtistAlbumTab(
 private fun FolderTab(
     library: LibraryState,
     onFolderClick: (FolderGroup) -> Unit,
+    currentTrackId: Long?,
+    onTrackMenu: (Track) -> Unit,
     onReplaceCurrentQueue: (List<Track>) -> Unit,
     onAddTracksToRoute: (List<Track>) -> Unit,
     onDeleteTracksPermanently: (List<Track>) -> Unit,
     onEditModeChanged: (Boolean) -> Unit,
+    editStartRequest: Int,
     selectAllRequest: Int,
     onEditSelectionChanged: (Int, Boolean) -> Unit,
 ) {
@@ -3966,6 +4116,9 @@ private fun FolderTab(
     LaunchedEffect(editMode) {
         onEditModeChanged(editMode)
         if (!editMode) selectedPaths = emptyList()
+    }
+    LaunchedEffect(editStartRequest) {
+        if (editStartRequest > 0 && folders.isNotEmpty()) editMode = true
     }
     LaunchedEffect(editMode, selectedPaths, folders) {
         onEditSelectionChanged(
@@ -4060,6 +4213,8 @@ private fun FolderDetailScreen(
     onSettings: () -> Unit,
     onSearch: () -> Unit,
     onTrackClick: (Track, List<Track>) -> Unit,
+    currentTrackId: Long?,
+    onTrackMenu: (Track) -> Unit,
     onToggleFavorite: (Long) -> Unit,
     isFavorite: Boolean,
     onToggleFolderFavorite: () -> Unit,
@@ -4113,6 +4268,8 @@ private fun FolderDetailScreen(
                 TrackRow(
                     track = track,
                     onClick = { onTrackClick(track, folder.tracks) },
+                    currentTrackId = currentTrackId,
+                    onMenuClick = { onTrackMenu(track) },
                 )
             }
             if (folder.tracks.isEmpty()) item { EmptyInline(stringResource(R.string.no_tracks_found)) }
@@ -4298,7 +4455,10 @@ private fun AlbumTrackRow(
     track: Track,
     showDivider: Boolean,
     onClick: () -> Unit,
+    currentTrackId: Long? = null,
+    onMenuClick: (() -> Unit)? = null,
 ) {
+    val isCurrent = track.id == currentTrackId
     Column {
         Row(
             modifier =
@@ -4320,6 +4480,7 @@ private fun AlbumTrackRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 fontSize = 16.sp,
+                color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                 modifier =
                     Modifier
                         .weight(1f)
@@ -4331,7 +4492,7 @@ private fun AlbumTrackRow(
                 fontSize = 15.sp,
                 modifier = Modifier.padding(end = 8.dp),
             )
-            IconButton(onClick = { }, modifier = Modifier.size(42.dp)) {
+            IconButton(onClick = { onMenuClick?.invoke() }, modifier = Modifier.size(42.dp)) {
                 Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.track_menu))
             }
         }
@@ -4596,8 +4757,11 @@ private fun TrackRow(
     track: Track,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
+    currentTrackId: Long? = null,
+    onMenuClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
+    val isCurrent = track.id == currentTrackId
     Row(
         modifier =
             modifier
@@ -4616,7 +4780,13 @@ private fun TrackRow(
                     .weight(1f)
                     .padding(horizontal = 12.dp),
         ) {
-            Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 16.sp)
+            Text(
+                track.title,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                fontSize = 16.sp,
+                color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+            )
             Text(
                 track.artist,
                 maxLines = 1,
@@ -4625,7 +4795,7 @@ private fun TrackRow(
                 fontSize = 13.sp,
             )
         }
-        IconButton(onClick = { }) {
+        IconButton(onClick = { onMenuClick?.invoke() }) {
             Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.track_menu))
         }
     }
@@ -4770,8 +4940,11 @@ private fun PlaylistTrackRow(
     showDivider: Boolean,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
+    currentTrackId: Long? = null,
+    onMenuClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
+    val isCurrent = track.id == currentTrackId
     Column(modifier = modifier) {
         Row(
             modifier =
@@ -4790,7 +4963,13 @@ private fun PlaylistTrackRow(
                         .weight(1f)
                         .padding(horizontal = 12.dp),
             ) {
-                Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 18.sp)
+                Text(
+                    track.title,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    fontSize = 18.sp,
+                    color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                )
                 Text(
                     track.artist,
                     maxLines = 1,
@@ -4799,7 +4978,7 @@ private fun PlaylistTrackRow(
                     fontSize = 14.sp,
                 )
             }
-            IconButton(onClick = { }) {
+            IconButton(onClick = { onMenuClick?.invoke() }) {
                 Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.track_menu))
             }
         }
@@ -4930,6 +5109,61 @@ private fun shareTracks(
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
     context.startActivity(Intent.createChooser(intent, null))
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun TrackActionSheet(
+    track: Track,
+    onDismiss: () -> Unit,
+    onAdd: () -> Unit,
+    onDelete: () -> Unit,
+    onShare: () -> Unit,
+    onAlbum: () -> Unit,
+    onArtist: () -> Unit,
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .windowInsetsPadding(WindowInsets.navigationBars)
+                    .padding(start = 20.dp, end = 20.dp, bottom = 18.dp),
+        ) {
+            Text(
+                track.title,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(bottom = 12.dp),
+            )
+            TrackActionRow(Icons.Default.Add, stringResource(R.string.add_to), onAdd)
+            TrackActionRow(Icons.Default.Delete, stringResource(R.string.delete), onDelete)
+            TrackActionRow(Icons.Default.Share, stringResource(R.string.share), onShare)
+            TrackActionRow(Icons.Default.LibraryMusic, stringResource(R.string.album), onAlbum)
+            TrackActionRow(Icons.Default.MusicNote, stringResource(R.string.artist), onArtist)
+        }
+    }
+}
+
+@Composable
+private fun TrackActionRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onClick)
+                .padding(vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+        Text(label, fontSize = 16.sp, modifier = Modifier.padding(start = 18.dp))
+    }
 }
 
 @Composable

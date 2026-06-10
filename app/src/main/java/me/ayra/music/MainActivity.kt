@@ -1530,6 +1530,7 @@ fun MusicApp(
                 library = library,
                 navigator = navigator,
                 currentQueue = playerState.queue,
+                currentTrackId = playerState.currentTrack?.id,
                 onRequestPermission = {
                     if (ContextCompat.checkSelfPermission(context, permission) != PackageManager.PERMISSION_GRANTED) {
                         permissionLauncher.launch(permission)
