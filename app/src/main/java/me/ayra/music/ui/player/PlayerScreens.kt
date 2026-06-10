@@ -16,7 +16,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.AnchoredDraggableDefaults
@@ -704,6 +706,7 @@ private fun FancyPlayerBackground(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun CollapsedPlayerContent(
     playerState: PlayerState,
@@ -736,6 +739,7 @@ private fun CollapsedPlayerContent(
         ) {
             Text(
                 track?.title ?: "No track selected",
+                modifier = Modifier.basicMarquee(),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 fontWeight = FontWeight.Bold,
@@ -826,7 +830,7 @@ private fun AnchoredCoverArt(
     )
 }
 
-@OptIn(ExperimentalAnimationApi::class)
+@OptIn(ExperimentalAnimationApi::class, ExperimentalFoundationApi::class)
 @Composable
 private fun ExpandedPlayerContent(
     playerState: PlayerState,
@@ -1028,7 +1032,13 @@ private fun ExpandedPlayerContent(
                                     .padding(top = 28.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
-                            Text(track?.title ?: "No track selected", fontSize = 24.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(
+                                track?.title ?: "No track selected",
+                                modifier = Modifier.basicMarquee(),
+                                fontSize = 24.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
                             Text(
                                 track?.artist ?: "Choose music to play",
                                 fontSize = 15.sp,
@@ -1097,6 +1107,7 @@ private fun ExpandedPlayerContent(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun LyricsContent(
     track: Track?,
@@ -1119,7 +1130,13 @@ private fun LyricsContent(
                 modifier = Modifier.weight(1f),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Text(track?.title ?: "No track selected", fontSize = 24.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    track?.title ?: "No track selected",
+                    modifier = Modifier.basicMarquee(),
+                    fontSize = 24.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
                 Text(
                     track?.artist ?: "",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
