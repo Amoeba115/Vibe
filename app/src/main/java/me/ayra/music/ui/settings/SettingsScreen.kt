@@ -353,6 +353,8 @@ private fun LookAndFeelSettings() {
     var disableAlbumDynamicColor by rememberSaveable { mutableStateOf(preferences.loadDisableAlbumDynamicColor()) }
     var miniPlayerStyle by rememberSaveable { mutableStateOf(preferences.loadMiniPlayerStyle()) }
     var miniPlayerStyleDialog by rememberSaveable { mutableStateOf(false) }
+    var fancyPlayer by rememberSaveable { mutableStateOf(preferences.loadFancyPlayerEnabled()) }
+    var kenBurnsEffect by rememberSaveable { mutableStateOf(preferences.loadKenBurnsEffectEnabled()) }
 
     if (miniPlayerStyleDialog) {
         SingleChoiceDialog(
@@ -445,6 +447,10 @@ private fun LookAndFeelSettings() {
             }
         }
         Spacer(Modifier.height(24.dp))
+        SettingsSectionTitle(
+            title = stringResource(R.string.appearance),
+            modifier = Modifier.padding(horizontal = 20.dp),
+        )
         SettingsGroup(modifier = Modifier.padding(horizontal = 20.dp)) {
             SettingsSwitchRow(
                 title = stringResource(R.string.follow_system_theme),
@@ -487,6 +493,34 @@ private fun LookAndFeelSettings() {
                     preferences.saveDisableAlbumDynamicColor(it)
                 },
             )
+        }
+        Spacer(Modifier.height(18.dp))
+        SettingsSectionTitle(
+            title = stringResource(R.string.style),
+            modifier = Modifier.padding(horizontal = 20.dp),
+        )
+        SettingsGroup(modifier = Modifier.padding(horizontal = 20.dp)) {
+            SettingsSwitchRow(
+                title = stringResource(R.string.fancy_player),
+                subtitle = stringResource(R.string.fancy_player_subtitle),
+                checked = fancyPlayer,
+                onCheckedChange = {
+                    fancyPlayer = it
+                    preferences.saveFancyPlayerEnabled(it)
+                },
+            )
+            if (fancyPlayer) {
+                SettingsDivider()
+                SettingsSwitchRow(
+                    title = stringResource(R.string.ken_burns_effect),
+                    subtitle = stringResource(R.string.ken_burns_effect_subtitle),
+                    checked = kenBurnsEffect,
+                    onCheckedChange = {
+                        kenBurnsEffect = it
+                        preferences.saveKenBurnsEffectEnabled(it)
+                    },
+                )
+            }
             SettingsDivider()
             SettingsValueRow(
                 title = stringResource(R.string.mini_player_style),
@@ -506,22 +540,11 @@ private fun PlayerSettings() {
     val preferences = rememberPreferences()
     var speed by rememberSaveable { mutableFloatStateOf(preferences.loadPlaybackSpeed()) }
     var crossfadeSeconds by rememberSaveable { mutableIntStateOf(preferences.loadCrossfadeSeconds()) }
-    var fancyPlayer by rememberSaveable { mutableStateOf(preferences.loadFancyPlayerEnabled()) }
     var stopOnTaskRemoved by rememberSaveable { mutableStateOf(preferences.loadStopOnTaskRemoved()) }
     var pauseWhenVolumeZero by rememberSaveable { mutableStateOf(preferences.loadPauseWhenVolumeZero()) }
 
     SettingsPage {
         SettingsGroup {
-            SettingsSwitchRow(
-                title = stringResource(R.string.fancy_player),
-                subtitle = stringResource(R.string.fancy_player_subtitle),
-                checked = fancyPlayer,
-                onCheckedChange = {
-                    fancyPlayer = it
-                    preferences.saveFancyPlayerEnabled(it)
-                },
-            )
-            SettingsDivider()
             SettingsSwitchRow(
                 title = stringResource(R.string.stop_on_recent_close),
                 subtitle = stringResource(R.string.stop_on_recent_close_subtitle),
@@ -944,12 +967,15 @@ private fun SettingsHeader(
 }
 
 @Composable
-private fun SettingsSectionTitle(title: String) {
+private fun SettingsSectionTitle(
+    title: String,
+    modifier: Modifier = Modifier,
+) {
     Text(
         text = title,
         color = MaterialTheme.colorScheme.primary,
         style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-        modifier = Modifier.padding(start = 4.dp, bottom = 8.dp),
+        modifier = modifier.padding(start = 4.dp, bottom = 8.dp),
     )
 }
 

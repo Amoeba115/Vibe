@@ -21,6 +21,7 @@
     <string name="preview_palette_description">Preview updates with your selected palette.</string>
     <string name="material_you">Material You</string>
     <string name="colors">Colors</string>
+    <string name="style">Style</string>
     <string name="follow_system_theme">Follow system theme</string>
     <string name="follow_system_theme_subtitle">Use the Android light or dark setting</string>
     <string name="use_dark_theme">Use dark theme</string>
@@ -39,6 +40,8 @@
     <string name="crossfade_each_track_subtitle">Saved for playback transition behavior</string>
     <string name="fancy_player">Fancy Player</string>
     <string name="fancy_player_subtitle">Use blurred cover art and a dark artwork-tinted overlay behind the fullscreen player</string>
+    <string name="ken_burns_effect">Ken Burns Effect</string>
+    <string name="ken_burns_effect_subtitle">Slowly zoom and pan the fancy player background</string>
     <string name="stop_on_recent_close">Stop player app when app closed from recent</string>
     <string name="stop_on_recent_close_subtitle">Stop playback service when the task is removed</string>
     <string name="pause_when_volume_zero">Pause when volume is zero</string>

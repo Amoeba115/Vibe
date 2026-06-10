@@ -87,6 +87,12 @@ class MusicPreferences(context: Context) {
         preferences.edit().putBoolean(KEY_FANCY_PLAYER_ENABLED, value).apply()
     }
 
+    fun loadKenBurnsEffectEnabled(): Boolean = preferences.getBoolean(KEY_KEN_BURNS_EFFECT_ENABLED, false)
+
+    fun saveKenBurnsEffectEnabled(value: Boolean) {
+        preferences.edit().putBoolean(KEY_KEN_BURNS_EFFECT_ENABLED, value).apply()
+    }
+
     fun loadStopOnTaskRemoved(): Boolean = preferences.getBoolean(KEY_STOP_ON_TASK_REMOVED, false)
 
     fun saveStopOnTaskRemoved(value: Boolean) {
@@ -199,6 +205,7 @@ class MusicPreferences(context: Context) {
         private const val KEY_MINI_PLAYER_STYLE = "mini_player_style"
         private const val KEY_CROSSFADE_SECONDS = "crossfade_seconds"
         private const val KEY_FANCY_PLAYER_ENABLED = "fancy_player_enabled"
+        private const val KEY_KEN_BURNS_EFFECT_ENABLED = "ken_burns_effect_enabled"
         private const val KEY_STOP_ON_TASK_REMOVED = "stop_on_task_removed"
         private const val KEY_SHUFFLE_ENABLED = "shuffle_enabled"
         private const val KEY_REPEAT_MODE = "repeat_mode"
