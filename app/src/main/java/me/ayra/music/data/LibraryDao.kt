@@ -28,6 +28,18 @@ interface LibraryDao {
     @Query("DELETE FROM tracks WHERE source = :source AND cache_key NOT IN (:cacheKeys)")
     suspend fun deleteMissingTracks(source: String, cacheKeys: List<String>)
 
+    @Query("SELECT * FROM audio_info WHERE track_id IN (:trackIds)")
+    suspend fun loadAudioInfo(trackIds: List<Long>): List<AudioInfoEntity>
+
+    @Upsert
+    suspend fun upsertAudioInfo(info: List<AudioInfoEntity>)
+
+    @Query("DELETE FROM audio_info WHERE track_id IN (:trackIds)")
+    suspend fun deleteAudioInfoByTrackIds(trackIds: List<Long>)
+
+    @Query("DELETE FROM audio_info WHERE track_id NOT IN (:trackIds)")
+    suspend fun deleteMissingAudioInfo(trackIds: List<Long>)
+
     @Query("SELECT track_id FROM favorite_tracks")
     suspend fun loadFavoriteIds(): List<Long>
 

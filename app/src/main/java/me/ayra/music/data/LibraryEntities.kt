@@ -46,6 +46,23 @@ data class TrackEntity(
     val sizeBytes: Long,
 )
 
+@Entity(
+    tableName = "audio_info",
+    indices = [Index("track_id")],
+)
+data class AudioInfoEntity(
+    @PrimaryKey
+    @ColumnInfo(name = "track_id")
+    val trackId: Long,
+    val codec: String?,
+    @ColumnInfo(name = "sample_rate")
+    val sampleRate: Int?,
+    @ColumnInfo(name = "bit_depth")
+    val bitDepth: Int?,
+    val bitrate: Int?,
+    val channels: Int?,
+)
+
 @Entity(tableName = "favorite_tracks")
 data class FavoriteEntity(
     @PrimaryKey

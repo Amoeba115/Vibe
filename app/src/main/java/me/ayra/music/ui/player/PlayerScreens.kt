@@ -128,6 +128,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import me.ayra.music.AudioInfo
 import me.ayra.music.BuildConfig
 import me.ayra.music.PlayerState
 import me.ayra.music.R
@@ -1000,6 +1001,16 @@ private fun ExpandedPlayerContent(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
+                            track?.audioInfo?.formatAudioInfo()?.let { info ->
+                                Text(
+                                    info,
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.padding(top = 4.dp),
+                                )
+                            }
                         }
                         Spacer(Modifier.weight(1f))
                         Row(
@@ -1427,8 +1438,30 @@ private fun formatDuration(valueMs: Long): String {
     return "%d:%02d".format(minutes, seconds)
 }
 
-private fun Track.isVgmstreamTrack(): Boolean =
-    BuildConfig.IS_VGM_BUILD && uri.scheme.equals("file", ignoreCase = true)
+private fun AudioInfo.formatAudioInfo(): String? {
+    val parts =
+        listOfNotNull(
+            codec,
+            bitDepth?.let { "$it-bit" },
+            sampleRate?.let { rate ->
+                if (rate >= 1000) {
+                    val khz = rate / 1000f
+                    if (rate % 1000 == 0) {
+                        "${rate / 1000} kHz"
+                    } else {
+                        "%.1f kHz".format(khz)
+                    }
+                } else {
+                    "$rate Hz"
+                }
+            },
+            bitrate?.let { "${it / 1000} kbps" },
+            channels?.let { if (it > 2) "$it channels" else "" },
+        ).filter { it.isNotBlank() }
+    return parts.takeIf { it.isNotEmpty() }?.joinToString(" • ")
+}
+
+private fun Track.isVgmstreamTrack(): Boolean = BuildConfig.IS_VGM_BUILD && uri.scheme.equals("file", ignoreCase = true)
 
 @Composable
 private fun PlayerChannelOutputDialog(

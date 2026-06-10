@@ -10,6 +10,8 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.media.AudioManager
+import android.media.MediaExtractor
+import android.media.MediaFormat
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -17,10 +19,10 @@ import android.os.Environment
 import android.provider.MediaStore
 import android.provider.Settings
 import androidx.activity.ComponentActivity
-import androidx.activity.result.IntentSenderRequest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -55,16 +57,17 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import me.ayra.music.data.FavoriteEntity
-import me.ayra.music.data.FavoriteItemEntity
 import me.ayra.music.data.CustomPlaylistEntity
 import me.ayra.music.data.CustomPlaylistTrackEntity
+import me.ayra.music.data.FavoriteEntity
+import me.ayra.music.data.FavoriteItemEntity
 import me.ayra.music.data.LibraryDao
 import me.ayra.music.data.LibraryDatabase
 import me.ayra.music.data.LibrarySource
 import me.ayra.music.data.ScannedTrack
 import me.ayra.music.data.TrackSnapshot
 import me.ayra.music.data.TrackStatsEntity
+import me.ayra.music.data.toAudioInfo
 import me.ayra.music.data.toEntity
 import me.ayra.music.data.toSnapshot
 import me.ayra.music.data.toTrack
@@ -147,10 +150,20 @@ data class Track(
     val discNumber: Int = 0,
     val year: Int = 0,
     val dateAddedMs: Long = 0L,
+    val audioInfo: AudioInfo? = null,
 ) {
     val albumArtUri: Uri
         get() = ContentUris.withAppendedId(Uri.parse("content://media/external/audio/albumart"), albumId)
 }
+
+data class AudioInfo(
+    val trackId: Long,
+    val codec: String?,
+    val sampleRate: Int?,
+    val bitDepth: Int?,
+    val bitrate: Int?,
+    val channels: Int?,
+)
 
 data class AlbumGroup(
     val id: Long,
@@ -335,7 +348,14 @@ class MusicViewModel(
     }
 
     fun loadLibrary(permissionGranted: Boolean) {
-        _library.update { it.copy(permissionGranted = permissionGranted, loading = permissionGranted, scanning = permissionGranted, error = null) }
+        _library.update {
+            it.copy(
+                permissionGranted = permissionGranted,
+                loading = permissionGranted,
+                scanning = permissionGranted,
+                error = null,
+            )
+        }
         viewModelScope.launch {
             var activeSnapshot = emptyList<TrackSnapshot>()
             runCatching { libraryScanner.loadCachedLibrary() }
@@ -454,7 +474,9 @@ class MusicViewModel(
     fun previous() {
         val player = controller ?: return
         if (player.mediaItemCount == 0) return
-        _playerState.value.currentTrack?.id?.let(::recordTrackSkipped)
+        _playerState.value.currentTrack
+            ?.id
+            ?.let(::recordTrackSkipped)
         if (player.hasPreviousMediaItem()) {
             player.seekToPreviousMediaItem()
         } else {
@@ -466,7 +488,9 @@ class MusicViewModel(
     fun next() {
         val player = controller ?: return
         if (player.mediaItemCount == 0) return
-        _playerState.value.currentTrack?.id?.let(::recordTrackSkipped)
+        _playerState.value.currentTrack
+            ?.id
+            ?.let(::recordTrackSkipped)
         if (player.hasNextMediaItem()) {
             player.seekToNextMediaItem()
         } else {
@@ -860,9 +884,10 @@ class LibraryScanner(
     suspend fun loadCachedLibrary(): CachedLibrary =
         withContext(Dispatchers.IO) {
             val cachedTracks = dao.loadTracks()
+            val audioInfo = dao.loadAudioInfo(cachedTracks.map { it.trackId }).associate { it.trackId to it.toAudioInfo() }
             val favoriteItems = dao.loadLibraryFavorites()
             val trackStats = dao.loadTrackStats().toTrackStatsMap()
-            val tracks = cachedTracks.map { it.toTrack() }
+            val tracks = cachedTracks.map { it.toTrack(audioInfo[it.trackId]) }
             customPlaylistsCache = dao.loadCustomPlaylists(tracks)
             CachedLibrary(
                 tracks = tracks,
@@ -920,10 +945,18 @@ class LibraryScanner(
             } else {
                 dao.replaceSourceTracks(LibrarySource.Vgm, emptyList())
             }
+            val extractedAudioInfo = (audioTracks + vgmTracks).mapNotNull { it.audioInfo }.map { it.toEntity() }
+            if (extractedAudioInfo.isNotEmpty()) {
+                dao.upsertAudioInfo(extractedAudioInfo)
+            }
 
             val cachedTracks = dao.loadTracks()
+            if (cachedTracks.isNotEmpty()) {
+                dao.deleteMissingAudioInfo(cachedTracks.map { it.trackId })
+            }
+            val audioInfo = dao.loadAudioInfo(cachedTracks.map { it.trackId }).associate { it.trackId to it.toAudioInfo() }
             dao.replaceDerivedCaches(cachedTracks)
-            val tracks = cachedTracks.map { it.toTrack() }
+            val tracks = cachedTracks.map { it.toTrack(audioInfo[it.trackId]) }
             customPlaylistsCache = dao.loadCustomPlaylists(tracks)
             CachedLibrary(
                 tracks = tracks,
@@ -1051,19 +1084,26 @@ class LibraryScanner(
             uniqueTracks.forEach { track ->
                 runCatching {
                     when (track.uri.scheme) {
-                        "file" -> track.uri.path?.let { File(it).delete() }
-                        else -> dao.loadTracks()
-                            .firstOrNull { it.trackId == track.id }
-                            ?.source
-                            ?.takeIf { it == LibrarySource.Vgm }
-                            ?.let { track.uri.path?.let { path -> File(path).delete() } }
-                            ?: appContext.contentResolver.delete(track.uri, null, null)
+                        "file" -> {
+                            track.uri.path?.let { File(it).delete() }
+                        }
+
+                        else -> {
+                            dao
+                                .loadTracks()
+                                .firstOrNull { it.trackId == track.id }
+                                ?.source
+                                ?.takeIf { it == LibrarySource.Vgm }
+                                ?.let { track.uri.path?.let { path -> File(path).delete() } }
+                                ?: appContext.contentResolver.delete(track.uri, null, null)
+                        }
                     }
                 }
             }
             val ids = uniqueTracks.map { it.id }
             if (ids.isNotEmpty()) {
                 dao.deleteTracksByIds(ids)
+                dao.deleteAudioInfoByTrackIds(ids)
                 ids.forEach {
                     dao.deleteFavorite(it)
                     dao.deleteFavoriteItem(FavoriteType.Track, it.toString())
@@ -1088,10 +1128,11 @@ class LibraryScanner(
 
     fun buildPlaylists(tracks: List<Track>): List<PlaylistGroup> {
         if (tracks.isEmpty()) return emptyList()
-        return customPlaylistsCache.filter { playlist -> playlist.tracks.any { track -> track in tracks } } + listOf(
-            PlaylistGroup("recently-added", "Recently added", tracks.take(50), tracks.firstOrNull()?.albumArtUri),
-            PlaylistGroup("most-played", "Most played", tracks.sortedBy { it.title }.take(50), tracks.getOrNull(1)?.albumArtUri),
-        )
+        return customPlaylistsCache.filter { playlist -> playlist.tracks.any { track -> track in tracks } } +
+            listOf(
+                PlaylistGroup("recently-added", "Recently added", tracks.take(50), tracks.firstOrNull()?.albumArtUri),
+                PlaylistGroup("most-played", "Most played", tracks.sortedBy { it.title }.take(50), tracks.getOrNull(1)?.albumArtUri),
+            )
     }
 }
 
@@ -1210,6 +1251,7 @@ class MediaStoreScanner(
     private suspend fun List<ScannedTrack>.reuseUnchangedCache(dao: LibraryDao): List<ScannedTrack> {
         if (isEmpty()) return emptyList()
         val cached = dao.loadTracksByCacheKey(map { it.cacheKey }).associateBy { it.cacheKey }
+        val cachedAudioInfo = dao.loadAudioInfo(cached.values.map { it.trackId }).associate { it.trackId to it.toAudioInfo() }
         return map { scanned ->
             val cachedTrack = cached[scanned.cacheKey]
             if (
@@ -1220,9 +1262,11 @@ class MediaStoreScanner(
                 cachedTrack.discNumber == scanned.track.discNumber &&
                 cachedTrack.dateAddedMs == scanned.track.dateAddedMs
             ) {
-                scanned.copy(track = cachedTrack.toTrack())
+                val audioInfo = cachedAudioInfo[cachedTrack.trackId]
+                scanned.copy(track = cachedTrack.toTrack(audioInfo), audioInfo = audioInfo)
             } else {
-                scanned
+                val audioInfo = context.extractAudioInfo(scanned.track, scanned.source)
+                scanned.copy(track = scanned.track.copy(audioInfo = audioInfo), audioInfo = audioInfo)
             }
         }
     }
@@ -1231,6 +1275,131 @@ class MediaStoreScanner(
 private fun List<Track>.filterVisible(hiddenFolders: Set<String>): List<Track> {
     if (hiddenFolders.isEmpty()) return this
     return filterNot { track -> track.folder in hiddenFolders }
+}
+
+private fun Context.extractAudioInfo(
+    track: Track,
+    source: String,
+): AudioInfo? {
+    if (source == LibrarySource.Vgm) {
+        return extractVgmAudioInfo(track) ?: track.basicFileAudioInfo()
+    }
+    return extractMediaAudioInfo(track)
+}
+
+private fun Context.extractMediaAudioInfo(track: Track): AudioInfo? =
+    runCatching {
+        val extractor = MediaExtractor()
+        try {
+            contentResolver.openAssetFileDescriptor(track.uri, "r")?.use { descriptor ->
+                if (descriptor.length >= 0) {
+                    extractor.setDataSource(descriptor.fileDescriptor, descriptor.startOffset, descriptor.length)
+                } else {
+                    extractor.setDataSource(descriptor.fileDescriptor)
+                }
+            } ?: return@runCatching null
+            val format =
+                (0 until extractor.trackCount)
+                    .asSequence()
+                    .map { extractor.getTrackFormat(it) }
+                    .firstOrNull { it.getStringOrNull(MediaFormat.KEY_MIME)?.startsWith("audio/") == true }
+                    ?: return@runCatching null
+            AudioInfo(
+                trackId = track.id,
+                codec = format.getStringOrNull(MediaFormat.KEY_MIME)?.toAudioCodecLabel(track.uri),
+                sampleRate = format.getIntOrNull(MediaFormat.KEY_SAMPLE_RATE),
+                bitDepth = format.getIntOrNull("bits-per-sample") ?: format.getIntOrNull("pcm-encoding").pcmEncodingBitDepth(),
+                bitrate = format.getIntOrNull(MediaFormat.KEY_BIT_RATE),
+                channels = format.getIntOrNull(MediaFormat.KEY_CHANNEL_COUNT),
+            )
+        } finally {
+            extractor.release()
+        }
+    }.getOrNull()
+
+private fun extractVgmAudioInfo(track: Track): AudioInfo? {
+    val path = track.uri.path ?: return null
+    return runCatching {
+        val loopModeClass = Class.forName("me.ayra.vgmstream.LoopMode")
+        val normalLoopMode = loopModeClass.enumConstants.orEmpty().first { (it as Enum<*>).name == "Normal" }
+        val factoryClass = Class.forName("me.ayra.vgmstream.VgmDecoderFactory")
+        val factory = factoryClass.getField("INSTANCE").get(null)
+        val decoder =
+            factoryClass
+                .getMethod("open", String::class.java, Double::class.javaPrimitiveType, Long::class.javaPrimitiveType, loopModeClass)
+                .invoke(factory, path, 1.0, 0L, normalLoopMode)
+        try {
+            AudioInfo(
+                trackId = track.id,
+                codec = track.fileCodecLabel(defaultLabel = "VGM"),
+                sampleRate = decoder.javaClass.getMethod("getSampleRate").invoke(decoder) as? Int,
+                bitDepth = 16,
+                bitrate = estimateBitrate(track),
+                channels = decoder.javaClass.getMethod("getChannels").invoke(decoder) as? Int,
+            )
+        } finally {
+            runCatching { decoder.javaClass.getMethod("close").invoke(decoder) }
+        }
+    }.getOrNull()
+}
+
+private fun Track.basicFileAudioInfo(): AudioInfo =
+    AudioInfo(
+        trackId = id,
+        codec = fileCodecLabel(defaultLabel = "VGM"),
+        sampleRate = null,
+        bitDepth = null,
+        bitrate = estimateBitrate(this),
+        channels = null,
+    )
+
+private fun Track.fileCodecLabel(defaultLabel: String): String =
+    uri.lastPathSegment
+        ?.substringAfterLast('.', missingDelimiterValue = "")
+        ?.uppercase(Locale.ROOT)
+        ?.ifBlank { null }
+        ?: defaultLabel
+
+private fun MediaFormat.getStringOrNull(key: String): String? = runCatching { if (containsKey(key)) getString(key) else null }.getOrNull()
+
+private fun MediaFormat.getIntOrNull(key: String): Int? =
+    runCatching { if (containsKey(key)) getInteger(key) else null }.getOrNull()?.takeIf { it > 0 }
+
+private fun Int?.pcmEncodingBitDepth(): Int? =
+    when (this) {
+        2 -> 16
+        3 -> 8
+        4 -> 32
+        21 -> 24
+        22 -> 32
+        else -> null
+    }
+
+private fun String.toAudioCodecLabel(uri: Uri): String {
+    val mime = substringAfter("audio/", this).substringBefore(';').lowercase(Locale.ROOT)
+    val label =
+        when {
+            mime.contains("flac") -> "FLAC"
+            mime.contains("mpeg") || mime == "mp3" -> "MP3"
+            mime.contains("mp4a") || mime.contains("aac") -> "AAC"
+            mime.contains("opus") -> "OPUS"
+            mime.contains("vorbis") || mime.contains("ogg") -> "OGG"
+            mime.contains("wav") || mime.contains("raw") -> "PCM"
+            else -> null
+        }
+    return label
+        ?: uri.lastPathSegment
+            ?.substringAfterLast('.', missingDelimiterValue = "")
+            ?.uppercase(Locale.ROOT)
+            ?.ifBlank { null }
+        ?: mime.uppercase(Locale.ROOT)
+}
+
+private fun estimateBitrate(track: Track): Int? {
+    val durationMs = track.durationMs.takeIf { it > 0 } ?: return null
+    val path = track.uri.path ?: return null
+    val sizeBytes = File(path).takeIf { it.exists() }?.length()?.takeIf { it > 0 } ?: return null
+    return ((sizeBytes * 8_000L) / durationMs).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
 }
 
 private data class TrackMetadata(
@@ -1270,24 +1439,41 @@ class VgmFileScanner(
             } else {
                 dao.loadVgmMetadata(files.map { it.absolutePath }).associateBy { it.path }
             }
+        val cachedTracks =
+            if (files.isEmpty()) {
+                emptyMap()
+            } else {
+                dao.loadTracksByCacheKey(files.map { it.absolutePath }).associateBy { it.cacheKey }
+            }
+        val cachedAudioInfo =
+            if (cachedTracks.isEmpty()) {
+                emptyMap()
+            } else {
+                dao.loadAudioInfo(cachedTracks.values.map { it.trackId }).associate { it.trackId to it.toAudioInfo() }
+            }
         return files
-            .map { file -> file.toScannedTrack(cached) }
+            .map { file -> file.toScannedTrack(cached, cachedAudioInfo) }
             .distinctBy { it.track.uri }
             .sortedWith(compareBy({ it.track.folder.lowercase(Locale.ROOT) }, { it.track.title.lowercase(Locale.ROOT) }))
     }
 
-    private fun File.toScannedTrack(cached: Map<String, me.ayra.music.data.VgmMetadataEntity>): ScannedTrack {
+    private fun File.toScannedTrack(
+        cached: Map<String, me.ayra.music.data.VgmMetadataEntity>,
+        cachedAudioInfo: Map<Long, AudioInfo> = emptyMap(),
+    ): ScannedTrack {
         val lastModifiedMs = lastModified().coerceAtLeast(0L)
         val sizeBytes = length().coerceAtLeast(0L)
         val cachedMetadata = cached[absolutePath]
+        val trackId = stableVgmTrackId(absolutePath)
         val track =
             if (
                 cachedMetadata != null &&
                 cachedMetadata.lastModifiedMs == lastModifiedMs &&
                 cachedMetadata.sizeBytes == sizeBytes
             ) {
+                val audioInfo = cachedAudioInfo[trackId]
                 Track(
-                    id = stableVgmTrackId(absolutePath),
+                    id = trackId,
                     title = cachedMetadata.title,
                     artist = cachedMetadata.artist,
                     album = cachedMetadata.album,
@@ -1296,16 +1482,19 @@ class VgmFileScanner(
                     albumId = 0L,
                     folder = cachedMetadata.folder,
                     dateAddedMs = lastModifiedMs,
+                    audioInfo = audioInfo,
                 )
             } else {
                 toVgmTrack()
             }
+        val audioInfo = track.audioInfo ?: context.extractAudioInfo(track, LibrarySource.Vgm)
         return ScannedTrack(
-            track = track,
+            track = track.copy(audioInfo = audioInfo),
             cacheKey = absolutePath,
             source = LibrarySource.Vgm,
             lastModifiedMs = lastModifiedMs,
             sizeBytes = sizeBytes,
+            audioInfo = audioInfo,
         )
     }
 
@@ -1497,6 +1686,7 @@ fun MusicApp(
             }
             pendingDeleteTracks = emptyList()
         }
+
     fun requestPermanentDelete(tracks: List<Track>) {
         val uniqueTracks = tracks.distinctBy { it.id }
         if (uniqueTracks.isEmpty()) return
@@ -1509,6 +1699,7 @@ fun MusicApp(
             viewModel.deleteTracksPermanently(uniqueTracks)
         }
     }
+
     fun shareTrack(track: Track) {
         val intent =
             Intent(Intent.ACTION_SEND).apply {
