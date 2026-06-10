@@ -329,12 +329,16 @@ class MusicViewModel(
                                     object : Player.Listener {
                                         override fun onIsPlayingChanged(isPlaying: Boolean) = publishPlayerState()
 
+                                        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) = publishPlayerState()
+
                                         override fun onMediaItemTransition(
                                             mediaItem: MediaItem?,
                                             reason: Int,
                                         ) = publishPlayerState()
 
                                         override fun onPlaybackStateChanged(playbackState: Int) = publishPlayerState()
+
+                                        override fun onPlaybackSuppressionReasonChanged(playbackSuppressionReason: Int) = publishPlayerState()
 
                                         override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
                                             preferences.saveShuffleEnabled(shuffleModeEnabled)

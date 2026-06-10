@@ -120,6 +120,17 @@ class MusicPreferences(
         preferences.edit().putStringSet(KEY_HIDDEN_FOLDERS, value).apply()
     }
 
+    fun loadLastFolderTreePath(): List<String> =
+        preferences
+            .getString(KEY_LAST_FOLDER_TREE_PATH, null)
+            ?.split('/')
+            ?.filter { it.isNotBlank() }
+            .orEmpty()
+
+    fun saveLastFolderTreePath(value: List<String>) {
+        preferences.edit().putString(KEY_LAST_FOLDER_TREE_PATH, value.joinToString("/")).apply()
+    }
+
     fun loadShuffleEnabled(): Boolean = preferences.getBoolean(KEY_SHUFFLE_ENABLED, false)
 
     fun saveShuffleEnabled(value: Boolean) {
@@ -215,6 +226,7 @@ class MusicPreferences(
         private const val KEY_FANCY_PLAYER_ENABLED = "fancy_player_enabled"
         private const val KEY_FANCY_BACKGROUND_ENABLED = "fancy_background_enabled"
         private const val KEY_STOP_ON_TASK_REMOVED = "stop_on_task_removed"
+        private const val KEY_LAST_FOLDER_TREE_PATH = "last_folder_tree_path"
         private const val KEY_SHUFFLE_ENABLED = "shuffle_enabled"
         private const val KEY_REPEAT_MODE = "repeat_mode"
         private const val KEY_VGM_LOOP_MODE = "vgm_loop_mode"

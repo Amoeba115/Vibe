@@ -51,6 +51,13 @@ class HybridPlayer(
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) = invalidateStateOnApplicationThread()
+
+        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            activePlayer?.let { this@HybridPlayer.playWhenReady = it.playWhenReady }
+            invalidateStateOnApplicationThread()
+        }
+
+        override fun onPlaybackSuppressionReasonChanged(playbackSuppressionReason: Int) = invalidateStateOnApplicationThread()
     }
 
     init {
@@ -65,6 +72,7 @@ class HybridPlayer(
         val currentDuration = currentPlayer?.duration?.takeIf { it > 0 } ?: C.TIME_UNSET
         val currentPosition = currentPlayer?.currentPosition?.coerceAtLeast(0L) ?: 0L
         val currentPlaybackState = currentPlayer?.playbackState ?: Player.STATE_IDLE
+        val currentSuppressionReason = currentPlayer?.playbackSuppressionReason ?: Player.PLAYBACK_SUPPRESSION_REASON_NONE
         val items = synchronized(stateLock) {
             playlist.mapIndexed { index, item ->
                 MediaItemData.Builder(mediaItemUid(item, index))
@@ -81,6 +89,7 @@ class HybridPlayer(
             .setContentPositionMs(currentPosition)
             .setContentBufferedPositionMs(PositionSupplier { activePlayer?.bufferedPosition ?: currentPosition })
             .setPlaybackState(currentPlaybackState)
+            .setPlaybackSuppressionReason(currentSuppressionReason)
             .setPlayWhenReady(playWhenReady, Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST)
             .setRepeatMode(repeatMode)
             .setShuffleModeEnabled(shuffleModeEnabled)

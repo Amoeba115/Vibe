@@ -4179,11 +4179,23 @@ private fun FolderTab(
     var viewMode by rememberSaveable {
         mutableStateOf(preferences.loadEnumSort(FOLDER_VIEW_MODE, FolderViewMode.Folder, FolderViewMode.entries))
     }
-    var treePath by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    var treePath by rememberSaveable { mutableStateOf(preferences.loadLastFolderTreePath()) }
     val folders = remember(library.folders, sort) { library.folders.sortedBy(sort) }
     val treeEntries = remember(library.folders) { library.folders.toFolderTreeEntries() }
     val selectedFolders = remember(folders, selectedPaths) { folders.filter { it.path in selectedPaths.toSet() } }
     val selectedTracks = remember(selectedFolders) { selectedFolders.flatMap { it.tracks }.distinctBy { it.id } }
+
+    fun updateTreePath(path: List<String>) {
+        treePath = path
+        preferences.saveLastFolderTreePath(path)
+    }
+
+    LaunchedEffect(treeEntries) {
+        if (!treeEntries.containsTreePath(treePath)) {
+            updateTreePath(emptyList())
+        }
+    }
+
     LaunchedEffect(editMode) {
         onEditModeChanged(editMode)
         if (!editMode) selectedPaths = emptyList()
@@ -4215,7 +4227,7 @@ private fun FolderTab(
     }
     BackHandler(enabled = editMode) { editMode = false }
     BackHandler(enabled = viewMode == FolderViewMode.Tree && treePath.isNotEmpty() && !editMode) {
-        treePath = if (treePath.size <= 2) emptyList() else treePath.dropLast(1)
+        updateTreePath(if (treePath.size <= 2) emptyList() else treePath.dropLast(1))
     }
     if (confirmDelete) {
         ConfirmPermanentDeleteDialog(
@@ -4245,7 +4257,6 @@ private fun FolderTab(
                         onViewModeSelected = {
                             viewMode = it
                             preferences.saveSort(FOLDER_VIEW_MODE, it.name)
-                            treePath = emptyList()
                         },
                     )
                 }
@@ -4286,7 +4297,7 @@ private fun FolderTab(
                 sort = sort,
                 viewMode = viewMode,
                 treePath = treePath,
-                onTreePathChange = { treePath = it },
+                onTreePathChange = ::updateTreePath,
                 onSortSelected = {
                     sort = it
                     preferences.saveSort(SORT_FOLDER, it.name)
@@ -4294,7 +4305,6 @@ private fun FolderTab(
                 onViewModeSelected = {
                     viewMode = it
                     preferences.saveSort(FOLDER_VIEW_MODE, it.name)
-                    treePath = emptyList()
                 },
                 onTrackClick = onTrackClick,
                 currentTrackId = currentTrackId,
@@ -5213,6 +5223,15 @@ private fun List<FolderTreeEntry>.nodesAt(
                 tracks = tracks,
             )
         }.sortedTreeNodesBy(sort)
+}
+
+private fun List<FolderTreeEntry>.containsTreePath(treePath: List<String>): Boolean {
+    if (treePath.isEmpty()) return true
+    val root = treePath.first()
+    if (root !in FOLDER_TREE_ROOT_ORDER) return false
+    val segments = treePath.drop(1)
+    if (segments.isEmpty()) return any { it.root == root }
+    return any { it.root == root && it.segments.startsWithSegments(segments) }
 }
 
 private fun List<FolderTreeEntry>.tracksAt(treePath: List<String>): List<Track> {
