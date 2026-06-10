@@ -66,10 +66,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DragIndicator
@@ -77,6 +79,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.FolderCopy
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
@@ -85,6 +88,7 @@ import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.SnippetFolder
 import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material3.AlertDialog
@@ -98,8 +102,8 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -198,6 +202,13 @@ private enum class FolderSort(
     DateAdded("Date added"),
 }
 
+private enum class FolderViewMode(
+    val label: String,
+) {
+    Folder("Folder"),
+    Tree("Tree"),
+}
+
 private enum class PlaylistSort(
     val label: String,
 ) {
@@ -232,6 +243,7 @@ private const val SORT_TRACK = "track"
 private const val SORT_ALBUM = "album"
 private const val SORT_ARTIST = "artist"
 private const val SORT_FOLDER = "folder"
+private const val FOLDER_VIEW_MODE = "folder_view_mode"
 private const val SORT_PLAYLIST_LIST = "playlist_list"
 private const val SORT_PLAYLIST_PREFIX = "playlist_"
 private const val CUSTOM_PLAYLIST_PREFIX = "custom-"
@@ -240,14 +252,31 @@ private const val PLAYLIST_RECENTLY_ADDED = "recently-added"
 private const val PLAYLIST_MOST_PLAYED = "most-played"
 private const val PLAYLIST_JUST_PLAYED = "just-played"
 private const val PLAYLIST_FAVORITE_TRACK = "favorite-track"
+private const val FOLDER_TREE_INTERNAL = "Internal storage"
+private const val FOLDER_TREE_MICRO_SD = "Micro SD"
+private const val FOLDER_TREE_EXTERNAL = "External storage"
 private const val ALBUM_SNAP_EXPAND_THRESHOLD = 0.35f
 private const val ALBUM_SNAP_FLING_DELTA_PX = 72
 private val HOME_TAB_WIDTH = 104.dp
 private val MINI_PLAYER_RESERVED_BOTTOM = 116.dp
+private val FOLDER_TREE_ROOT_ORDER = listOf(FOLDER_TREE_INTERNAL, FOLDER_TREE_MICRO_SD, FOLDER_TREE_EXTERNAL)
 
 private data class AlphabetIndex(
     val letter: Char,
     val position: Int,
+)
+
+private data class FolderTreeEntry(
+    val root: String,
+    val segments: List<String>,
+    val folder: FolderGroup,
+)
+
+private data class FolderTreeNode(
+    val key: String,
+    val name: String,
+    val subtitle: String,
+    val tracks: List<Track>,
 )
 
 private fun MainRoute.saveableStateKey(searchStateVersion: Int): String =
@@ -842,119 +871,119 @@ private fun HomeScreen(
         ) { editing ->
             if (editing) {
                 Row(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(start = 8.dp, top = 18.dp, end = 8.dp, bottom = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                TextButton(
-                    onClick = {
-                        if (playlistEditMode) {
-                            selectedPlaylistIds =
-                                if (editAllSelected) {
-                                    emptyList()
-                                } else {
-                                    customPlaylists.map { it.id }
-                                }
-                        } else {
-                            contentEditSelectAllRequest += 1
-                        }
-                    },
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(start = 8.dp, top = 18.dp, end = 8.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(
-                        if (editAllSelected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(end = 8.dp),
+                    TextButton(
+                        onClick = {
+                            if (playlistEditMode) {
+                                selectedPlaylistIds =
+                                    if (editAllSelected) {
+                                        emptyList()
+                                    } else {
+                                        customPlaylists.map { it.id }
+                                    }
+                            } else {
+                                contentEditSelectAllRequest += 1
+                            }
+                        },
+                    ) {
+                        Icon(
+                            if (editAllSelected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(end = 8.dp),
+                        )
+                    }
+                    Text(
+                        text =
+                            if (editSelectedCount > 0) {
+                                stringResource(R.string.selected_count_plain, editSelectedCount)
+                            } else {
+                                stringResource(if (playlistEditMode) R.string.select_playlist else R.string.select_track)
+                            },
+                        color = MaterialTheme.colorScheme.primary,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
                     )
                 }
-                Text(
-                    text =
-                        if (editSelectedCount > 0) {
-                            stringResource(R.string.selected_count_plain, editSelectedCount)
-                        } else {
-                            stringResource(if (playlistEditMode) R.string.select_playlist else R.string.select_track)
-                        },
-                    color = MaterialTheme.colorScheme.primary,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-            }
             } else {
                 Row(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(start = 20.dp, top = 18.dp, end = 8.dp, bottom = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = "Music",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.weight(1f),
-                )
-                IconButton(onClick = onSearch) {
-                    Icon(
-                        Icons.Default.Search,
-                        contentDescription = stringResource(R.string.search),
-                        tint = MaterialTheme.colorScheme.primary,
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(start = 20.dp, top = 18.dp, end = 8.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "Music",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.weight(1f),
                     )
-                }
-                Box {
-                    IconButton(onClick = { menuExpanded = true }) {
+                    IconButton(onClick = onSearch) {
                         Icon(
-                            Icons.Default.MoreVert,
-                            contentDescription = stringResource(R.string.menu),
+                            Icons.Default.Search,
+                            contentDescription = stringResource(R.string.search),
                             tint = MaterialTheme.colorScheme.primary,
                         )
                     }
-                    DropdownMenu(
-                        expanded = menuExpanded,
-                        onDismissRequest = { menuExpanded = false },
-                    ) {
-                        if (isPlaylistTab) {
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.edit)) },
-                                leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
-                                onClick = {
-                                    menuExpanded = false
-                                    if (customPlaylists.isEmpty()) {
-                                        Toast
-                                            .makeText(context, R.string.no_custom_playlists_found, Toast.LENGTH_SHORT)
-                                            .show()
-                                    } else {
-                                        playlistEditMode = true
-                                    }
-                                },
+                    Box {
+                        IconButton(onClick = { menuExpanded = true }) {
+                            Icon(
+                                Icons.Default.MoreVert,
+                                contentDescription = stringResource(R.string.menu),
+                                tint = MaterialTheme.colorScheme.primary,
                             )
-                        } else {
+                        }
+                        DropdownMenu(
+                            expanded = menuExpanded,
+                            onDismissRequest = { menuExpanded = false },
+                        ) {
+                            if (isPlaylistTab) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.edit)) },
+                                    leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
+                                    onClick = {
+                                        menuExpanded = false
+                                        if (customPlaylists.isEmpty()) {
+                                            Toast
+                                                .makeText(context, R.string.no_custom_playlists_found, Toast.LENGTH_SHORT)
+                                                .show()
+                                        } else {
+                                            playlistEditMode = true
+                                        }
+                                    },
+                                )
+                            } else {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.edit)) },
+                                    leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
+                                    onClick = {
+                                        menuExpanded = false
+                                        contentEditStartTab = tabs[pagerState.currentPage]
+                                        contentEditStartRequest += 1
+                                    },
+                                )
+                            }
                             DropdownMenuItem(
-                                text = { Text(stringResource(R.string.edit)) },
-                                leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
+                                text = { Text(stringResource(R.string.settings)) },
                                 onClick = {
                                     menuExpanded = false
-                                    contentEditStartTab = tabs[pagerState.currentPage]
-                                    contentEditStartRequest += 1
+                                    onSettings()
                                 },
                             )
                         }
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.settings)) },
-                            onClick = {
-                                menuExpanded = false
-                                onSettings()
-                            },
-                        )
                     }
                 }
             }
-        }
         }
 
         CenteredHomeTabs(
@@ -1105,6 +1134,7 @@ private fun HomeScreen(
                             FolderTab(
                                 library = library,
                                 onFolderClick = onFolderClick,
+                                onTrackClick = onTrackClick,
                                 currentTrackId = currentTrackId,
                                 onTrackMenu = onTrackMenu,
                                 onReplaceCurrentQueue = onReplaceCurrentQueue,
@@ -1453,12 +1483,12 @@ private fun SearchTrackResultsScreen(
             }
             items(trackResults, key = { it.id }) { track ->
                 TrackRow(
-                track = track,
-                onClick = { onTrackClick(track, trackResults) },
-                currentTrackId = currentTrackId,
-                onMenuClick = { onTrackMenu(track) },
-                modifier = Modifier.animateItem(),
-            )
+                    track = track,
+                    onClick = { onTrackClick(track, trackResults) },
+                    currentTrackId = currentTrackId,
+                    onMenuClick = { onTrackMenu(track) },
+                    modifier = Modifier.animateItem(),
+                )
             }
             if (trackResults.isEmpty()) {
                 item { EmptyInline(stringResource(R.string.no_tracks_found)) }
@@ -1730,7 +1760,13 @@ private fun FavoriteTab(
                                 onClick = {
                                     if (editMode) {
                                         selectedKeys =
-                                            if (card.selectionKey in selectedKeys) selectedKeys - card.selectionKey else selectedKeys + card.selectionKey
+                                            if (card.selectionKey in
+                                                selectedKeys
+                                            ) {
+                                                selectedKeys - card.selectionKey
+                                            } else {
+                                                selectedKeys + card.selectionKey
+                                            }
                                     } else {
                                         when (card.type) {
                                             FavoriteType.Track -> card.playlist?.let(onPlaylistClick)
@@ -3758,7 +3794,10 @@ private fun ArtistTab(
                         title = artist.name,
                         subtitle = "${artist.albums} albums | ${artist.tracks.size} tracks",
                         selected = artist.name in selectedNames,
-                        onClick = { selectedNames = if (artist.name in selectedNames) selectedNames - artist.name else selectedNames + artist.name },
+                        onClick = {
+                            selectedNames =
+                                if (artist.name in selectedNames) selectedNames - artist.name else selectedNames + artist.name
+                        },
                         modifier = Modifier.animateItem(),
                     )
                 } else {
@@ -4092,6 +4131,7 @@ private fun ArtistAlbumTab(
 private fun FolderTab(
     library: LibraryState,
     onFolderClick: (FolderGroup) -> Unit,
+    onTrackClick: (Track, List<Track>) -> Unit,
     currentTrackId: Long?,
     onTrackMenu: (Track) -> Unit,
     onReplaceCurrentQueue: (List<Track>) -> Unit,
@@ -4110,15 +4150,26 @@ private fun FolderTab(
     var sort by rememberSaveable {
         mutableStateOf(preferences.loadEnumSort(SORT_FOLDER, FolderSort.Name, FolderSort.entries))
     }
+    var viewMode by rememberSaveable {
+        mutableStateOf(preferences.loadEnumSort(FOLDER_VIEW_MODE, FolderViewMode.Folder, FolderViewMode.entries))
+    }
+    var treePath by rememberSaveable { mutableStateOf(emptyList<String>()) }
     val folders = remember(library.folders, sort) { library.folders.sortedBy(sort) }
+    val treeEntries = remember(library.folders) { library.folders.toFolderTreeEntries() }
     val selectedFolders = remember(folders, selectedPaths) { folders.filter { it.path in selectedPaths.toSet() } }
     val selectedTracks = remember(selectedFolders) { selectedFolders.flatMap { it.tracks }.distinctBy { it.id } }
     LaunchedEffect(editMode) {
         onEditModeChanged(editMode)
         if (!editMode) selectedPaths = emptyList()
     }
+    LaunchedEffect(viewMode) {
+        if (viewMode == FolderViewMode.Tree) {
+            editMode = false
+            selectedPaths = emptyList()
+        }
+    }
     LaunchedEffect(editStartRequest) {
-        if (editStartRequest > 0 && folders.isNotEmpty()) editMode = true
+        if (editStartRequest > 0 && viewMode == FolderViewMode.Folder && folders.isNotEmpty()) editMode = true
     }
     LaunchedEffect(editMode, selectedPaths, folders) {
         onEditSelectionChanged(
@@ -4137,6 +4188,9 @@ private fun FolderTab(
         }
     }
     BackHandler(enabled = editMode) { editMode = false }
+    BackHandler(enabled = viewMode == FolderViewMode.Tree && treePath.isNotEmpty() && !editMode) {
+        treePath = if (treePath.size <= 2) emptyList() else treePath.dropLast(1)
+    }
     if (confirmDelete) {
         ConfirmPermanentDeleteDialog(
             onConfirm = {
@@ -4152,56 +4206,313 @@ private fun FolderTab(
             if (sort == FolderSort.Name) folders.alphabetIndexes(positionOffset = 1) { it.name } else emptyList()
         }
     Box(modifier = Modifier.fillMaxSize()) {
-        IndexedListWithRail(listState = listState, alphabetIndexes = alphabetIndexes) {
-            item {
-                SortHeader(
-                    label = sort.label,
-                    options = FolderSort.entries.map { it.label },
-                    onOptionSelected = { label ->
-                        FolderSort.entries.firstOrNull { it.label == label }?.let {
+        if (viewMode == FolderViewMode.Folder) {
+            IndexedListWithRail(listState = listState, alphabetIndexes = alphabetIndexes) {
+                item {
+                    FolderTabHeader(
+                        sort = sort,
+                        viewMode = viewMode,
+                        onSortSelected = {
                             sort = it
                             preferences.saveSort(SORT_FOLDER, it.name)
-                        }
-                    },
+                        },
+                        onViewModeSelected = {
+                            viewMode = it
+                            preferences.saveSort(FOLDER_VIEW_MODE, it.name)
+                            treePath = emptyList()
+                        },
+                    )
+                }
+                items(folders, key = { it.path }) { folder ->
+                    if (editMode) {
+                        SelectableMediaGroupRow(
+                            artwork = folder.tracks.firstOrNull()?.albumArtUri,
+                            title = folder.name,
+                            subtitle = folder.path,
+                            folder = true,
+                            selected = folder.path in selectedPaths,
+                            onClick = {
+                                selectedPaths =
+                                    if (folder.path in selectedPaths) selectedPaths - folder.path else selectedPaths + folder.path
+                            },
+                            modifier = Modifier.animateItem(),
+                        )
+                    } else {
+                        MediaGroupRow(
+                            artwork = folder.tracks.firstOrNull()?.albumArtUri,
+                            title = folder.name,
+                            subtitle = folder.path,
+                            folder = true,
+                            onClick = { onFolderClick(folder) },
+                            onLongClick = {
+                                editMode = true
+                                selectedPaths = listOf(folder.path)
+                            },
+                            modifier = Modifier.animateItem(),
+                        )
+                    }
+                }
+                if (folders.isEmpty()) item { EmptyInline(stringResource(R.string.no_folders_found)) }
+            }
+        } else {
+            FolderTreeContent(
+                entries = treeEntries,
+                sort = sort,
+                viewMode = viewMode,
+                treePath = treePath,
+                onTreePathChange = { treePath = it },
+                onSortSelected = {
+                    sort = it
+                    preferences.saveSort(SORT_FOLDER, it.name)
+                },
+                onViewModeSelected = {
+                    viewMode = it
+                    preferences.saveSort(FOLDER_VIEW_MODE, it.name)
+                    treePath = emptyList()
+                },
+                onTrackClick = onTrackClick,
+                currentTrackId = currentTrackId,
+                onTrackMenu = onTrackMenu,
+            )
+        }
+        if (viewMode == FolderViewMode.Folder) {
+            GroupEditBottomBar(
+                visible = editMode,
+                selectedTracks = selectedTracks,
+                onReplaceCurrentQueue = onReplaceCurrentQueue,
+                onAddTracksToRoute = onAddTracksToRoute,
+                onDelete = { confirmDelete = true },
+                onExit = { editMode = false },
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
+        }
+    }
+}
+
+@Composable
+private fun FolderTreeContent(
+    entries: List<FolderTreeEntry>,
+    sort: FolderSort,
+    viewMode: FolderViewMode,
+    treePath: List<String>,
+    onTreePathChange: (List<String>) -> Unit,
+    onSortSelected: (FolderSort) -> Unit,
+    onViewModeSelected: (FolderViewMode) -> Unit,
+    onTrackClick: (Track, List<Track>) -> Unit,
+    currentTrackId: Long?,
+    onTrackMenu: (Track) -> Unit,
+) {
+    val listState = rememberLazyListState()
+    val nodes = remember(entries, sort, treePath) { entries.nodesAt(treePath, sort) }
+    val tracks = remember(entries, treePath) { entries.tracksAt(treePath) }
+    val showTracks = treePath.isNotEmpty() && tracks.isNotEmpty()
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        if (treePath.size > 1) {
+            FolderTreeBreadcrumb(
+                treePath = treePath,
+                onTreePathChange = onTreePathChange,
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp),
+            )
+        }
+        LazyColumn(
+            state = listState,
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainer),
+            contentPadding =
+                PaddingValues(
+                    start = 12.dp,
+                    top = 14.dp,
+                    end = 12.dp,
+                    bottom = MINI_PLAYER_RESERVED_BOTTOM,
+                ),
+        ) {
+            item {
+                FolderTabHeader(
+                    sort = sort,
+                    viewMode = viewMode,
+                    onSortSelected = onSortSelected,
+                    onViewModeSelected = onViewModeSelected,
                 )
             }
-            items(folders, key = { it.path }) { folder ->
-                if (editMode) {
-                    SelectableMediaGroupRow(
-                        artwork = folder.tracks.firstOrNull()?.albumArtUri,
-                        title = folder.name,
-                        subtitle = folder.path,
-                        folder = true,
-                        selected = folder.path in selectedPaths,
-                        onClick = { selectedPaths = if (folder.path in selectedPaths) selectedPaths - folder.path else selectedPaths + folder.path },
-                        modifier = Modifier.animateItem(),
-                    )
-                } else {
+            if (treePath.isEmpty()) {
+                FOLDER_TREE_ROOT_ORDER.forEach { root ->
+                    val rootNodes = entries.nodesAt(listOf(root), sort)
+                    if (rootNodes.isNotEmpty()) {
+                        item(key = "tree-root-title-$root") {
+                            Text(
+                                text = root,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontSize = 17.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 6.dp, bottom = 6.dp),
+                            )
+                        }
+                        items(rootNodes, key = { it.key }) { node ->
+                            MediaGroupRow(
+                                artwork = node.tracks.firstOrNull()?.albumArtUri,
+                                title = node.name,
+                                subtitle = node.subtitle,
+                                folder = true,
+                                onClick = { onTreePathChange(listOf(root, node.name)) },
+                                modifier = Modifier.animateItem(),
+                            )
+                        }
+                    }
+                }
+            }
+            if (treePath.isNotEmpty()) {
+                items(nodes, key = { it.key }) { node ->
                     MediaGroupRow(
-                        artwork = folder.tracks.firstOrNull()?.albumArtUri,
-                        title = folder.name,
-                        subtitle = folder.path,
+                        artwork = node.tracks.firstOrNull()?.albumArtUri,
+                        title = node.name,
+                        subtitle = node.subtitle,
                         folder = true,
-                        onClick = { onFolderClick(folder) },
-                        onLongClick = {
-                            editMode = true
-                            selectedPaths = listOf(folder.path)
-                        },
+                        onClick = { onTreePathChange(treePath + node.name) },
                         modifier = Modifier.animateItem(),
                     )
                 }
             }
-            if (folders.isEmpty()) item { EmptyInline(stringResource(R.string.no_folders_found)) }
+            if (showTracks) {
+                items(tracks, key = { it.id }) { track ->
+                    TrackRow(
+                        track = track,
+                        onClick = { onTrackClick(track, tracks) },
+                        currentTrackId = currentTrackId,
+                        onMenuClick = { onTrackMenu(track) },
+                        modifier = Modifier.animateItem(),
+                    )
+                }
+            }
+            if (entries.isEmpty()) {
+                item { EmptyInline(stringResource(R.string.no_folders_found)) }
+            } else if (treePath.isNotEmpty() && nodes.isEmpty() && !showTracks) {
+                item { EmptyInline(stringResource(R.string.no_tracks_found)) }
+            }
         }
-        GroupEditBottomBar(
-            visible = editMode,
-            selectedTracks = selectedTracks,
-            onReplaceCurrentQueue = onReplaceCurrentQueue,
-            onAddTracksToRoute = onAddTracksToRoute,
-            onDelete = { confirmDelete = true },
-            onExit = { editMode = false },
-            modifier = Modifier.align(Alignment.BottomCenter),
+    }
+}
+
+@Composable
+private fun FolderTabHeader(
+    sort: FolderSort,
+    viewMode: FolderViewMode,
+    onSortSelected: (FolderSort) -> Unit,
+    onViewModeSelected: (FolderViewMode) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        SortHeader(
+            label = sort.label,
+            modifier = Modifier.weight(1f),
+            options = FolderSort.entries.map { it.label },
+            onOptionSelected = { label ->
+                FolderSort.entries.firstOrNull { it.label == label }?.let(onSortSelected)
+            },
         )
+        ModeHeader(
+            label = viewMode.label,
+            modifier = Modifier.width(102.dp),
+            options = FolderViewMode.entries.map { it.label },
+            onOptionSelected = { label ->
+                FolderViewMode.entries.firstOrNull { it.label == label }?.let(onViewModeSelected)
+            },
+        )
+    }
+}
+
+@Composable
+private fun FolderTreeBreadcrumb(
+    treePath: List<String>,
+    onTreePathChange: (List<String>) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val root = treePath.firstOrNull() ?: return
+    val childPath = treePath.drop(1)
+    val childPathListState = rememberLazyListState()
+    val inactiveColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val activeColor = MaterialTheme.colorScheme.primary
+
+    LaunchedEffect(treePath) {
+        if (childPath.isNotEmpty()) {
+            childPathListState.animateScrollToItem(childPath.lastIndex)
+        }
+    }
+
+    Row(
+        modifier = modifier.padding(bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = root,
+            color = if (childPath.isEmpty()) activeColor else inactiveColor,
+            fontSize = 15.sp,
+            fontWeight = if (childPath.isEmpty()) FontWeight.SemiBold else FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier =
+                Modifier
+                    .clickable { onTreePathChange(emptyList()) }
+                    .padding(vertical = 6.dp),
+        )
+        if (childPath.isNotEmpty()) {
+            Icon(
+                Icons.Default.ChevronRight,
+                contentDescription = null,
+                tint = inactiveColor,
+                modifier =
+                    Modifier
+                        .padding(horizontal = 4.dp)
+                        .size(18.dp),
+            )
+            LazyRow(
+                state = childPathListState,
+                modifier = Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                itemsIndexed(childPath, key = { index, name -> "$index-$name" }) { index, name ->
+                    val isActive = index == childPath.lastIndex
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = name,
+                            color = if (isActive) activeColor else inactiveColor,
+                            fontSize = 15.sp,
+                            fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier =
+                                Modifier
+                                    .clickable { onTreePathChange(treePath.take(index + 2)) }
+                                    .padding(vertical = 6.dp),
+                        )
+                        if (!isActive) {
+                            Icon(
+                                Icons.Default.ChevronRight,
+                                contentDescription = null,
+                                tint = inactiveColor,
+                                modifier =
+                                    Modifier
+                                        .padding(horizontal = 4.dp)
+                                        .size(18.dp),
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -4391,6 +4702,59 @@ private fun SortHeader(
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            options.forEach { option ->
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            option,
+                            fontWeight = if (option == label) FontWeight.SemiBold else FontWeight.Normal,
+                        )
+                    },
+                    onClick = {
+                        expanded = false
+                        onOptionSelected(option)
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ModeHeader(
+    label: String,
+    modifier: Modifier = Modifier,
+    options: List<String> = emptyList(),
+    onOptionSelected: (String) -> Unit = {},
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box(
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .padding(bottom = 14.dp),
+    ) {
+        Row(
+            modifier =
+                Modifier
+                    .clickable(enabled = options.isNotEmpty()) { expanded = true }
+                    .padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            if (options.isNotEmpty()) {
+                Icon(
+                    Icons.Default.ArrowDropDown,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold, fontSize = 16.sp)
         }
         DropdownMenu(
             expanded = expanded,
@@ -4686,6 +5050,156 @@ private fun List<FolderGroup>.sortedBy(sort: FolderSort): List<FolderGroup> =
         }
     }
 
+private fun List<FolderGroup>.toFolderTreeEntries(): List<FolderTreeEntry> = mapNotNull { folder -> folder.toFolderTreeEntry() }
+
+private fun FolderGroup.toFolderTreeEntry(): FolderTreeEntry? {
+    val normalizedPath = path.replace('\\', '/').trim()
+    if (normalizedPath.isBlank()) return null
+    val trimmed = normalizedPath.trim('/')
+    val parts = trimmed.split('/').filter { it.isNotBlank() }
+    if (parts.isEmpty()) {
+        return FolderTreeEntry(
+            root = FOLDER_TREE_INTERNAL,
+            segments = listOf(name),
+            folder = this,
+        )
+    }
+
+    val lowerPath = normalizedPath.lowercase()
+    val root: String
+    val segments: List<String>
+    when {
+        lowerPath.startsWith("/storage/emulated/0") -> {
+            root = FOLDER_TREE_INTERNAL
+            segments = normalizedPath.removePrefixIgnoreCase("/storage/emulated/0").pathSegmentsOrName(name)
+        }
+
+        lowerPath.startsWith("/sdcard") -> {
+            root = FOLDER_TREE_INTERNAL
+            segments = normalizedPath.removePrefixIgnoreCase("/sdcard").pathSegmentsOrName(name)
+        }
+
+        parts.size >= 2 && parts[0].equals("storage", ignoreCase = true) && parts[1].isPortableStorageId() -> {
+            root = FOLDER_TREE_MICRO_SD
+            segments = parts.drop(2).ifEmpty { listOf(name) }
+        }
+
+        parts.firstOrNull()?.equals("storage", ignoreCase = true) == true ||
+            parts.firstOrNull()?.equals("mnt", ignoreCase = true) == true -> {
+            root = FOLDER_TREE_EXTERNAL
+            segments = parts.drop(1).ifEmpty { listOf(name) }
+        }
+
+        else -> {
+            root = FOLDER_TREE_INTERNAL
+            segments = parts
+        }
+    }
+
+    return FolderTreeEntry(
+        root = root,
+        segments = segments.filter { it.isNotBlank() },
+        folder = this,
+    )
+}
+
+private fun List<FolderTreeEntry>.nodesAt(
+    treePath: List<String>,
+    sort: FolderSort,
+): List<FolderTreeNode> {
+    if (treePath.isEmpty()) {
+        return FOLDER_TREE_ROOT_ORDER.mapNotNull { root ->
+            val rootEntries = filter { it.root == root }
+            if (rootEntries.isEmpty()) {
+                null
+            } else {
+                val tracks = rootEntries.flatMap { it.folder.tracks }.distinctBy { it.id }
+                FolderTreeNode(
+                    key = root,
+                    name = root,
+                    subtitle = "${rootEntries.size} folders | ${tracks.size} tracks",
+                    tracks = tracks,
+                )
+            }
+        }
+    }
+
+    val root = treePath.first()
+    val currentSegments = treePath.drop(1)
+    val matching =
+        filter {
+            it.root == root && it.segments.startsWithSegments(currentSegments)
+        }
+    val childGroups =
+        matching
+            .filter { it.segments.size > currentSegments.size }
+            .groupBy { it.segments[currentSegments.size] }
+    return childGroups
+        .map { (name, childEntries) ->
+            val childSegments = currentSegments + name
+            val tracks = childEntries.flatMap { it.folder.tracks }.distinctBy { it.id }
+            val directTracks =
+                matching
+                    .filter { it.segments.equalsSegments(childSegments) }
+                    .flatMap { it.folder.tracks }
+                    .distinctBy { it.id }
+            val childFolderCount =
+                matching
+                    .filter { it.segments.startsWithSegments(childSegments) && it.segments.size > childSegments.size }
+                    .map { it.segments[childSegments.size] }
+                    .distinctBy { it.lowercase() }
+                    .size
+            FolderTreeNode(
+                key = (treePath + name).joinToString("/"),
+                name = name,
+                subtitle = "$childFolderCount folders | ${directTracks.size} tracks",
+                tracks = tracks,
+            )
+        }.sortedTreeNodesBy(sort)
+}
+
+private fun List<FolderTreeEntry>.tracksAt(treePath: List<String>): List<Track> {
+    if (treePath.isEmpty()) return emptyList()
+    val root = treePath.first()
+    val currentSegments = treePath.drop(1)
+    return filter {
+        it.root == root && it.segments.equalsSegments(currentSegments)
+    }.flatMap { it.folder.tracks }
+        .distinctBy { it.id }
+        .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.title })
+}
+
+private fun List<FolderTreeNode>.sortedTreeNodesBy(sort: FolderSort): List<FolderTreeNode> =
+    when (sort) {
+        FolderSort.Name -> {
+            sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+        }
+
+        FolderSort.DateAdded -> {
+            sortedWith(
+                compareByDescending<FolderTreeNode> {
+                    it.tracks.maxOfOrNull(Track::dateAddedMs) ?: 0L
+                }.thenBy(String.CASE_INSENSITIVE_ORDER) { it.name },
+            )
+        }
+    }
+
+private fun List<String>.startsWithSegments(prefix: List<String>): Boolean =
+    size >= prefix.size && prefix.indices.all { index -> this[index].equals(prefix[index], ignoreCase = true) }
+
+private fun List<String>.equalsSegments(other: List<String>): Boolean = size == other.size && startsWithSegments(other)
+
+private fun String.pathSegmentsOrName(fallbackName: String): List<String> =
+    trim('/')
+        .split('/')
+        .filter { it.isNotBlank() }
+        .ifEmpty { listOf(fallbackName) }
+
+private fun String.removePrefixIgnoreCase(prefix: String): String =
+    if (startsWith(prefix, ignoreCase = true)) substring(prefix.length) else this
+
+private fun String.isPortableStorageId(): Boolean = matches(Regex("[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}"))
+
 private fun <T> List<T>.alphabetIndexes(
     positionOffset: Int,
     label: (T) -> String,
@@ -4769,8 +5283,7 @@ private fun TrackRow(
                 .combinedClickable(
                     onClick = onClick,
                     onLongClick = onLongClick,
-                )
-                .padding(vertical = 4.dp),
+                ).padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         AlbumArt(track.albumArtUri, Modifier.size(48.dp), RoundedCornerShape(12.dp))
@@ -4825,7 +5338,13 @@ private fun SelectableTrackRow(
                     .padding(horizontal = 12.dp),
         ) {
             Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 16.sp)
-            Text(track.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+            Text(
+                track.artist,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 13.sp,
+            )
         }
     }
 }
@@ -4860,8 +5379,7 @@ private fun MediaGroupRow(
                 .combinedClickable(
                     onClick = onClick,
                     onLongClick = onLongClick,
-                )
-                .padding(vertical = 9.dp),
+                ).padding(vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box {
@@ -4928,7 +5446,13 @@ private fun SelectableMediaGroupRow(
         }
         Column(modifier = Modifier.padding(start = 14.dp)) {
             Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 16.sp)
-            Text(subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+            Text(
+                subtitle,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 13.sp,
+            )
         }
     }
 }
@@ -5007,8 +5531,8 @@ private fun EditablePlaylistTrackRow(
                     .fillMaxWidth()
                     .clickable(onClick = onToggle)
                     .padding(vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             AnimatedSelectionIconButton(selected = selected, onClick = onToggle)
             AlbumArt(track.albumArtUri, Modifier.size(48.dp), RoundedCornerShape(12.dp))
             Column(
@@ -5311,8 +5835,8 @@ private fun EditablePlaylistRowWithDivider(
                     .fillMaxWidth()
                     .clickable(onClick = onToggle)
                     .padding(vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             AnimatedSelectionIconButton(selected = selected, onClick = onToggle)
             AlbumArt(playlist.artwork, Modifier.size(52.dp), RoundedCornerShape(13.dp))
             Column(
