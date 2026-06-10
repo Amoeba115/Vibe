@@ -24,11 +24,13 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -38,7 +40,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -48,6 +56,7 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
+import coil3.compose.AsyncImage
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -1676,6 +1685,7 @@ fun MusicApp(
     val library by viewModel.library.collectAsState()
     val playerState by viewModel.playerState.collectAsState()
     val preferences = remember(context) { MusicPreferences(context) }
+    var fancyBackgroundEnabled by remember { mutableStateOf(preferences.loadFancyBackgroundEnabled()) }
     var lastHomeTab by rememberSaveable { mutableStateOf(preferences.loadLastTab(HomeTab.Favorite.ordinal)) }
     var playlistEditMode by rememberSaveable { mutableStateOf(false) }
     var pendingDeleteTracks by remember { mutableStateOf(emptyList<Track>()) }
@@ -1711,6 +1721,10 @@ fun MusicApp(
     }
     val hidePlayerSheet = navigator.currentRoute == MainRoute.Settings || playlistEditMode
     var playerExpandRequest by rememberSaveable { mutableIntStateOf(0) }
+    val showFancyBackground =
+        fancyBackgroundEnabled &&
+            navigator.currentRoute != MainRoute.Settings &&
+            playerState.currentTrack?.albumId?.let { it != 0L } == true
 
     LaunchedEffect(openPlayerRequest) {
         if (openPlayerRequest > 0) {
@@ -1721,16 +1735,33 @@ fun MusicApp(
         }
     }
 
+    DisposableEffect(preferences) {
+        val listener =
+            SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+                fancyBackgroundEnabled = preferences.loadFancyBackgroundEnabled()
+            }
+        preferences.registerSettingsListener(listener)
+        onDispose { preferences.unregisterSettingsListener(listener) }
+    }
+
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background,
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
+            if (showFancyBackground) {
+                FancyAppBackground(
+                    artwork = playerState.currentTrack?.albumArtUri,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
             MainScreen(
                 library = library,
                 navigator = navigator,
                 currentQueue = playerState.queue,
                 currentTrackId = playerState.currentTrack?.id,
+                fancyBackgroundEnabled = showFancyBackground,
                 onRequestPermission = {
                     if (ContextCompat.checkSelfPermission(context, permission) != PackageManager.PERMISSION_GRANTED) {
                         permissionLauncher.launch(permission)
@@ -1795,6 +1826,27 @@ fun MusicApp(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun FancyAppBackground(
+    artwork: Uri?,
+    tint: Color,
+    modifier: Modifier = Modifier,
+) {
+    if (artwork == null) return
+    Box(modifier = modifier.background(MaterialTheme.colorScheme.background)) {
+        AsyncImage(
+            model = artwork,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .blur(36.dp)
+                    .alpha(0.22f),
+        )
     }
 }
 

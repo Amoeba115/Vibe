@@ -353,8 +353,8 @@ private fun LookAndFeelSettings() {
     var disableAlbumDynamicColor by rememberSaveable { mutableStateOf(preferences.loadDisableAlbumDynamicColor()) }
     var miniPlayerStyle by rememberSaveable { mutableStateOf(preferences.loadMiniPlayerStyle()) }
     var miniPlayerStyleDialog by rememberSaveable { mutableStateOf(false) }
+    var fancyBackground by rememberSaveable { mutableStateOf(preferences.loadFancyBackgroundEnabled()) }
     var fancyPlayer by rememberSaveable { mutableStateOf(preferences.loadFancyPlayerEnabled()) }
-    var kenBurnsEffect by rememberSaveable { mutableStateOf(preferences.loadKenBurnsEffectEnabled()) }
 
     if (miniPlayerStyleDialog) {
         SingleChoiceDialog(
@@ -509,18 +509,16 @@ private fun LookAndFeelSettings() {
                     preferences.saveFancyPlayerEnabled(it)
                 },
             )
-            if (fancyPlayer) {
-                SettingsDivider()
-                SettingsSwitchRow(
-                    title = stringResource(R.string.ken_burns_effect),
-                    subtitle = stringResource(R.string.ken_burns_effect_subtitle),
-                    checked = kenBurnsEffect,
-                    onCheckedChange = {
-                        kenBurnsEffect = it
-                        preferences.saveKenBurnsEffectEnabled(it)
-                    },
-                )
-            }
+            SettingsDivider()
+            SettingsSwitchRow(
+                title = stringResource(R.string.fancy_background),
+                subtitle = stringResource(R.string.fancy_background_subtitle),
+                checked = fancyBackground,
+                onCheckedChange = {
+                    fancyBackground = it
+                    preferences.saveFancyBackgroundEnabled(it)
+                },
+            )
             SettingsDivider()
             SettingsValueRow(
                 title = stringResource(R.string.mini_player_style),

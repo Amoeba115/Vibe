@@ -113,6 +113,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -124,6 +125,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -259,8 +261,11 @@ private const val FOLDER_TREE_EXTERNAL = "External storage"
 private const val FOLDER_TREE_NAV_DUR = 280
 private const val ALBUM_SNAP_EXPAND_THRESHOLD = 0.35f
 private const val ALBUM_SNAP_FLING_DELTA_PX = 72
+private const val FANCY_TAB_CONTENT_ALPHA = 0.5f
+private const val FANCY_TAB_CONTENT_ALPHA_TRANSPARENT = 0.0f
 private val HOME_TAB_WIDTH = 104.dp
 private val MINI_PLAYER_RESERVED_BOTTOM = 116.dp
+private val LocalFancyTabContentBackground = staticCompositionLocalOf { false }
 private val FOLDER_TREE_ROOT_ORDER = listOf(FOLDER_TREE_INTERNAL, FOLDER_TREE_MICRO_SD, FOLDER_TREE_EXTERNAL)
 
 private data class AlphabetIndex(
@@ -306,6 +311,7 @@ fun MainScreen(
     navigator: MusicNavigator,
     currentQueue: List<Track>,
     currentTrackId: Long?,
+    fancyBackgroundEnabled: Boolean = false,
     onRequestPermission: () -> Unit,
     onTrackClick: (Track, List<Track>) -> Unit,
     onToggleFavorite: (Long) -> Unit,
@@ -355,7 +361,7 @@ fun MainScreen(
             modifier =
                 Modifier
                     .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.background)
+                    .background(if (fancyBackgroundEnabled) Color.Transparent else MaterialTheme.colorScheme.background)
                     .windowInsetsPadding(WindowInsets.statusBars),
         ) {
             androidx.compose.animation.AnimatedVisibility(
@@ -364,33 +370,35 @@ fun MainScreen(
                 exit = fadeOut(animationSpec = tween(290)),
                 label = "home-host",
             ) {
-                HomeScreen(
-                    library = library,
-                    sharedTransitionScope = this@SharedTransitionLayout,
-                    animatedVisibilityScope = this,
-                    currentTrackId = currentTrackId,
-                    onRequestPermission = onRequestPermission,
-                    onSettings = { navigate(MainRoute.Settings) },
-                    onTrackClick = onTrackClick,
-                    onToggleFavorite = onToggleFavorite,
-                    onToggleFavoriteItem = onToggleFavoriteItem,
-                    onFolderClick = { navigate(MainRoute.Folder(it.path)) },
-                    onAlbumClick = { navigate(MainRoute.Album(it.id)) },
-                    onArtistClick = { navigate(MainRoute.Artist(it.name)) },
-                    onPlaylistClick = { navigate(MainRoute.Playlist(it.id)) },
-                    onCreatePlaylist = { navigate(MainRoute.SelectPlaylistTracks(it)) },
-                    onSearch = { navigate(MainRoute.Search) },
-                    onReplaceCurrentQueue = onReplaceCurrentQueue,
-                    onRenamePlaylist = onRenamePlaylist,
-                    onDeletePlaylists = onDeletePlaylists,
-                    onDeleteTracksPermanently = onDeleteTracksPermanently,
-                    onAddTracksToRoute = onAddTracksToRoute,
-                    onPlaylistEditModeChanged = onPlaylistEditModeChanged,
-                    onTrackMenu = { trackMenuTrack = it },
-                    initialTabIndex = initialTabIndex,
-                    onTabSelected = onTabSelected,
-                    modifier = Modifier.fillMaxSize(),
-                )
+                CompositionLocalProvider(LocalFancyTabContentBackground provides fancyBackgroundEnabled) {
+                    HomeScreen(
+                        library = library,
+                        sharedTransitionScope = this@SharedTransitionLayout,
+                        animatedVisibilityScope = this,
+                        currentTrackId = currentTrackId,
+                        onRequestPermission = onRequestPermission,
+                        onSettings = { navigate(MainRoute.Settings) },
+                        onTrackClick = onTrackClick,
+                        onToggleFavorite = onToggleFavorite,
+                        onToggleFavoriteItem = onToggleFavoriteItem,
+                        onFolderClick = { navigate(MainRoute.Folder(it.path)) },
+                        onAlbumClick = { navigate(MainRoute.Album(it.id)) },
+                        onArtistClick = { navigate(MainRoute.Artist(it.name)) },
+                        onPlaylistClick = { navigate(MainRoute.Playlist(it.id)) },
+                        onCreatePlaylist = { navigate(MainRoute.SelectPlaylistTracks(it)) },
+                        onSearch = { navigate(MainRoute.Search) },
+                        onReplaceCurrentQueue = onReplaceCurrentQueue,
+                        onRenamePlaylist = onRenamePlaylist,
+                        onDeletePlaylists = onDeletePlaylists,
+                        onDeleteTracksPermanently = onDeleteTracksPermanently,
+                        onAddTracksToRoute = onAddTracksToRoute,
+                        onPlaylistEditModeChanged = onPlaylistEditModeChanged,
+                        onTrackMenu = { trackMenuTrack = it },
+                        initialTabIndex = initialTabIndex,
+                        onTabSelected = onTabSelected,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
             }
 
             AnimatedContent(
@@ -405,41 +413,45 @@ fun MainScreen(
                 label = "detail-nav",
             ) { route ->
                 detailStateHolder.SaveableStateProvider(route.saveableStateKey(searchStateVersion)) {
-                    DetailHost(
-                        route = route,
-                        library = library,
-                        currentQueue = currentQueue,
-                        sharedTransitionScope = this@SharedTransitionLayout,
-                        animatedVisibilityScope = this,
-                        currentTrackId = currentTrackId,
-                        onBack = { back() },
-                        onSettings = { navigate(MainRoute.Settings) },
-                        onSearch = { navigate(MainRoute.Search) },
-                        onTrackClick = onTrackClick,
-                        onToggleFavorite = onToggleFavorite,
-                        onToggleFavoriteItem = onToggleFavoriteItem,
-                        onRescan = onRescan,
-                        onHiddenFoldersChanged = onHiddenFoldersChanged,
-                        onShowAllTracks = { navigate(MainRoute.SearchTracks(it)) },
-                        onShowAllArtists = { navigate(MainRoute.SearchArtists(it)) },
-                        onShowAllAlbums = { navigate(MainRoute.SearchAlbums(it)) },
-                        onAlbumClick = { navigate(MainRoute.Album(it.id)) },
-                        onArtistClick = { navigate(MainRoute.Artist(it.name)) },
-                        onAddTracksToPlaylistRoute = { navigate(MainRoute.AddTracksToPlaylist(it)) },
-                        onCreatePlaylistRoute = { navigate(MainRoute.SelectPlaylistTracks(it)) },
-                        onCreatePlaylist = onCreatePlaylist,
-                        onAddTracksToPlaylist = onAddTracksToPlaylist,
-                        onAddTracksToCurrentQueue = onAddTracksToCurrentQueue,
-                        onReplaceCurrentQueue = onReplaceCurrentQueue,
-                        onReplacePlaylistTracks = onReplacePlaylistTracks,
-                        onRenamePlaylist = onRenamePlaylist,
-                        onDeletePlaylists = onDeletePlaylists,
-                        onDeleteTracksPermanently = onDeleteTracksPermanently,
-                        onAddTracksToRoute = onAddTracksToRoute,
-                        onPlaylistEditModeChanged = onPlaylistEditModeChanged,
-                        onTrackMenu = { trackMenuTrack = it },
-                        modifier = Modifier.fillMaxSize(),
-                    )
+                    CompositionLocalProvider(
+                        LocalFancyTabContentBackground provides (fancyBackgroundEnabled && route != MainRoute.Settings),
+                    ) {
+                        DetailHost(
+                            route = route,
+                            library = library,
+                            currentQueue = currentQueue,
+                            sharedTransitionScope = this@SharedTransitionLayout,
+                            animatedVisibilityScope = this,
+                            currentTrackId = currentTrackId,
+                            onBack = { back() },
+                            onSettings = { navigate(MainRoute.Settings) },
+                            onSearch = { navigate(MainRoute.Search) },
+                            onTrackClick = onTrackClick,
+                            onToggleFavorite = onToggleFavorite,
+                            onToggleFavoriteItem = onToggleFavoriteItem,
+                            onRescan = onRescan,
+                            onHiddenFoldersChanged = onHiddenFoldersChanged,
+                            onShowAllTracks = { navigate(MainRoute.SearchTracks(it)) },
+                            onShowAllArtists = { navigate(MainRoute.SearchArtists(it)) },
+                            onShowAllAlbums = { navigate(MainRoute.SearchAlbums(it)) },
+                            onAlbumClick = { navigate(MainRoute.Album(it.id)) },
+                            onArtistClick = { navigate(MainRoute.Artist(it.name)) },
+                            onAddTracksToPlaylistRoute = { navigate(MainRoute.AddTracksToPlaylist(it)) },
+                            onCreatePlaylistRoute = { navigate(MainRoute.SelectPlaylistTracks(it)) },
+                            onCreatePlaylist = onCreatePlaylist,
+                            onAddTracksToPlaylist = onAddTracksToPlaylist,
+                            onAddTracksToCurrentQueue = onAddTracksToCurrentQueue,
+                            onReplaceCurrentQueue = onReplaceCurrentQueue,
+                            onReplacePlaylistTracks = onReplacePlaylistTracks,
+                            onRenamePlaylist = onRenamePlaylist,
+                            onDeletePlaylists = onDeletePlaylists,
+                            onDeleteTracksPermanently = onDeleteTracksPermanently,
+                            onAddTracksToRoute = onAddTracksToRoute,
+                            onPlaylistEditModeChanged = onPlaylistEditModeChanged,
+                            onTrackMenu = { trackMenuTrack = it },
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
                 }
             }
             trackMenuTrack?.let { track ->
@@ -1258,7 +1270,7 @@ private fun SearchScreen(
         modifier =
             modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background),
+                .background(appBackgroundContainerColor()),
     ) {
         Row(
             modifier =
@@ -1435,7 +1447,7 @@ private fun SearchTrackResultsScreen(
         modifier =
             modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background),
+                .background(appBackgroundContainerColor()),
     ) {
         Row(
             modifier =
@@ -1596,7 +1608,7 @@ private fun SearchGroupResultsScreen(
         modifier =
             modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background),
+                .background(appBackgroundContainerColor()),
     ) {
         Row(
             modifier =
@@ -1639,7 +1651,7 @@ private fun PermissionState(onRequestPermission: () -> Unit) {
                 .fillMaxWidth()
                 .padding(20.dp),
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-        colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        colors = CardDefaults.outlinedCardColors(containerColor = tabContentContainerColor()),
     ) {
         Column(
             modifier = Modifier.padding(22.dp),
@@ -1673,6 +1685,18 @@ private fun LoadingState() {
         Text(stringResource(R.string.scanning), color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
+
+@Composable
+private fun tabContentContainerColor(): Color =
+    MaterialTheme.colorScheme.surfaceContainer.copy(
+        alpha = if (LocalFancyTabContentBackground.current) FANCY_TAB_CONTENT_ALPHA else 1f,
+    )
+
+@Composable
+private fun appBackgroundContainerColor(): Color =
+    MaterialTheme.colorScheme.background.copy(
+        alpha = if (LocalFancyTabContentBackground.current) FANCY_TAB_CONTENT_ALPHA_TRANSPARENT else 1f,
+    )
 
 @Composable
 private fun FavoriteTab(
@@ -1744,7 +1768,7 @@ private fun FavoriteTab(
                     .fillMaxSize()
                     .padding(top = 14.dp)
                     .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-                    .background(MaterialTheme.colorScheme.surfaceContainer),
+                    .background(tabContentContainerColor()),
             contentPadding = PaddingValues(start = 20.dp, top = 18.dp, end = 20.dp, bottom = if (editMode) 128.dp else 116.dp),
             horizontalArrangement = Arrangement.spacedBy(14.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp),
@@ -1938,7 +1962,7 @@ private fun PlaylistTab(
                     .fillMaxSize()
                     .padding(top = 14.dp)
                     .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-                    .background(MaterialTheme.colorScheme.surfaceContainer),
+                    .background(tabContentContainerColor()),
             contentPadding = PaddingValues(start = 20.dp, top = 18.dp, end = 20.dp, bottom = if (editMode) 112.dp else 116.dp),
         ) {
             if (!editMode) {
@@ -2178,7 +2202,7 @@ private fun PlaylistDetailScreen(
         modifier =
             modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background),
+                .background(appBackgroundContainerColor()),
     ) {
         LazyColumn(
             state = listState,
@@ -2225,7 +2249,7 @@ private fun PlaylistDetailScreen(
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    color = tabContentContainerColor(),
                 ) {
                     Column(
                         modifier = Modifier.padding(start = 20.dp, top = 18.dp, end = 20.dp, bottom = 8.dp),
@@ -2262,7 +2286,7 @@ private fun PlaylistDetailScreen(
                                 } else {
                                     RoundedCornerShape(0.dp)
                                 },
-                            color = MaterialTheme.colorScheme.surfaceContainer,
+                            color = tabContentContainerColor(),
                             tonalElevation = if (isDragging) 6.dp else 0.dp,
                         ) {
                             val reorderScope = this
@@ -2293,7 +2317,7 @@ private fun PlaylistDetailScreen(
                             } else {
                                 RoundedCornerShape(0.dp)
                             },
-                        color = MaterialTheme.colorScheme.surfaceContainer,
+                        color = tabContentContainerColor(),
                     ) {
                         PlaylistTrackRow(
                             track = track,
@@ -2326,7 +2350,7 @@ private fun PlaylistDetailScreen(
                 Modifier
                     .align(Alignment.TopCenter)
                     .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.background)
+                    .background(appBackgroundContainerColor())
                     .padding(start = 8.dp, top = 18.dp, end = 8.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -2547,7 +2571,7 @@ private fun SelectTrackScreen(
         detailRoute = null
     }
     Column(
-        modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
+        modifier = modifier.fillMaxSize().background(appBackgroundContainerColor()),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(start = 8.dp, top = 18.dp, end = 8.dp, bottom = 18.dp),
@@ -2743,7 +2767,7 @@ private fun AddToPlaylistScreen(
         )
     }
     Column(
-        modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
+        modifier = modifier.fillMaxSize().background(appBackgroundContainerColor()),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(start = 8.dp, top = 18.dp, end = 8.dp, bottom = 18.dp),
@@ -3418,7 +3442,7 @@ private fun AlbumDetailScreen(
         modifier =
             modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background),
+                .background(appBackgroundContainerColor()),
     ) {
         LazyColumn(
             state = listState,
@@ -3457,7 +3481,7 @@ private fun AlbumDetailScreen(
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainer,
+                        color = tabContentContainerColor(),
                     ) {
                         EmptyInline(stringResource(R.string.no_tracks_found))
                     }
@@ -3468,7 +3492,7 @@ private fun AlbumDetailScreen(
                         item(key = "album-group-${group.name}") {
                             Surface(
                                 modifier = Modifier.fillMaxWidth(),
-                                color = MaterialTheme.colorScheme.surfaceContainer,
+                                color = tabContentContainerColor(),
                             ) {
                                 Text(
                                     text = group.name,
@@ -3503,7 +3527,7 @@ private fun AlbumDetailScreen(
                                 } else {
                                     RoundedCornerShape(0.dp)
                                 },
-                            color = MaterialTheme.colorScheme.surfaceContainer,
+                            color = tabContentContainerColor(),
                         ) {
                             Column(
                                 modifier =
@@ -3554,7 +3578,7 @@ private fun AlbumTopBar(
         modifier =
             modifier
                 .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.background)
+                .background(appBackgroundContainerColor())
                 .padding(start = 8.dp, top = 18.dp, end = 8.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -3650,7 +3674,7 @@ private fun AlbumTrackListHeader(
                 .fillMaxWidth()
                 .padding(top = 8.dp),
         shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer,
+        color = tabContentContainerColor(),
     ) {
         Column(
             modifier = Modifier.padding(start = 20.dp, top = 18.dp, end = 20.dp, bottom = 8.dp),
@@ -3871,7 +3895,7 @@ private fun ArtistDetailScreen(
         modifier =
             modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background),
+                .background(appBackgroundContainerColor()),
     ) {
         Row(
             modifier =
@@ -3979,7 +4003,7 @@ private fun ArtistTrackTab(
                 .fillMaxSize()
                 .padding(top = 8.dp)
                 .clip(RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp))
-                .background(MaterialTheme.colorScheme.surfaceContainer),
+                .background(tabContentContainerColor()),
         contentPadding = PaddingValues(start = 20.dp, top = 18.dp, end = 20.dp, bottom = 116.dp),
     ) {
         item {
@@ -4109,7 +4133,7 @@ private fun ArtistAlbumTab(
                 .fillMaxSize()
                 .padding(top = 8.dp)
                 .clip(RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp))
-                .background(MaterialTheme.colorScheme.surfaceContainer),
+                .background(tabContentContainerColor()),
         contentPadding = PaddingValues(start = 20.dp, top = 18.dp, end = 20.dp, bottom = 116.dp),
         horizontalArrangement = Arrangement.spacedBy(14.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
@@ -4356,7 +4380,7 @@ private fun FolderTreeContent(
                     Modifier
                         .fillMaxSize()
                         .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-                        .background(MaterialTheme.colorScheme.surfaceContainer),
+                        .background(tabContentContainerColor()),
                 contentPadding =
                     PaddingValues(
                         start = 12.dp,
@@ -4570,7 +4594,7 @@ private fun FolderDetailScreen(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.background)
+                    .background(appBackgroundContainerColor())
                     .padding(start = 8.dp, top = 18.dp, end = 8.dp, bottom = 18.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -4672,7 +4696,7 @@ private fun RoundedPanelList(
                 .fillMaxSize()
                 .padding(top = topPadding)
                 .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-                .background(MaterialTheme.colorScheme.surfaceContainer),
+                .background(tabContentContainerColor()),
         contentPadding =
             PaddingValues(
                 start = 12.dp,
@@ -4696,7 +4720,7 @@ private fun RoundedGridPanel(
                 .fillMaxSize()
                 .padding(top = 14.dp)
                 .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-                .background(MaterialTheme.colorScheme.surfaceContainer),
+                .background(tabContentContainerColor()),
         contentPadding = PaddingValues(start = 20.dp, top = 14.dp, end = 20.dp, bottom = bottomPadding),
         horizontalArrangement = Arrangement.spacedBy(14.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
@@ -6136,7 +6160,7 @@ private fun SearchPanel(content: @Composable ColumnScope.() -> Unit) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer,
+        color = tabContentContainerColor(),
         content = {
             Column(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
@@ -6159,7 +6183,7 @@ private fun SearchEmpty(message: String) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer,
+        color = tabContentContainerColor(),
     ) {
         Text(
             text = message,
@@ -6177,7 +6201,7 @@ private fun EmptyPanel(message: String?) {
                 .fillMaxWidth()
                 .padding(20.dp),
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        colors = CardDefaults.outlinedCardColors(containerColor = tabContentContainerColor()),
         border = BorderStroke(0.dp, Color.Transparent),
     ) {
         EmptyInline(message ?: "Nothing found")

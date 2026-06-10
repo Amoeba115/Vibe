@@ -2,7 +2,9 @@ package me.ayra.music.util
 
 import android.content.Context
 
-class MusicPreferences(context: Context) {
+class MusicPreferences(
+    context: Context,
+) {
     private val preferences = context.getSharedPreferences("music_preferences", Context.MODE_PRIVATE)
 
     fun loadLastTab(defaultIndex: Int): Int = preferences.getInt(KEY_LAST_TAB, defaultIndex)
@@ -18,7 +20,8 @@ class MusicPreferences(context: Context) {
     }
 
     fun loadLastQueueIds(): List<Long> =
-        preferences.getString(KEY_LAST_QUEUE_IDS, null)
+        preferences
+            .getString(KEY_LAST_QUEUE_IDS, null)
             ?.split(',')
             ?.mapNotNull { it.toLongOrNull() }
             .orEmpty()
@@ -27,10 +30,15 @@ class MusicPreferences(context: Context) {
         preferences.edit().putString(KEY_LAST_QUEUE_IDS, trackIds.joinToString(",")).apply()
     }
 
-    fun loadSort(key: String, defaultValue: String): String =
-        preferences.getString("$KEY_SORT_PREFIX$key", defaultValue) ?: defaultValue
+    fun loadSort(
+        key: String,
+        defaultValue: String,
+    ): String = preferences.getString("$KEY_SORT_PREFIX$key", defaultValue) ?: defaultValue
 
-    fun saveSort(key: String, value: String) {
+    fun saveSort(
+        key: String,
+        value: String,
+    ) {
         preferences.edit().putString("$KEY_SORT_PREFIX$key", value).apply()
     }
 
@@ -58,7 +66,8 @@ class MusicPreferences(context: Context) {
         preferences.edit().putBoolean(KEY_DISABLE_ALBUM_DYNAMIC_COLOR, value).apply()
     }
 
-    fun loadMiniPlayerStyle(): String = preferences.getString(KEY_MINI_PLAYER_STYLE, MINI_PLAYER_STYLE_FLOATING) ?: MINI_PLAYER_STYLE_FLOATING
+    fun loadMiniPlayerStyle(): String =
+        preferences.getString(KEY_MINI_PLAYER_STYLE, MINI_PLAYER_STYLE_FLOATING) ?: MINI_PLAYER_STYLE_FLOATING
 
     fun saveMiniPlayerStyle(value: String) {
         val normalized =
@@ -87,10 +96,10 @@ class MusicPreferences(context: Context) {
         preferences.edit().putBoolean(KEY_FANCY_PLAYER_ENABLED, value).apply()
     }
 
-    fun loadKenBurnsEffectEnabled(): Boolean = preferences.getBoolean(KEY_KEN_BURNS_EFFECT_ENABLED, false)
+    fun loadFancyBackgroundEnabled(): Boolean = preferences.getBoolean(KEY_FANCY_BACKGROUND_ENABLED, false)
 
-    fun saveKenBurnsEffectEnabled(value: Boolean) {
-        preferences.edit().putBoolean(KEY_KEN_BURNS_EFFECT_ENABLED, value).apply()
+    fun saveFancyBackgroundEnabled(value: Boolean) {
+        preferences.edit().putBoolean(KEY_FANCY_BACKGROUND_ENABLED, value).apply()
     }
 
     fun loadStopOnTaskRemoved(): Boolean = preferences.getBoolean(KEY_STOP_ON_TASK_REMOVED, false)
@@ -105,8 +114,7 @@ class MusicPreferences(context: Context) {
         preferences.edit().putBoolean(KEY_PAUSE_WHEN_VOLUME_ZERO, value).apply()
     }
 
-    fun loadHiddenFolders(): Set<String> =
-        preferences.getStringSet(KEY_HIDDEN_FOLDERS, emptySet()).orEmpty()
+    fun loadHiddenFolders(): Set<String> = preferences.getStringSet(KEY_HIDDEN_FOLDERS, emptySet()).orEmpty()
 
     fun saveHiddenFolders(value: Set<String>) {
         preferences.edit().putStringSet(KEY_HIDDEN_FOLDERS, value).apply()
@@ -205,7 +213,7 @@ class MusicPreferences(context: Context) {
         private const val KEY_MINI_PLAYER_STYLE = "mini_player_style"
         private const val KEY_CROSSFADE_SECONDS = "crossfade_seconds"
         private const val KEY_FANCY_PLAYER_ENABLED = "fancy_player_enabled"
-        private const val KEY_KEN_BURNS_EFFECT_ENABLED = "ken_burns_effect_enabled"
+        private const val KEY_FANCY_BACKGROUND_ENABLED = "fancy_background_enabled"
         private const val KEY_STOP_ON_TASK_REMOVED = "stop_on_task_removed"
         private const val KEY_SHUFFLE_ENABLED = "shuffle_enabled"
         private const val KEY_REPEAT_MODE = "repeat_mode"
