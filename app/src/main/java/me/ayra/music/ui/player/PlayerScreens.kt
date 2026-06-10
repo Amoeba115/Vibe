@@ -97,8 +97,10 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.lerp
@@ -472,6 +474,7 @@ private fun PlayerSurface(
     val context = LocalContext.current
     val preferences = remember(context) { MusicPreferences(context) }
     var disableAlbumDynamicColor by remember { mutableStateOf(preferences.loadDisableAlbumDynamicColor()) }
+    var fancyPlayerEnabled by remember { mutableStateOf(preferences.loadFancyPlayerEnabled()) }
     val darkTheme = isSystemInDarkTheme()
     val progress = sheetState.progress
     val collapsedVisible = 1f - progress
@@ -552,6 +555,7 @@ private fun PlayerSurface(
         val listener =
             SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
                 disableAlbumDynamicColor = preferences.loadDisableAlbumDynamicColor()
+                fancyPlayerEnabled = preferences.loadFancyPlayerEnabled()
             }
         preferences.registerSettingsListener(listener)
         onDispose { preferences.unregisterSettingsListener(listener) }
@@ -565,6 +569,15 @@ private fun PlayerSurface(
         tonalElevation = 4.dp,
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
+            if (fancyPlayerEnabled && track?.albumId != 0L && artwork != null) {
+                FancyPlayerBackground(
+                    artwork = artwork,
+                    tint = animatedFullscreen,
+                    alpha = progress,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+
             if (progress < 0.5f) {
                 ExpandedPlayerContent(
                     playerState = playerState,
@@ -666,6 +679,28 @@ private fun PlayerSurface(
                 modifier = Modifier.align(Alignment.TopStart),
             )
         }
+    }
+}
+
+@Composable
+private fun FancyPlayerBackground(
+    artwork: Uri,
+    tint: Color,
+    alpha: Float,
+    modifier: Modifier = Modifier,
+) {
+    val visibleAlpha = alpha.coerceIn(0f, 1f)
+    Box(modifier = modifier.alpha(visibleAlpha)) {
+        AsyncImage(
+            model = artwork,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .blur(36.dp)
+                    .alpha(0.22f),
+        )
     }
 }
 

@@ -81,6 +81,12 @@ class MusicPreferences(context: Context) {
         preferences.edit().putInt(KEY_CROSSFADE_SECONDS, value.coerceIn(0, 5)).apply()
     }
 
+    fun loadFancyPlayerEnabled(): Boolean = preferences.getBoolean(KEY_FANCY_PLAYER_ENABLED, false)
+
+    fun saveFancyPlayerEnabled(value: Boolean) {
+        preferences.edit().putBoolean(KEY_FANCY_PLAYER_ENABLED, value).apply()
+    }
+
     fun loadStopOnTaskRemoved(): Boolean = preferences.getBoolean(KEY_STOP_ON_TASK_REMOVED, false)
 
     fun saveStopOnTaskRemoved(value: Boolean) {
@@ -192,6 +198,7 @@ class MusicPreferences(context: Context) {
         private const val KEY_DISABLE_ALBUM_DYNAMIC_COLOR = "disable_album_dynamic_color"
         private const val KEY_MINI_PLAYER_STYLE = "mini_player_style"
         private const val KEY_CROSSFADE_SECONDS = "crossfade_seconds"
+        private const val KEY_FANCY_PLAYER_ENABLED = "fancy_player_enabled"
         private const val KEY_STOP_ON_TASK_REMOVED = "stop_on_task_removed"
         private const val KEY_SHUFFLE_ENABLED = "shuffle_enabled"
         private const val KEY_REPEAT_MODE = "repeat_mode"

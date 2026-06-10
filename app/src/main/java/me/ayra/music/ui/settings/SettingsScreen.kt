@@ -506,11 +506,22 @@ private fun PlayerSettings() {
     val preferences = rememberPreferences()
     var speed by rememberSaveable { mutableFloatStateOf(preferences.loadPlaybackSpeed()) }
     var crossfadeSeconds by rememberSaveable { mutableIntStateOf(preferences.loadCrossfadeSeconds()) }
+    var fancyPlayer by rememberSaveable { mutableStateOf(preferences.loadFancyPlayerEnabled()) }
     var stopOnTaskRemoved by rememberSaveable { mutableStateOf(preferences.loadStopOnTaskRemoved()) }
     var pauseWhenVolumeZero by rememberSaveable { mutableStateOf(preferences.loadPauseWhenVolumeZero()) }
 
     SettingsPage {
         SettingsGroup {
+            SettingsSwitchRow(
+                title = stringResource(R.string.fancy_player),
+                subtitle = stringResource(R.string.fancy_player_subtitle),
+                checked = fancyPlayer,
+                onCheckedChange = {
+                    fancyPlayer = it
+                    preferences.saveFancyPlayerEnabled(it)
+                },
+            )
+            SettingsDivider()
             SettingsSwitchRow(
                 title = stringResource(R.string.stop_on_recent_close),
                 subtitle = stringResource(R.string.stop_on_recent_close_subtitle),

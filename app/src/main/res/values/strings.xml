@@ -37,6 +37,8 @@
     <string name="play_speed_subtitle">Playback speed for Media3 playback</string>
     <string name="crossfade_each_track">Crossfade each track</string>
     <string name="crossfade_each_track_subtitle">Saved for playback transition behavior</string>
+    <string name="fancy_player">Fancy Player</string>
+    <string name="fancy_player_subtitle">Use blurred cover art and a dark artwork-tinted overlay behind the fullscreen player</string>
     <string name="stop_on_recent_close">Stop player app when app closed from recent</string>
     <string name="stop_on_recent_close_subtitle">Stop playback service when the task is removed</string>
     <string name="pause_when_volume_zero">Pause when volume is zero</string>
