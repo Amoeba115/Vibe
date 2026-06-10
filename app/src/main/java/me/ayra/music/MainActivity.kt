@@ -611,6 +611,37 @@ class MusicViewModel(
         }
     }
 
+    fun renamePlaylist(
+        playlistId: String,
+        name: String,
+    ) {
+        val normalizedName = name.trim()
+        if (normalizedName.isEmpty()) return
+        viewModelScope.launch {
+            libraryScanner.renamePlaylist(playlistId, normalizedName)
+            val visibleTracks = _library.value.tracks
+            _library.update { state ->
+                state.copy(playlists = libraryScanner.buildPlaylists(visibleTracks))
+            }
+        }
+    }
+
+    fun deletePlaylists(playlistIds: List<String>) {
+        val customPlaylistIds = playlistIds.filter { it.startsWith("custom-") }.distinct()
+        if (customPlaylistIds.isEmpty()) return
+        viewModelScope.launch {
+            libraryScanner.deletePlaylists(customPlaylistIds)
+            val visibleTracks = _library.value.tracks
+            _library.update { state ->
+                val deleted = customPlaylistIds.toSet()
+                state.copy(
+                    playlists = libraryScanner.buildPlaylists(visibleTracks),
+                    favoriteItems = state.favoriteItems.filterNot { it.type == FavoriteType.Playlist && it.key in deleted },
+                )
+            }
+        }
+    }
+
     fun addTracksToCurrentQueue(tracks: List<Track>) {
         val player = controller ?: return
         if (tracks.isEmpty()) return
@@ -971,6 +1002,28 @@ class LibraryScanner(
             customPlaylistsCache = dao.loadCustomPlaylists(dao.loadTracks().map { it.toTrack() })
         }
     }
+
+    suspend fun renamePlaylist(
+        playlistId: String,
+        name: String,
+    ) = withContext(Dispatchers.IO) {
+        if (!playlistId.startsWith("custom-")) return@withContext
+        dao.renameCustomPlaylist(playlistId, name)
+        customPlaylistsCache = dao.loadCustomPlaylists(dao.loadTracks().map { it.toTrack() })
+    }
+
+    suspend fun deletePlaylists(playlistIds: List<String>) =
+        withContext(Dispatchers.IO) {
+            playlistIds
+                .filter { it.startsWith("custom-") }
+                .distinct()
+                .forEach { playlistId ->
+                    dao.deleteCustomPlaylistTracks(playlistId)
+                    dao.deleteCustomPlaylist(playlistId)
+                    dao.deleteFavoriteItem(FavoriteType.Playlist, playlistId)
+                }
+            customPlaylistsCache = dao.loadCustomPlaylists(dao.loadTracks().map { it.toTrack() })
+        }
 
     suspend fun replacePlaylistTracks(
         playlistId: String,
@@ -1430,6 +1483,8 @@ fun MusicApp(
                 onAddTracksToCurrentQueue = viewModel::addTracksToCurrentQueue,
                 onReplaceCurrentQueue = viewModel::replaceCurrentQueue,
                 onReplacePlaylistTracks = viewModel::replacePlaylistTracks,
+                onRenamePlaylist = viewModel::renamePlaylist,
+                onDeletePlaylists = viewModel::deletePlaylists,
                 onAddTracksToRoute = { tracks -> navigator.navigate(MainRoute.AddToTracks(tracks.map { it.id })) },
                 onPlaylistEditModeChanged = { playlistEditMode = it },
                 initialTabIndex = lastHomeTab,

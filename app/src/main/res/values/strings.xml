@@ -116,7 +116,9 @@
     <string name="edit">Edit</string>
     <string name="rename">Rename</string>
     <string name="select_all">Select All</string>
+    <string name="unselect_all">Unselect All</string>
     <string name="select_track">Select track</string>
+    <string name="select_playlist">Select playlist</string>
     <string name="add">Add</string>
     <string name="share">Share</string>
     <string name="delete">Delete</string>

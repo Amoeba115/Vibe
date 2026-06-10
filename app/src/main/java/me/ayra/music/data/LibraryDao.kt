@@ -61,6 +61,15 @@ interface LibraryDao {
     @Upsert
     suspend fun upsertCustomPlaylist(playlist: CustomPlaylistEntity)
 
+    @Query("UPDATE custom_playlists SET name = :name WHERE playlist_id = :playlistId")
+    suspend fun renameCustomPlaylist(
+        playlistId: String,
+        name: String,
+    )
+
+    @Query("DELETE FROM custom_playlists WHERE playlist_id = :playlistId")
+    suspend fun deleteCustomPlaylist(playlistId: String)
+
     @Query("DELETE FROM custom_playlist_tracks WHERE playlist_id = :playlistId")
     suspend fun deleteCustomPlaylistTracks(playlistId: String)
 
