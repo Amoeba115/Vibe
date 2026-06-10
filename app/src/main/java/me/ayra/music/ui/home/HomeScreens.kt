@@ -14,9 +14,14 @@ import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -316,7 +321,7 @@ fun MainScreen(
                     .background(MaterialTheme.colorScheme.background)
                     .windowInsetsPadding(WindowInsets.statusBars),
         ) {
-            AnimatedVisibility(
+            androidx.compose.animation.AnimatedVisibility(
                 visible = currentRoute == MainRoute.Home,
                 enter = fadeIn(animationSpec = tween(290)),
                 exit = fadeOut(animationSpec = tween(290)),
@@ -765,8 +770,13 @@ private fun HomeScreen(
     }
 
     Column(modifier = modifier) {
-        if (anyEditMode) {
-            Row(
+        AnimatedContent(
+            targetState = anyEditMode,
+            transitionSpec = { fadeIn(animationSpec = tween(180)) togetherWith fadeOut(animationSpec = tween(140)) },
+            label = "home-top-bar",
+        ) { editing ->
+            if (editing) {
+                Row(
                 modifier =
                     Modifier
                         .fillMaxWidth()
@@ -809,8 +819,8 @@ private fun HomeScreen(
                     modifier = Modifier.weight(1f),
                 )
             }
-        } else {
-            Row(
+            } else {
+                Row(
                 modifier =
                     Modifier
                         .fillMaxWidth()
@@ -869,6 +879,7 @@ private fun HomeScreen(
                     }
                 }
             }
+        }
         }
 
         CenteredHomeTabs(
@@ -1599,6 +1610,7 @@ private fun FavoriteTab(
             items(favoriteCards, key = { it.selectionKey }) { card ->
                 FavoriteGridCard(
                     card = card,
+                    selectionVisible = editMode,
                     selected = card.selectionKey in selectedKeys,
                     modifier =
                         Modifier
@@ -1629,8 +1641,8 @@ private fun FavoriteTab(
         AnimatedVisibility(
             visible = editMode,
             modifier = Modifier.align(Alignment.BottomCenter),
-            enter = fadeIn(animationSpec = tween(180)),
-            exit = fadeOut(animationSpec = tween(180)),
+            enter = slideInVertically(animationSpec = tween(220)) { it } + fadeIn(animationSpec = tween(180)),
+            exit = slideOutVertically(animationSpec = tween(180)) { it } + fadeOut(animationSpec = tween(140)),
         ) {
             PlaylistEditBottomBar(
                 hasSelection = selectedCards.isNotEmpty(),
@@ -1849,8 +1861,8 @@ private fun PlaylistTab(
         AnimatedVisibility(
             visible = editMode,
             modifier = Modifier.align(Alignment.BottomCenter),
-            enter = fadeIn(animationSpec = tween(180)),
-            exit = fadeOut(animationSpec = tween(180)),
+            enter = slideInVertically(animationSpec = tween(220)) { it } + fadeIn(animationSpec = tween(180)),
+            exit = slideOutVertically(animationSpec = tween(180)) { it } + fadeOut(animationSpec = tween(140)),
         ) {
             PlaylistEditBottomBar(
                 hasSelection = selectedPlaylists.isNotEmpty(),
@@ -2268,8 +2280,8 @@ private fun PlaylistDetailScreen(
         AnimatedVisibility(
             visible = editMode,
             modifier = Modifier.align(Alignment.BottomCenter),
-            enter = fadeIn(animationSpec = tween(180)),
-            exit = fadeOut(animationSpec = tween(180)),
+            enter = slideInVertically(animationSpec = tween(220)) { it } + fadeIn(animationSpec = tween(180)),
+            exit = slideOutVertically(animationSpec = tween(180)) { it } + fadeOut(animationSpec = tween(140)),
         ) {
             PlaylistEditBottomBar(
                 hasSelection = selectedTracks.isNotEmpty(),
@@ -3024,8 +3036,8 @@ private fun TrackTab(
         AnimatedVisibility(
             visible = editMode,
             modifier = Modifier.align(Alignment.BottomCenter),
-            enter = fadeIn(animationSpec = tween(180)),
-            exit = fadeOut(animationSpec = tween(180)),
+            enter = slideInVertically(animationSpec = tween(220)) { it } + fadeIn(animationSpec = tween(180)),
+            exit = slideOutVertically(animationSpec = tween(180)) { it } + fadeOut(animationSpec = tween(140)),
         ) {
             PlaylistEditBottomBar(
                 hasSelection = selectedTracks.isNotEmpty(),
@@ -3118,6 +3130,7 @@ private fun AlbumTab(
                     title = album.title,
                     subtitle = "${album.artist} | ${album.tracks.size} tracks",
                     artwork = album.tracks.firstOrNull()?.albumArtUri,
+                    selectionVisible = editMode,
                     selected = editMode && album.id in selectedIds,
                     artworkModifier =
                         with(sharedTransitionScope) {
@@ -4553,6 +4566,31 @@ private fun String.compareNaturally(other: String): Int {
 }
 
 @Composable
+private fun AnimatedSelectionIconButton(
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val visibleState =
+        remember {
+            MutableTransitionState(false).apply { targetState = true }
+        }
+    AnimatedVisibility(
+        visibleState = visibleState,
+        enter = expandHorizontally(animationSpec = tween(180), expandFrom = Alignment.Start) + fadeIn(animationSpec = tween(160)),
+        exit = shrinkHorizontally(animationSpec = tween(140), shrinkTowards = Alignment.Start) + fadeOut(animationSpec = tween(120)),
+    ) {
+        IconButton(onClick = onClick, modifier = modifier.size(42.dp)) {
+            Icon(
+                if (selected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                contentDescription = null,
+                tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
 @OptIn(ExperimentalFoundationApi::class)
 private fun TrackRow(
     track: Track,
@@ -4608,13 +4646,7 @@ private fun SelectableTrackRow(
                 .padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = onClick, modifier = Modifier.size(42.dp)) {
-            Icon(
-                if (selected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
-                contentDescription = null,
-                tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+        AnimatedSelectionIconButton(selected = selected, onClick = onClick)
         AlbumArt(track.albumArtUri, Modifier.size(48.dp), RoundedCornerShape(12.dp))
         Column(
             modifier =
@@ -4708,13 +4740,7 @@ private fun SelectableMediaGroupRow(
                 .padding(vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = onClick, modifier = Modifier.size(42.dp)) {
-            Icon(
-                if (selected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
-                contentDescription = null,
-                tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+        AnimatedSelectionIconButton(selected = selected, onClick = onClick)
         Box {
             AlbumArt(artwork, Modifier.size(56.dp), RoundedCornerShape(13.dp))
             if (folder) {
@@ -4802,15 +4828,9 @@ private fun EditablePlaylistTrackRow(
                     .fillMaxWidth()
                     .clickable(onClick = onToggle)
                     .padding(vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = onToggle, modifier = Modifier.size(42.dp)) {
-                Icon(
-                    if (selected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
-                    contentDescription = null,
-                    tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+            AnimatedSelectionIconButton(selected = selected, onClick = onToggle)
             AlbumArt(track.albumArtUri, Modifier.size(48.dp), RoundedCornerShape(12.dp))
             Column(
                 modifier =
@@ -4860,8 +4880,8 @@ private fun GroupEditBottomBar(
     AnimatedVisibility(
         visible = visible,
         modifier = modifier,
-        enter = fadeIn(animationSpec = tween(180)),
-        exit = fadeOut(animationSpec = tween(180)),
+        enter = slideInVertically(animationSpec = tween(220)) { it } + fadeIn(animationSpec = tween(180)),
+        exit = slideOutVertically(animationSpec = tween(180)) { it } + fadeOut(animationSpec = tween(140)),
     ) {
         PlaylistEditBottomBar(
             hasSelection = selectedTracks.isNotEmpty(),
@@ -5057,15 +5077,9 @@ private fun EditablePlaylistRowWithDivider(
                     .fillMaxWidth()
                     .clickable(onClick = onToggle)
                     .padding(vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = onToggle, modifier = Modifier.size(42.dp)) {
-                Icon(
-                    if (selected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
-                    contentDescription = null,
-                    tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+            AnimatedSelectionIconButton(selected = selected, onClick = onToggle)
             AlbumArt(playlist.artwork, Modifier.size(52.dp), RoundedCornerShape(13.dp))
             Column(
                 modifier =
@@ -5095,6 +5109,7 @@ private fun EditablePlaylistRowWithDivider(
 @Composable
 private fun FavoriteGridCard(
     card: FavoriteCardItem,
+    selectionVisible: Boolean = false,
     selected: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
@@ -5132,17 +5147,26 @@ private fun FavoriteGridCard(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            if (selected) {
-                Icon(
-                    Icons.Default.CheckCircle,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier =
-                        Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(10.dp)
-                            .size(24.dp),
-                )
+            androidx.compose.animation.AnimatedVisibility(
+                visible = selectionVisible,
+                modifier =
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(8.dp),
+                enter = fadeIn(animationSpec = tween(160)) + expandHorizontally(animationSpec = tween(180), expandFrom = Alignment.End),
+                exit = fadeOut(animationSpec = tween(120)) + shrinkHorizontally(animationSpec = tween(140), shrinkTowards = Alignment.End),
+            ) {
+                Surface(shape = CircleShape, color = Color.Black.copy(alpha = 0.38f)) {
+                    Icon(
+                        if (selected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier =
+                            Modifier
+                                .padding(4.dp)
+                                .size(22.dp),
+                    )
+                }
             }
         }
         Text(card.title, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp), fontSize = 16.sp)
@@ -5161,6 +5185,7 @@ private fun ArtworkCard(
     title: String,
     subtitle: String,
     artwork: Uri?,
+    selectionVisible: Boolean = false,
     selected: Boolean = false,
     modifier: Modifier = Modifier,
     artworkModifier: Modifier = Modifier,
@@ -5185,19 +5210,23 @@ private fun ArtworkCard(
                 )
                 Text(title, color = Color.White, fontSize = 20.sp, textAlign = TextAlign.Center)
             }
-            if (selected) {
+            androidx.compose.animation.AnimatedVisibility(
+                visible = selectionVisible,
+                modifier =
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(8.dp),
+                enter = fadeIn(animationSpec = tween(160)) + expandHorizontally(animationSpec = tween(180), expandFrom = Alignment.End),
+                exit = fadeOut(animationSpec = tween(120)) + shrinkHorizontally(animationSpec = tween(140), shrinkTowards = Alignment.End),
+            ) {
                 Surface(
                     shape = CircleShape,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier =
-                        Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(8.dp),
+                    color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface.copy(alpha = 0.86f),
                 ) {
                     Icon(
-                        Icons.Default.CheckCircle,
+                        if (selected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onPrimary,
+                        tint = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,
                         modifier =
                             Modifier
                                 .padding(4.dp)
