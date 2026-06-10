@@ -1509,6 +1509,15 @@ fun MusicApp(
             viewModel.deleteTracksPermanently(uniqueTracks)
         }
     }
+    fun shareTrack(track: Track) {
+        val intent =
+            Intent(Intent.ACTION_SEND).apply {
+                type = "audio/*"
+                putExtra(Intent.EXTRA_STREAM, track.uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+        context.startActivity(Intent.createChooser(intent, null))
+    }
     val hidePlayerSheet = navigator.currentRoute == MainRoute.Settings || playlistEditMode
     var playerExpandRequest by rememberSaveable { mutableIntStateOf(0) }
 
@@ -1571,6 +1580,19 @@ fun MusicApp(
                     onExpandRequestConsumed = { playerExpandRequest = 0 },
                     onSettings = { navigator.navigate(MainRoute.Settings) },
                     onAddTo = { track -> navigator.navigate(MainRoute.AddToPlaylist(track.id)) },
+                    onDeleteTrack = { track -> requestPermanentDelete(listOf(track)) },
+                    onShareTrack = ::shareTrack,
+                    onAlbum = { track ->
+                        library.albums.firstOrNull { it.id == track.albumId }?.let { album ->
+                            navigator.navigate(MainRoute.Album(album.id))
+                        }
+                    },
+                    onArtist = { track ->
+                        library.artists.firstOrNull { it.name == track.artist }?.let { artist ->
+                            navigator.navigate(MainRoute.Artist(artist.name))
+                        }
+                    },
+                    onChannelOutput = { navigator.navigate(MainRoute.Settings) },
                     onToggleFavorite = { playerState.currentTrack?.id?.let(viewModel::toggleFavorite) },
                     onPlayPause = viewModel::togglePlayPause,
                     onPrevious = viewModel::previous,

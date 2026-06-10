@@ -56,6 +56,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -65,11 +66,13 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -78,6 +81,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -124,6 +128,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import me.ayra.music.BuildConfig
 import me.ayra.music.PlayerState
 import me.ayra.music.R
 import me.ayra.music.Track
@@ -155,6 +160,23 @@ private data class MiniPlayerAccent(
     val fullscreen: Color,
     val onFullscreen: Color,
 )
+
+private data class ChannelOutputOption(
+    val value: String,
+    val labelRes: Int,
+)
+
+private val playerChannelOutputOptions =
+    listOf(
+        ChannelOutputOption("Auto", R.string.channel_output_auto),
+        ChannelOutputOption("AllChannels", R.string.channel_output_all),
+        ChannelOutputOption("Channel1", R.string.channel_output_1),
+        ChannelOutputOption("Channel2", R.string.channel_output_2),
+        ChannelOutputOption("Channel3", R.string.channel_output_3),
+        ChannelOutputOption("Channel4", R.string.channel_output_4),
+        ChannelOutputOption("Stereo12", R.string.channel_output_stereo12),
+        ChannelOutputOption("Stereo34", R.string.channel_output_stereo34),
+    )
 
 private val artworkSeedColorCache =
     Collections.synchronizedMap(
@@ -220,6 +242,11 @@ fun PlayerSheet(
     onExpandRequestConsumed: () -> Unit = {},
     onSettings: () -> Unit,
     onAddTo: (Track) -> Unit,
+    onDeleteTrack: (Track) -> Unit,
+    onShareTrack: (Track) -> Unit,
+    onAlbum: (Track) -> Unit,
+    onArtist: (Track) -> Unit,
+    onChannelOutput: (Track) -> Unit,
     onToggleFavorite: () -> Unit,
     onPlayPause: () -> Unit,
     onPrevious: () -> Unit,
@@ -341,6 +368,29 @@ fun PlayerSheet(
                     onAddTo(track)
                 }
             },
+            onDeleteTrack = onDeleteTrack,
+            onShareTrack = onShareTrack,
+            onAlbum = { track ->
+                coroutineScope.launch {
+                    upperContent = PlayerUpperContent.Cover
+                    draggableState.animateTo(PlayerSheetAnchor.Collapsed)
+                    onAlbum(track)
+                }
+            },
+            onArtist = { track ->
+                coroutineScope.launch {
+                    upperContent = PlayerUpperContent.Cover
+                    draggableState.animateTo(PlayerSheetAnchor.Collapsed)
+                    onArtist(track)
+                }
+            },
+            onChannelOutput = { track ->
+                coroutineScope.launch {
+                    upperContent = PlayerUpperContent.Cover
+                    draggableState.animateTo(PlayerSheetAnchor.Collapsed)
+                    onChannelOutput(track)
+                }
+            },
             onToggleFavorite = onToggleFavorite,
             onLyrics = { upperContent = PlayerUpperContent.Lyrics },
             onExitUpperContent = { upperContent = PlayerUpperContent.Cover },
@@ -400,6 +450,11 @@ private fun PlayerSurface(
     onExpandPlaylist: () -> Unit,
     onSettings: () -> Unit,
     onAddTo: (Track) -> Unit,
+    onDeleteTrack: (Track) -> Unit,
+    onShareTrack: (Track) -> Unit,
+    onAlbum: (Track) -> Unit,
+    onArtist: (Track) -> Unit,
+    onChannelOutput: (Track) -> Unit,
     onToggleFavorite: () -> Unit,
     onLyrics: () -> Unit,
     onExitUpperContent: () -> Unit,
@@ -521,6 +576,11 @@ private fun PlayerSurface(
                     onMinimize = onMinimize,
                     onSettings = onSettings,
                     onAddTo = onAddTo,
+                    onDeleteTrack = onDeleteTrack,
+                    onShareTrack = onShareTrack,
+                    onAlbum = onAlbum,
+                    onArtist = onArtist,
+                    onChannelOutput = onChannelOutput,
                     onToggleFavorite = onToggleFavorite,
                     onLyrics = onLyrics,
                     onPlaylist = onExpandPlaylist,
@@ -573,6 +633,11 @@ private fun PlayerSurface(
                     onMinimize = onMinimize,
                     onSettings = onSettings,
                     onAddTo = onAddTo,
+                    onDeleteTrack = onDeleteTrack,
+                    onShareTrack = onShareTrack,
+                    onAlbum = onAlbum,
+                    onArtist = onArtist,
+                    onChannelOutput = onChannelOutput,
                     onToggleFavorite = onToggleFavorite,
                     onLyrics = onLyrics,
                     onPlaylist = onExpandPlaylist,
@@ -738,6 +803,11 @@ private fun ExpandedPlayerContent(
     onMinimize: () -> Unit,
     onSettings: () -> Unit,
     onAddTo: (Track) -> Unit,
+    onDeleteTrack: (Track) -> Unit,
+    onShareTrack: (Track) -> Unit,
+    onAlbum: (Track) -> Unit,
+    onArtist: (Track) -> Unit,
+    onChannelOutput: (Track) -> Unit,
     onToggleFavorite: () -> Unit,
     onLyrics: () -> Unit,
     onPlaylist: () -> Unit,
@@ -753,7 +823,47 @@ private fun ExpandedPlayerContent(
     modifier: Modifier = Modifier,
 ) {
     val track = playerState.currentTrack
+    val context = LocalContext.current
+    val preferences = remember(context) { MusicPreferences(context) }
     var menuExpanded by rememberSaveable { mutableStateOf(false) }
+    var confirmDelete by rememberSaveable { mutableStateOf(false) }
+    var channelDialog by rememberSaveable { mutableStateOf(false) }
+    var channelOutput by rememberSaveable { mutableStateOf(preferences.loadVgmChannelOutput()) }
+    val isVgmstreamTrack = track?.isVgmstreamTrack() == true
+
+    if (confirmDelete && track != null) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text(stringResource(R.string.delete_permanently)) },
+            text = { Text(stringResource(R.string.delete_tracks_confirm)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmDelete = false
+                        onDeleteTrack(track)
+                    },
+                ) {
+                    Text(stringResource(R.string.delete))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDelete = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
+    }
+    if (channelDialog) {
+        PlayerChannelOutputDialog(
+            selectedValue = channelOutput,
+            onDismiss = { channelDialog = false },
+            onSelect = {
+                channelOutput = it
+                preferences.saveVgmChannelOutput(it)
+                channelDialog = false
+            },
+        )
+    }
 
     Column(
         modifier =
@@ -817,6 +927,47 @@ private fun ExpandedPlayerContent(
                                     expanded = menuExpanded,
                                     onDismissRequest = { menuExpanded = false },
                                 ) {
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.delete)) },
+                                        enabled = track != null,
+                                        onClick = {
+                                            menuExpanded = false
+                                            confirmDelete = true
+                                        },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.share)) },
+                                        enabled = track != null,
+                                        onClick = {
+                                            menuExpanded = false
+                                            track?.let(onShareTrack)
+                                        },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.album)) },
+                                        enabled = track != null,
+                                        onClick = {
+                                            menuExpanded = false
+                                            track?.let(onAlbum)
+                                        },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.artist)) },
+                                        enabled = track != null,
+                                        onClick = {
+                                            menuExpanded = false
+                                            track?.let(onArtist)
+                                        },
+                                    )
+                                    if (isVgmstreamTrack) {
+                                        DropdownMenuItem(
+                                            text = { Text(stringResource(R.string.channel_output)) },
+                                            onClick = {
+                                                menuExpanded = false
+                                                channelDialog = true
+                                            },
+                                        )
+                                    }
                                     DropdownMenuItem(
                                         text = { Text(stringResource(R.string.settings)) },
                                         onClick = {
@@ -1274,6 +1425,59 @@ private fun formatDuration(valueMs: Long): String {
     val minutes = totalSeconds / 60
     val seconds = totalSeconds % 60
     return "%d:%02d".format(minutes, seconds)
+}
+
+private fun Track.isVgmstreamTrack(): Boolean =
+    BuildConfig.IS_VGM_BUILD && uri.scheme.equals("file", ignoreCase = true)
+
+@Composable
+private fun PlayerChannelOutputDialog(
+    selectedValue: String,
+    onDismiss: () -> Unit,
+    onSelect: (String) -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.channel_output)) },
+        text = {
+            Column {
+                playerChannelOutputOptions.forEach { option ->
+                    Row(
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { onSelect(option.value) }
+                                .padding(horizontal = 12.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        val selected = option.value == selectedValue
+                        Icon(
+                            if (selected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                            contentDescription = null,
+                            tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(24.dp),
+                        )
+                        Text(
+                            text = stringResource(option.labelRes),
+                            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                            modifier =
+                                Modifier
+                                    .weight(1f)
+                                    .padding(start = 14.dp),
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+    )
 }
 
 private suspend fun loadTrackSeedColor(

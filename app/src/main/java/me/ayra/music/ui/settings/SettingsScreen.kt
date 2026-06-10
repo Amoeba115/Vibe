@@ -148,7 +148,7 @@ private val channelOutputOptions =
 private val miniPlayerStyleOptions =
     listOf(
         OptionItem(MusicPreferences.MINI_PLAYER_STYLE_FLOATING, R.string.mini_player_style_floating),
-        OptionItem(MusicPreferences.MINI_PLAYER_STYLE_FILLED, R.string.mini_player_style_filled),
+        // OptionItem(MusicPreferences.MINI_PLAYER_STYLE_FILLED, R.string.mini_player_style_filled), // TODO: rework the style
     )
 
 @Composable
