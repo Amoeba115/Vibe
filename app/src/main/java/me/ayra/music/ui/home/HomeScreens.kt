@@ -36,6 +36,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -279,6 +280,7 @@ fun MainScreen(
     onReplacePlaylistTracks: (String, List<Track>) -> Unit,
     onRenamePlaylist: (String, String) -> Unit,
     onDeletePlaylists: (List<String>) -> Unit,
+    onDeleteTracksPermanently: (List<Track>) -> Unit,
     onAddTracksToRoute: (List<Track>) -> Unit,
     onPlaylistEditModeChanged: (Boolean) -> Unit,
     initialTabIndex: Int,
@@ -338,6 +340,7 @@ fun MainScreen(
                     onReplaceCurrentQueue = onReplaceCurrentQueue,
                     onRenamePlaylist = onRenamePlaylist,
                     onDeletePlaylists = onDeletePlaylists,
+                    onDeleteTracksPermanently = onDeleteTracksPermanently,
                     onAddTracksToRoute = onAddTracksToRoute,
                     onPlaylistEditModeChanged = onPlaylistEditModeChanged,
                     initialTabIndex = initialTabIndex,
@@ -386,6 +389,7 @@ fun MainScreen(
                         onReplacePlaylistTracks = onReplacePlaylistTracks,
                         onRenamePlaylist = onRenamePlaylist,
                         onDeletePlaylists = onDeletePlaylists,
+                        onDeleteTracksPermanently = onDeleteTracksPermanently,
                         onAddTracksToRoute = onAddTracksToRoute,
                         onPlaylistEditModeChanged = onPlaylistEditModeChanged,
                         modifier = Modifier.fillMaxSize(),
@@ -425,6 +429,7 @@ private fun DetailHost(
     onReplacePlaylistTracks: (String, List<Track>) -> Unit,
     onRenamePlaylist: (String, String) -> Unit,
     onDeletePlaylists: (List<String>) -> Unit,
+    onDeleteTracksPermanently: (List<Track>) -> Unit,
     onAddTracksToRoute: (List<Track>) -> Unit,
     onPlaylistEditModeChanged: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
@@ -675,6 +680,7 @@ private fun HomeScreen(
     onReplaceCurrentQueue: (List<Track>) -> Unit,
     onRenamePlaylist: (String, String) -> Unit,
     onDeletePlaylists: (List<String>) -> Unit,
+    onDeleteTracksPermanently: (List<Track>) -> Unit,
     onAddTracksToRoute: (List<Track>) -> Unit,
     onPlaylistEditModeChanged: (Boolean) -> Unit,
     initialTabIndex: Int,
@@ -691,7 +697,11 @@ private fun HomeScreen(
     val tabWidthPx = with(density) { HOME_TAB_WIDTH.roundToPx() }
     var menuExpanded by rememberSaveable { mutableStateOf(false) }
     var playlistEditMode by rememberSaveable { mutableStateOf(false) }
+    var contentEditMode by rememberSaveable { mutableStateOf(false) }
     var selectedPlaylistIds by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    var contentEditSelectedCount by rememberSaveable { mutableIntStateOf(0) }
+    var contentEditAllSelected by rememberSaveable { mutableStateOf(false) }
+    var contentEditSelectAllRequest by rememberSaveable { mutableIntStateOf(0) }
     val customPlaylists =
         remember(library.playlists) {
             library.playlists.filter { it.id.startsWith(CUSTOM_PLAYLIST_PREFIX) }
@@ -702,9 +712,22 @@ private fun HomeScreen(
         onTabSelected(pagerState.currentPage)
     }
 
-    LaunchedEffect(playlistEditMode) {
-        onPlaylistEditModeChanged(playlistEditMode)
+    val anyEditMode = playlistEditMode || contentEditMode
+    val editSelectedCount = if (playlistEditMode) selectedPlaylistIds.size else contentEditSelectedCount
+    val editAllSelected =
+        if (playlistEditMode) {
+            customPlaylists.isNotEmpty() && selectedPlaylistIds.size == customPlaylists.size
+        } else {
+            contentEditAllSelected
+        }
+
+    LaunchedEffect(anyEditMode) {
+        onPlaylistEditModeChanged(anyEditMode)
         if (!playlistEditMode) selectedPlaylistIds = emptyList()
+        if (!contentEditMode) {
+            contentEditSelectedCount = 0
+            contentEditAllSelected = false
+        }
     }
 
     LaunchedEffect(isPlaylistTab) {
@@ -742,7 +765,7 @@ private fun HomeScreen(
     }
 
     Column(modifier = modifier) {
-        if (playlistEditMode) {
+        if (anyEditMode) {
             Row(
                 modifier =
                     Modifier
@@ -752,17 +775,20 @@ private fun HomeScreen(
             ) {
                 TextButton(
                     onClick = {
-                        selectedPlaylistIds =
-                            if (selectedPlaylistIds.size == customPlaylists.size) {
-                                emptyList()
-                            } else {
-                                customPlaylists.map { it.id }
-                            }
+                        if (playlistEditMode) {
+                            selectedPlaylistIds =
+                                if (editAllSelected) {
+                                    emptyList()
+                                } else {
+                                    customPlaylists.map { it.id }
+                                }
+                        } else {
+                            contentEditSelectAllRequest += 1
+                        }
                     },
                 ) {
-                    val allSelected = selectedPlaylistIds.size == customPlaylists.size
                     Icon(
-                        if (allSelected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                        if (editAllSelected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.padding(end = 8.dp),
@@ -770,10 +796,10 @@ private fun HomeScreen(
                 }
                 Text(
                     text =
-                        if (selectedPlaylistIds.isNotEmpty()) {
-                            stringResource(R.string.selected_count_plain, selectedPlaylistIds.size)
+                        if (editSelectedCount > 0) {
+                            stringResource(R.string.selected_count_plain, editSelectedCount)
                         } else {
-                            stringResource(R.string.select_playlist)
+                            stringResource(if (playlistEditMode) R.string.select_playlist else R.string.select_track)
                         },
                     color = MaterialTheme.colorScheme.primary,
                     fontSize = 18.sp,
@@ -849,7 +875,7 @@ private fun HomeScreen(
             tabs = tabs,
             pagerState = pagerState,
             listState = tabListState,
-            enabled = !playlistEditMode,
+            enabled = !anyEditMode,
             onTabClick = { index ->
                 onTabSelected(index)
                 coroutineScope.launch { pagerState.animateScrollToPage(index) }
@@ -873,7 +899,7 @@ private fun HomeScreen(
                 HorizontalPager(
                     state = pagerState,
                     modifier = Modifier.fillMaxSize(),
-                    userScrollEnabled = !playlistEditMode,
+                    userScrollEnabled = !anyEditMode,
                 ) { page ->
                     when (tabs[page]) {
                         HomeTab.Favorite -> {
@@ -884,6 +910,15 @@ private fun HomeScreen(
                                 onAlbumClick = onAlbumClick,
                                 onFolderClick = onFolderClick,
                                 onPlaylistClick = onPlaylistClick,
+                                onReplaceCurrentQueue = onReplaceCurrentQueue,
+                                onAddTracksToRoute = onAddTracksToRoute,
+                                onToggleFavoriteItem = onToggleFavoriteItem,
+                                onEditModeChanged = { contentEditMode = it },
+                                selectAllRequest = contentEditSelectAllRequest,
+                                onEditSelectionChanged = { count, allSelected ->
+                                    contentEditSelectedCount = count
+                                    contentEditAllSelected = allSelected
+                                },
                             )
                         }
 
@@ -912,7 +947,19 @@ private fun HomeScreen(
                         }
 
                         HomeTab.Track -> {
-                            TrackTab(library, onTrackClick)
+                            TrackTab(
+                                library = library,
+                                onTrackClick = onTrackClick,
+                                onReplaceCurrentQueue = onReplaceCurrentQueue,
+                                onAddTracksToRoute = onAddTracksToRoute,
+                                onDeleteTracksPermanently = onDeleteTracksPermanently,
+                                onEditModeChanged = { contentEditMode = it },
+                                selectAllRequest = contentEditSelectAllRequest,
+                                onEditSelectionChanged = { count, allSelected ->
+                                    contentEditSelectedCount = count
+                                    contentEditAllSelected = allSelected
+                                },
+                            )
                         }
 
                         HomeTab.Album -> {
@@ -921,15 +968,48 @@ private fun HomeScreen(
                                 sharedTransitionScope = sharedTransitionScope,
                                 animatedVisibilityScope = animatedVisibilityScope,
                                 onAlbumClick = onAlbumClick,
+                                onReplaceCurrentQueue = onReplaceCurrentQueue,
+                                onAddTracksToRoute = onAddTracksToRoute,
+                                onDeleteTracksPermanently = onDeleteTracksPermanently,
+                                onEditModeChanged = { contentEditMode = it },
+                                selectAllRequest = contentEditSelectAllRequest,
+                                onEditSelectionChanged = { count, allSelected ->
+                                    contentEditSelectedCount = count
+                                    contentEditAllSelected = allSelected
+                                },
                             )
                         }
 
                         HomeTab.Artist -> {
-                            ArtistTab(library, onArtistClick)
+                            ArtistTab(
+                                library = library,
+                                onArtistClick = onArtistClick,
+                                onReplaceCurrentQueue = onReplaceCurrentQueue,
+                                onAddTracksToRoute = onAddTracksToRoute,
+                                onDeleteTracksPermanently = onDeleteTracksPermanently,
+                                onEditModeChanged = { contentEditMode = it },
+                                selectAllRequest = contentEditSelectAllRequest,
+                                onEditSelectionChanged = { count, allSelected ->
+                                    contentEditSelectedCount = count
+                                    contentEditAllSelected = allSelected
+                                },
+                            )
                         }
 
                         HomeTab.Folder -> {
-                            FolderTab(library, onFolderClick)
+                            FolderTab(
+                                library = library,
+                                onFolderClick = onFolderClick,
+                                onReplaceCurrentQueue = onReplaceCurrentQueue,
+                                onAddTracksToRoute = onAddTracksToRoute,
+                                onDeleteTracksPermanently = onDeleteTracksPermanently,
+                                onEditModeChanged = { contentEditMode = it },
+                                selectAllRequest = contentEditSelectAllRequest,
+                                onEditSelectionChanged = { count, allSelected ->
+                                    contentEditSelectedCount = count
+                                    contentEditAllSelected = allSelected
+                                },
+                            )
                         }
                     }
                 }
@@ -1454,43 +1534,126 @@ private fun FavoriteTab(
     onAlbumClick: (AlbumGroup) -> Unit,
     onFolderClick: (FolderGroup) -> Unit,
     onPlaylistClick: (PlaylistGroup) -> Unit,
+    onReplaceCurrentQueue: (List<Track>) -> Unit,
+    onAddTracksToRoute: (List<Track>) -> Unit,
+    onToggleFavoriteItem: (String, String) -> Unit,
+    onEditModeChanged: (Boolean) -> Unit,
+    selectAllRequest: Int,
+    onEditSelectionChanged: (Int, Boolean) -> Unit,
 ) {
+    val context = LocalContext.current
+    var editMode by rememberSaveable { mutableStateOf(false) }
+    var selectedKeys by rememberSaveable { mutableStateOf(emptyList<String>()) }
     val favoriteCards =
         remember(library.favoriteItems, library.favoriteTracks, library.artists, library.albums, library.folders, library.playlists) {
             library.favoriteCards()
         }
+    val selectedCards =
+        remember(favoriteCards, selectedKeys) {
+            val selected = selectedKeys.toSet()
+            favoriteCards.filter { it.selectionKey in selected }
+        }
+    val selectedTracks = remember(selectedCards) { selectedCards.flatMap { it.tracks }.distinctBy { it.id } }
+    val canDeleteFavorites = selectedCards.any { it.type != FavoriteType.Track }
+    LaunchedEffect(editMode) {
+        onEditModeChanged(editMode)
+        if (!editMode) selectedKeys = emptyList()
+    }
+    LaunchedEffect(editMode, selectedKeys, favoriteCards) {
+        onEditSelectionChanged(
+            if (editMode) selectedKeys.size else 0,
+            editMode && favoriteCards.isNotEmpty() && selectedKeys.size == favoriteCards.size,
+        )
+    }
+    LaunchedEffect(selectAllRequest) {
+        if (editMode && selectAllRequest > 0) {
+            selectedKeys =
+                if (selectedKeys.size == favoriteCards.size) {
+                    emptyList()
+                } else {
+                    favoriteCards.map { it.selectionKey }
+                }
+        }
+    }
+    BackHandler(enabled = editMode) {
+        editMode = false
+    }
     if (favoriteCards.isEmpty()) {
         EmptyPanel(stringResource(R.string.favorite_empty))
         return
     }
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(2),
-        modifier =
-            Modifier
-                .fillMaxSize()
-                .padding(top = 14.dp)
-                .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-                .background(MaterialTheme.colorScheme.surfaceContainer),
-        contentPadding = PaddingValues(start = 20.dp, top = 18.dp, end = 20.dp, bottom = 116.dp),
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp),
-    ) {
-        item(span = { GridItemSpan(maxLineSpan) }) { SortHeader("Favorite date") }
-        items(favoriteCards, key = { "${it.type}:${it.key}" }) { card ->
-            FavoriteGridCard(
-                card = card,
-                modifier =
-                    Modifier
-                        .animateItem()
-                        .clickable {
-                            when (card.type) {
-                                FavoriteType.Track -> card.tracks.firstOrNull()?.let { onTrackClick(it, card.tracks) }
-                                FavoriteType.Artist -> card.artist?.let(onArtistClick)
-                                FavoriteType.Folder -> card.folder?.let(onFolderClick)
-                                FavoriteType.Album -> card.album?.let(onAlbumClick)
-                                FavoriteType.Playlist -> card.playlist?.let(onPlaylistClick)
-                            }
-                        },
+    Box(modifier = Modifier.fillMaxSize()) {
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(2),
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .padding(top = 14.dp)
+                    .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainer),
+            contentPadding = PaddingValues(start = 20.dp, top = 18.dp, end = 20.dp, bottom = if (editMode) 128.dp else 116.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
+        ) {
+            item(span = { GridItemSpan(maxLineSpan) }) { SortHeader("Favorite date") }
+            items(favoriteCards, key = { it.selectionKey }) { card ->
+                FavoriteGridCard(
+                    card = card,
+                    selected = card.selectionKey in selectedKeys,
+                    modifier =
+                        Modifier
+                            .animateItem()
+                            .combinedClickable(
+                                onClick = {
+                                    if (editMode) {
+                                        selectedKeys =
+                                            if (card.selectionKey in selectedKeys) selectedKeys - card.selectionKey else selectedKeys + card.selectionKey
+                                    } else {
+                                        when (card.type) {
+                                            FavoriteType.Track -> card.playlist?.let(onPlaylistClick)
+                                            FavoriteType.Artist -> card.artist?.let(onArtistClick)
+                                            FavoriteType.Folder -> card.folder?.let(onFolderClick)
+                                            FavoriteType.Album -> card.album?.let(onAlbumClick)
+                                            FavoriteType.Playlist -> card.playlist?.let(onPlaylistClick)
+                                        }
+                                    }
+                                },
+                                onLongClick = {
+                                    editMode = true
+                                    selectedKeys = listOf(card.selectionKey)
+                                },
+                            ),
+                )
+            }
+        }
+        AnimatedVisibility(
+            visible = editMode,
+            modifier = Modifier.align(Alignment.BottomCenter),
+            enter = fadeIn(animationSpec = tween(180)),
+            exit = fadeOut(animationSpec = tween(180)),
+        ) {
+            PlaylistEditBottomBar(
+                hasSelection = selectedCards.isNotEmpty(),
+                deleteEnabled = canDeleteFavorites,
+                onPlay = {
+                    if (selectedTracks.isNotEmpty()) {
+                        onReplaceCurrentQueue(selectedTracks)
+                        editMode = false
+                    }
+                },
+                onAdd = {
+                    if (selectedTracks.isNotEmpty()) {
+                        onAddTracksToRoute(selectedTracks)
+                        editMode = false
+                    }
+                },
+                onShare = { shareTracks(context, selectedTracks) },
+                onDelete = {
+                    selectedCards.filterNot { it.type == FavoriteType.Track }.forEach {
+                        onToggleFavoriteItem(it.type, it.key)
+                    }
+                    editMode = false
+                },
             )
         }
     }
@@ -2597,6 +2760,9 @@ private data class FavoriteCardItem(
     val addedAt: Long,
 )
 
+private val FavoriteCardItem.selectionKey: String
+    get() = "$type:$key"
+
 private fun LibraryState.favoriteCards(): List<FavoriteCardItem> {
     val cards = mutableListOf<FavoriteCardItem>()
     val trackAddedAt =
@@ -2604,14 +2770,22 @@ private fun LibraryState.favoriteCards(): List<FavoriteCardItem> {
             .filter { it.type == FavoriteType.Track }
             .maxOfOrNull { it.addedAt }
     if (favoriteTracks.isNotEmpty()) {
+        val favoriteTrackPlaylist =
+            PlaylistGroup(
+                id = PLAYLIST_FAVORITE_TRACK,
+                title = "Favorite track",
+                tracks = favoriteTracks,
+                artwork = favoriteTracks.firstOrNull()?.albumArtUri,
+            )
         cards +=
             FavoriteCardItem(
                 type = FavoriteType.Track,
                 key = "favorite-tracks",
-                title = "Favorite track",
-                subtitle = "${favoriteTracks.size} tracks",
-                artwork = favoriteTracks.firstOrNull()?.albumArtUri,
-                tracks = favoriteTracks,
+                title = favoriteTrackPlaylist.title,
+                subtitle = "${favoriteTrackPlaylist.tracks.size} tracks",
+                artwork = favoriteTrackPlaylist.artwork,
+                tracks = favoriteTrackPlaylist.tracks,
+                playlist = favoriteTrackPlaylist,
                 addedAt = trackAddedAt ?: 0L,
             )
     }
@@ -2757,38 +2931,117 @@ private fun LibraryState.customPlaylistComparator(sort: PlaylistListSort): Compa
 private fun TrackTab(
     library: LibraryState,
     onTrackClick: (Track, List<Track>) -> Unit,
+    onReplaceCurrentQueue: (List<Track>) -> Unit,
+    onAddTracksToRoute: (List<Track>) -> Unit,
+    onDeleteTracksPermanently: (List<Track>) -> Unit,
+    onEditModeChanged: (Boolean) -> Unit,
+    selectAllRequest: Int,
+    onEditSelectionChanged: (Int, Boolean) -> Unit,
 ) {
     val listState = rememberLazyListState()
     val preferences = rememberSortPreferences()
+    var editMode by rememberSaveable { mutableStateOf(false) }
+    var selectedIds by rememberSaveable { mutableStateOf(emptyList<Long>()) }
+    var confirmDelete by rememberSaveable { mutableStateOf(false) }
     var sort by rememberSaveable {
         mutableStateOf(preferences.loadEnumSort(SORT_TRACK, TrackSort.Name, TrackSort.entries))
     }
     val tracks = remember(library.tracks, sort) { library.tracks.sortedBy(sort) }
+    val selectedTracks = remember(tracks, selectedIds) { tracks.filter { it.id in selectedIds.toSet() } }
+    LaunchedEffect(editMode) {
+        onEditModeChanged(editMode)
+        if (!editMode) selectedIds = emptyList()
+    }
+    LaunchedEffect(editMode, selectedIds, tracks) {
+        onEditSelectionChanged(
+            if (editMode) selectedIds.size else 0,
+            editMode && tracks.isNotEmpty() && selectedIds.size == tracks.size,
+        )
+    }
+    LaunchedEffect(selectAllRequest) {
+        if (editMode && selectAllRequest > 0) {
+            selectedIds =
+                if (selectedIds.size == tracks.size) {
+                    emptyList()
+                } else {
+                    tracks.map { it.id }
+                }
+        }
+    }
+    BackHandler(enabled = editMode) {
+        editMode = false
+    }
+    if (confirmDelete) {
+        ConfirmPermanentDeleteDialog(
+            onConfirm = {
+                confirmDelete = false
+                onDeleteTracksPermanently(selectedTracks)
+                editMode = false
+            },
+            onDismiss = { confirmDelete = false },
+        )
+    }
     val alphabetIndexes =
         remember(tracks, sort) {
             if (sort == TrackSort.Name) tracks.alphabetIndexes(positionOffset = 1) { it.title } else emptyList()
         }
-    IndexedListWithRail(listState = listState, alphabetIndexes = alphabetIndexes) {
-        item {
-            SortHeader(
-                label = sort.label,
-                options = TrackSort.entries.map { it.label },
-                onOptionSelected = { label ->
-                    TrackSort.entries.firstOrNull { it.label == label }?.let {
-                        sort = it
-                        preferences.saveSort(SORT_TRACK, it.name)
-                    }
+    Box(modifier = Modifier.fillMaxSize()) {
+        IndexedListWithRail(listState = listState, alphabetIndexes = alphabetIndexes) {
+            item {
+                SortHeader(
+                    label = sort.label,
+                    options = TrackSort.entries.map { it.label },
+                    onOptionSelected = { label ->
+                        TrackSort.entries.firstOrNull { it.label == label }?.let {
+                            sort = it
+                            preferences.saveSort(SORT_TRACK, it.name)
+                        }
+                    },
+                )
+            }
+            items(tracks, key = { it.id }) { track ->
+                if (editMode) {
+                    SelectableTrackRow(
+                        track = track,
+                        selected = track.id in selectedIds,
+                        onClick = { selectedIds = if (track.id in selectedIds) selectedIds - track.id else selectedIds + track.id },
+                        modifier = Modifier.animateItem(),
+                    )
+                } else {
+                    TrackRow(
+                        track = track,
+                        onClick = { onTrackClick(track, tracks) },
+                        onLongClick = {
+                            editMode = true
+                            selectedIds = listOf(track.id)
+                        },
+                        modifier = Modifier.animateItem(),
+                    )
+                }
+            }
+            if (tracks.isEmpty()) item { EmptyInline(stringResource(R.string.no_tracks_found)) }
+        }
+        AnimatedVisibility(
+            visible = editMode,
+            modifier = Modifier.align(Alignment.BottomCenter),
+            enter = fadeIn(animationSpec = tween(180)),
+            exit = fadeOut(animationSpec = tween(180)),
+        ) {
+            PlaylistEditBottomBar(
+                hasSelection = selectedTracks.isNotEmpty(),
+                showShare = false,
+                onPlay = {
+                    onReplaceCurrentQueue(selectedTracks)
+                    editMode = false
                 },
+                onAdd = {
+                    onAddTracksToRoute(selectedTracks)
+                    editMode = false
+                },
+                onShare = {},
+                onDelete = { confirmDelete = true },
             )
         }
-        items(tracks, key = { it.id }) { track ->
-            TrackRow(
-                track = track,
-                onClick = { onTrackClick(track, tracks) },
-                modifier = Modifier.animateItem(),
-            )
-        }
-        if (tracks.isEmpty()) item { EmptyInline(stringResource(R.string.no_tracks_found)) }
     }
 }
 
@@ -2798,46 +3051,112 @@ private fun AlbumTab(
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
     onAlbumClick: (AlbumGroup) -> Unit,
+    onReplaceCurrentQueue: (List<Track>) -> Unit,
+    onAddTracksToRoute: (List<Track>) -> Unit,
+    onDeleteTracksPermanently: (List<Track>) -> Unit,
+    onEditModeChanged: (Boolean) -> Unit,
+    selectAllRequest: Int,
+    onEditSelectionChanged: (Int, Boolean) -> Unit,
 ) {
     val preferences = rememberSortPreferences()
+    var editMode by rememberSaveable { mutableStateOf(false) }
+    var selectedIds by rememberSaveable { mutableStateOf(emptyList<Long>()) }
+    var confirmDelete by rememberSaveable { mutableStateOf(false) }
     var sort by rememberSaveable {
         mutableStateOf(preferences.loadEnumSort(SORT_ALBUM, AlbumSort.Release, AlbumSort.entries))
     }
     val albums = remember(library.albums, sort) { library.albums.sortedBy(sort) }
-    RoundedGridPanel {
-        item(span = { GridItemSpan(maxLineSpan) }) {
-            SortHeader(
-                label = sort.label,
-                options = AlbumSort.entries.map { it.label },
-                onOptionSelected = { label ->
-                    AlbumSort.entries.firstOrNull { it.label == label }?.let {
-                        sort = it
-                        preferences.saveSort(SORT_ALBUM, it.name)
-                    }
-                },
-            )
+    val selectedAlbums = remember(albums, selectedIds) { albums.filter { it.id in selectedIds.toSet() } }
+    val selectedTracks = remember(selectedAlbums) { selectedAlbums.flatMap { it.tracks }.distinctBy { it.id } }
+    LaunchedEffect(editMode) {
+        onEditModeChanged(editMode)
+        if (!editMode) selectedIds = emptyList()
+    }
+    LaunchedEffect(editMode, selectedIds, albums) {
+        onEditSelectionChanged(
+            if (editMode) selectedIds.size else 0,
+            editMode && albums.isNotEmpty() && selectedIds.size == albums.size,
+        )
+    }
+    LaunchedEffect(selectAllRequest) {
+        if (editMode && selectAllRequest > 0) {
+            selectedIds =
+                if (selectedIds.size == albums.size) {
+                    emptyList()
+                } else {
+                    albums.map { it.id }
+                }
         }
-        items(albums, key = { it.id }) { album ->
-            ArtworkCard(
-                title = album.title,
-                subtitle = "${album.artist} | ${album.tracks.size} tracks",
-                artwork = album.tracks.firstOrNull()?.albumArtUri,
-                artworkModifier =
-                    with(sharedTransitionScope) {
-                        Modifier.sharedElement(
-                            rememberSharedContentState(albumSharedKey(album.id)),
-                            animatedVisibilityScope,
-                        )
+    }
+    BackHandler(enabled = editMode) { editMode = false }
+    if (confirmDelete) {
+        ConfirmPermanentDeleteDialog(
+            onConfirm = {
+                confirmDelete = false
+                onDeleteTracksPermanently(selectedTracks)
+                editMode = false
+            },
+            onDismiss = { confirmDelete = false },
+        )
+    }
+    Box(modifier = Modifier.fillMaxSize()) {
+        RoundedGridPanel(bottomPadding = if (editMode) 128.dp else MINI_PLAYER_RESERVED_BOTTOM) {
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                SortHeader(
+                    label = sort.label,
+                    options = AlbumSort.entries.map { it.label },
+                    onOptionSelected = { label ->
+                        AlbumSort.entries.firstOrNull { it.label == label }?.let {
+                            sort = it
+                            preferences.saveSort(SORT_ALBUM, it.name)
+                        }
                     },
-                modifier =
-                    Modifier
-                        .animateItem()
-                        .clickable { onAlbumClick(album) },
-            )
+                )
+            }
+            items(albums, key = { it.id }) { album ->
+                ArtworkCard(
+                    title = album.title,
+                    subtitle = "${album.artist} | ${album.tracks.size} tracks",
+                    artwork = album.tracks.firstOrNull()?.albumArtUri,
+                    selected = editMode && album.id in selectedIds,
+                    artworkModifier =
+                        with(sharedTransitionScope) {
+                            Modifier.sharedElement(
+                                rememberSharedContentState(albumSharedKey(album.id)),
+                                animatedVisibilityScope,
+                            )
+                        },
+                    modifier =
+                        Modifier
+                            .animateItem()
+                            .combinedClickable(
+                                onClick = {
+                                    if (editMode) {
+                                        selectedIds = if (album.id in selectedIds) selectedIds - album.id else selectedIds + album.id
+                                    } else {
+                                        onAlbumClick(album)
+                                    }
+                                },
+                                onLongClick = {
+                                    editMode = true
+                                    selectedIds = listOf(album.id)
+                                },
+                            ),
+                )
+            }
+            if (albums.isEmpty()) {
+                item(span = { GridItemSpan(maxLineSpan) }) { EmptyInline(stringResource(R.string.no_albums_found)) }
+            }
         }
-        if (albums.isEmpty()) {
-            item(span = { GridItemSpan(maxLineSpan) }) { EmptyInline(stringResource(R.string.no_albums_found)) }
-        }
+        GroupEditBottomBar(
+            visible = editMode,
+            selectedTracks = selectedTracks,
+            onReplaceCurrentQueue = onReplaceCurrentQueue,
+            onAddTracksToRoute = onAddTracksToRoute,
+            onDelete = { confirmDelete = true },
+            onExit = { editMode = false },
+            modifier = Modifier.align(Alignment.BottomCenter),
+        )
     }
 }
 
@@ -3213,40 +3532,108 @@ private fun AlbumTrackListActions(
 private fun ArtistTab(
     library: LibraryState,
     onArtistClick: (ArtistGroup) -> Unit,
+    onReplaceCurrentQueue: (List<Track>) -> Unit,
+    onAddTracksToRoute: (List<Track>) -> Unit,
+    onDeleteTracksPermanently: (List<Track>) -> Unit,
+    onEditModeChanged: (Boolean) -> Unit,
+    selectAllRequest: Int,
+    onEditSelectionChanged: (Int, Boolean) -> Unit,
 ) {
     val listState = rememberLazyListState()
     val preferences = rememberSortPreferences()
+    var editMode by rememberSaveable { mutableStateOf(false) }
+    var selectedNames by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    var confirmDelete by rememberSaveable { mutableStateOf(false) }
     var sort by rememberSaveable {
         mutableStateOf(preferences.loadEnumSort(SORT_ARTIST, ArtistSort.Name, ArtistSort.entries))
     }
     val artists = remember(library.artists, sort) { library.artists.sortedBy(sort) }
+    val selectedArtists = remember(artists, selectedNames) { artists.filter { it.name in selectedNames.toSet() } }
+    val selectedTracks = remember(selectedArtists) { selectedArtists.flatMap { it.tracks }.distinctBy { it.id } }
+    LaunchedEffect(editMode) {
+        onEditModeChanged(editMode)
+        if (!editMode) selectedNames = emptyList()
+    }
+    LaunchedEffect(editMode, selectedNames, artists) {
+        onEditSelectionChanged(
+            if (editMode) selectedNames.size else 0,
+            editMode && artists.isNotEmpty() && selectedNames.size == artists.size,
+        )
+    }
+    LaunchedEffect(selectAllRequest) {
+        if (editMode && selectAllRequest > 0) {
+            selectedNames =
+                if (selectedNames.size == artists.size) {
+                    emptyList()
+                } else {
+                    artists.map { it.name }
+                }
+        }
+    }
+    BackHandler(enabled = editMode) { editMode = false }
+    if (confirmDelete) {
+        ConfirmPermanentDeleteDialog(
+            onConfirm = {
+                confirmDelete = false
+                onDeleteTracksPermanently(selectedTracks)
+                editMode = false
+            },
+            onDismiss = { confirmDelete = false },
+        )
+    }
     val alphabetIndexes =
         remember(artists, sort) {
             if (sort == ArtistSort.Name) artists.alphabetIndexes(positionOffset = 1) { it.name } else emptyList()
         }
-    IndexedListWithRail(listState = listState, alphabetIndexes = alphabetIndexes) {
-        item {
-            SortHeader(
-                label = sort.label,
-                options = ArtistSort.entries.map { it.label },
-                onOptionSelected = { label ->
-                    ArtistSort.entries.firstOrNull { it.label == label }?.let {
-                        sort = it
-                        preferences.saveSort(SORT_ARTIST, it.name)
-                    }
-                },
-            )
+    Box(modifier = Modifier.fillMaxSize()) {
+        IndexedListWithRail(listState = listState, alphabetIndexes = alphabetIndexes) {
+            item {
+                SortHeader(
+                    label = sort.label,
+                    options = ArtistSort.entries.map { it.label },
+                    onOptionSelected = { label ->
+                        ArtistSort.entries.firstOrNull { it.label == label }?.let {
+                            sort = it
+                            preferences.saveSort(SORT_ARTIST, it.name)
+                        }
+                    },
+                )
+            }
+            items(artists, key = { it.name }) { artist ->
+                if (editMode) {
+                    SelectableMediaGroupRow(
+                        artwork = artist.tracks.firstOrNull()?.albumArtUri,
+                        title = artist.name,
+                        subtitle = "${artist.albums} albums | ${artist.tracks.size} tracks",
+                        selected = artist.name in selectedNames,
+                        onClick = { selectedNames = if (artist.name in selectedNames) selectedNames - artist.name else selectedNames + artist.name },
+                        modifier = Modifier.animateItem(),
+                    )
+                } else {
+                    MediaGroupRow(
+                        artwork = artist.tracks.firstOrNull()?.albumArtUri,
+                        title = artist.name,
+                        subtitle = "${artist.albums} albums | ${artist.tracks.size} tracks",
+                        onClick = { onArtistClick(artist) },
+                        onLongClick = {
+                            editMode = true
+                            selectedNames = listOf(artist.name)
+                        },
+                        modifier = Modifier.animateItem(),
+                    )
+                }
+            }
+            if (artists.isEmpty()) item { EmptyInline(stringResource(R.string.no_artists_found)) }
         }
-        items(artists, key = { it.name }) { artist ->
-            MediaGroupRow(
-                artwork = artist.tracks.firstOrNull()?.albumArtUri,
-                title = artist.name,
-                subtitle = "${artist.albums} albums | ${artist.tracks.size} tracks",
-                onClick = { onArtistClick(artist) },
-                modifier = Modifier.animateItem(),
-            )
-        }
-        if (artists.isEmpty()) item { EmptyInline(stringResource(R.string.no_artists_found)) }
+        GroupEditBottomBar(
+            visible = editMode,
+            selectedTracks = selectedTracks,
+            onReplaceCurrentQueue = onReplaceCurrentQueue,
+            onAddTracksToRoute = onAddTracksToRoute,
+            onDelete = { confirmDelete = true },
+            onExit = { editMode = false },
+            modifier = Modifier.align(Alignment.BottomCenter),
+        )
     }
 }
 
@@ -3545,41 +3932,110 @@ private fun ArtistAlbumTab(
 private fun FolderTab(
     library: LibraryState,
     onFolderClick: (FolderGroup) -> Unit,
+    onReplaceCurrentQueue: (List<Track>) -> Unit,
+    onAddTracksToRoute: (List<Track>) -> Unit,
+    onDeleteTracksPermanently: (List<Track>) -> Unit,
+    onEditModeChanged: (Boolean) -> Unit,
+    selectAllRequest: Int,
+    onEditSelectionChanged: (Int, Boolean) -> Unit,
 ) {
     val listState = rememberLazyListState()
     val preferences = rememberSortPreferences()
+    var editMode by rememberSaveable { mutableStateOf(false) }
+    var selectedPaths by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    var confirmDelete by rememberSaveable { mutableStateOf(false) }
     var sort by rememberSaveable {
         mutableStateOf(preferences.loadEnumSort(SORT_FOLDER, FolderSort.Name, FolderSort.entries))
     }
     val folders = remember(library.folders, sort) { library.folders.sortedBy(sort) }
+    val selectedFolders = remember(folders, selectedPaths) { folders.filter { it.path in selectedPaths.toSet() } }
+    val selectedTracks = remember(selectedFolders) { selectedFolders.flatMap { it.tracks }.distinctBy { it.id } }
+    LaunchedEffect(editMode) {
+        onEditModeChanged(editMode)
+        if (!editMode) selectedPaths = emptyList()
+    }
+    LaunchedEffect(editMode, selectedPaths, folders) {
+        onEditSelectionChanged(
+            if (editMode) selectedPaths.size else 0,
+            editMode && folders.isNotEmpty() && selectedPaths.size == folders.size,
+        )
+    }
+    LaunchedEffect(selectAllRequest) {
+        if (editMode && selectAllRequest > 0) {
+            selectedPaths =
+                if (selectedPaths.size == folders.size) {
+                    emptyList()
+                } else {
+                    folders.map { it.path }
+                }
+        }
+    }
+    BackHandler(enabled = editMode) { editMode = false }
+    if (confirmDelete) {
+        ConfirmPermanentDeleteDialog(
+            onConfirm = {
+                confirmDelete = false
+                onDeleteTracksPermanently(selectedTracks)
+                editMode = false
+            },
+            onDismiss = { confirmDelete = false },
+        )
+    }
     val alphabetIndexes =
         remember(folders, sort) {
             if (sort == FolderSort.Name) folders.alphabetIndexes(positionOffset = 1) { it.name } else emptyList()
         }
-    IndexedListWithRail(listState = listState, alphabetIndexes = alphabetIndexes) {
-        item {
-            SortHeader(
-                label = sort.label,
-                options = FolderSort.entries.map { it.label },
-                onOptionSelected = { label ->
-                    FolderSort.entries.firstOrNull { it.label == label }?.let {
-                        sort = it
-                        preferences.saveSort(SORT_FOLDER, it.name)
-                    }
-                },
-            )
+    Box(modifier = Modifier.fillMaxSize()) {
+        IndexedListWithRail(listState = listState, alphabetIndexes = alphabetIndexes) {
+            item {
+                SortHeader(
+                    label = sort.label,
+                    options = FolderSort.entries.map { it.label },
+                    onOptionSelected = { label ->
+                        FolderSort.entries.firstOrNull { it.label == label }?.let {
+                            sort = it
+                            preferences.saveSort(SORT_FOLDER, it.name)
+                        }
+                    },
+                )
+            }
+            items(folders, key = { it.path }) { folder ->
+                if (editMode) {
+                    SelectableMediaGroupRow(
+                        artwork = folder.tracks.firstOrNull()?.albumArtUri,
+                        title = folder.name,
+                        subtitle = folder.path,
+                        folder = true,
+                        selected = folder.path in selectedPaths,
+                        onClick = { selectedPaths = if (folder.path in selectedPaths) selectedPaths - folder.path else selectedPaths + folder.path },
+                        modifier = Modifier.animateItem(),
+                    )
+                } else {
+                    MediaGroupRow(
+                        artwork = folder.tracks.firstOrNull()?.albumArtUri,
+                        title = folder.name,
+                        subtitle = folder.path,
+                        folder = true,
+                        onClick = { onFolderClick(folder) },
+                        onLongClick = {
+                            editMode = true
+                            selectedPaths = listOf(folder.path)
+                        },
+                        modifier = Modifier.animateItem(),
+                    )
+                }
+            }
+            if (folders.isEmpty()) item { EmptyInline(stringResource(R.string.no_folders_found)) }
         }
-        items(folders, key = { it.path }) { folder ->
-            MediaGroupRow(
-                artwork = folder.tracks.firstOrNull()?.albumArtUri,
-                title = folder.name,
-                subtitle = folder.path,
-                folder = true,
-                onClick = { onFolderClick(folder) },
-                modifier = Modifier.animateItem(),
-            )
-        }
-        if (folders.isEmpty()) item { EmptyInline("No folders found") }
+        GroupEditBottomBar(
+            visible = editMode,
+            selectedTracks = selectedTracks,
+            onReplaceCurrentQueue = onReplaceCurrentQueue,
+            onAddTracksToRoute = onAddTracksToRoute,
+            onDelete = { confirmDelete = true },
+            onExit = { editMode = false },
+            modifier = Modifier.align(Alignment.BottomCenter),
+        )
     }
 }
 
@@ -3715,7 +4171,10 @@ private fun RoundedPanelList(
 }
 
 @Composable
-private fun RoundedGridPanel(content: LazyGridScope.() -> Unit) {
+private fun RoundedGridPanel(
+    bottomPadding: Dp = MINI_PLAYER_RESERVED_BOTTOM,
+    content: LazyGridScope.() -> Unit,
+) {
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
         modifier =
@@ -3724,7 +4183,7 @@ private fun RoundedGridPanel(content: LazyGridScope.() -> Unit) {
                 .padding(top = 14.dp)
                 .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
                 .background(MaterialTheme.colorScheme.surfaceContainer),
-        contentPadding = PaddingValues(start = 20.dp, top = 14.dp, end = 20.dp, bottom = 116.dp),
+        contentPadding = PaddingValues(start = 20.dp, top = 14.dp, end = 20.dp, bottom = bottomPadding),
         horizontalArrangement = Arrangement.spacedBy(14.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
         content = content,
@@ -4094,16 +4553,21 @@ private fun String.compareNaturally(other: String): Int {
 }
 
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 private fun TrackRow(
     track: Track,
     onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     Row(
         modifier =
             modifier
                 .fillMaxWidth()
-                .clickable(onClick = onClick)
+                .combinedClickable(
+                    onClick = onClick,
+                    onLongClick = onLongClick,
+                )
                 .padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -4129,6 +4593,41 @@ private fun TrackRow(
     }
 }
 
+@Composable
+private fun SelectableTrackRow(
+    track: Track,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .clickable(onClick = onClick)
+                .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(onClick = onClick, modifier = Modifier.size(42.dp)) {
+            Icon(
+                if (selected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                contentDescription = null,
+                tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        AlbumArt(track.albumArtUri, Modifier.size(48.dp), RoundedCornerShape(12.dp))
+        Column(
+            modifier =
+                Modifier
+                    .weight(1f)
+                    .padding(horizontal = 12.dp),
+        ) {
+            Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 16.sp)
+            Text(track.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+        }
+    }
+}
+
 private fun Long.formatDuration(): String {
     val totalSeconds = (coerceAtLeast(0L) / 1_000L).toInt()
     val hours = totalSeconds / 3_600
@@ -4142,19 +4641,24 @@ private fun Long.formatDuration(): String {
 }
 
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 private fun MediaGroupRow(
     artwork: Uri?,
     title: String,
     subtitle: String,
     folder: Boolean = false,
     onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     Row(
         modifier =
             modifier
                 .fillMaxWidth()
-                .clickable(onClick = onClick)
+                .combinedClickable(
+                    onClick = onClick,
+                    onLongClick = onLongClick,
+                )
                 .padding(vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -4182,6 +4686,53 @@ private fun MediaGroupRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 13.sp,
             )
+        }
+    }
+}
+
+@Composable
+private fun SelectableMediaGroupRow(
+    artwork: Uri?,
+    title: String,
+    subtitle: String,
+    selected: Boolean,
+    folder: Boolean = false,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .clickable(onClick = onClick)
+                .padding(vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(onClick = onClick, modifier = Modifier.size(42.dp)) {
+            Icon(
+                if (selected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                contentDescription = null,
+                tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Box {
+            AlbumArt(artwork, Modifier.size(56.dp), RoundedCornerShape(13.dp))
+            if (folder) {
+                Icon(
+                    Icons.Outlined.Folder,
+                    contentDescription = null,
+                    modifier =
+                        Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(4.dp)
+                            .size(18.dp),
+                    tint = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+        }
+        Column(modifier = Modifier.padding(start = 14.dp)) {
+            Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 16.sp)
+            Text(subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
         }
     }
 }
@@ -4297,10 +4848,77 @@ private fun EditablePlaylistTrackRow(
 }
 
 @Composable
+private fun GroupEditBottomBar(
+    visible: Boolean,
+    selectedTracks: List<Track>,
+    onReplaceCurrentQueue: (List<Track>) -> Unit,
+    onAddTracksToRoute: (List<Track>) -> Unit,
+    onDelete: () -> Unit,
+    onExit: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    AnimatedVisibility(
+        visible = visible,
+        modifier = modifier,
+        enter = fadeIn(animationSpec = tween(180)),
+        exit = fadeOut(animationSpec = tween(180)),
+    ) {
+        PlaylistEditBottomBar(
+            hasSelection = selectedTracks.isNotEmpty(),
+            showShare = false,
+            onPlay = {
+                onReplaceCurrentQueue(selectedTracks)
+                onExit()
+            },
+            onAdd = {
+                onAddTracksToRoute(selectedTracks)
+                onExit()
+            },
+            onShare = {},
+            onDelete = onDelete,
+        )
+    }
+}
+
+@Composable
+private fun ConfirmPermanentDeleteDialog(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.delete_permanently)) },
+        text = { Text(stringResource(R.string.delete_tracks_confirm)) },
+        confirmButton = {
+            TextButton(onClick = onConfirm) { Text(stringResource(R.string.delete)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        },
+    )
+}
+
+private fun shareTracks(
+    context: android.content.Context,
+    tracks: List<Track>,
+) {
+    if (tracks.isEmpty()) return
+    val intent =
+        Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+            type = "audio/*"
+            putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(tracks.map { it.uri }))
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+    context.startActivity(Intent.createChooser(intent, null))
+}
+
+@Composable
 private fun PlaylistEditBottomBar(
     hasSelection: Boolean,
+    showShare: Boolean = true,
     showRename: Boolean = false,
     renameEnabled: Boolean = hasSelection,
+    deleteEnabled: Boolean = hasSelection,
     onPlay: () -> Unit,
     onAdd: () -> Unit,
     onShare: () -> Unit,
@@ -4314,13 +4932,19 @@ private fun PlaylistEditBottomBar(
         tonalElevation = 6.dp,
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .windowInsetsPadding(WindowInsets.navigationBars)
+                    .padding(horizontal = 18.dp, vertical = 14.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
         ) {
             EditActionButton(Icons.Default.PlayArrow, stringResource(R.string.play), hasSelection, onPlay)
             EditActionButton(Icons.Default.Add, stringResource(R.string.add), hasSelection, onAdd)
-            EditActionButton(Icons.Default.Share, stringResource(R.string.share), hasSelection, onShare)
-            EditActionButton(Icons.Default.Delete, stringResource(R.string.delete), hasSelection, onDelete)
+            if (showShare) {
+                EditActionButton(Icons.Default.Share, stringResource(R.string.share), hasSelection, onShare)
+            }
+            EditActionButton(Icons.Default.Delete, stringResource(R.string.delete), deleteEnabled, onDelete)
             if (showRename) {
                 EditActionButton(Icons.Default.Edit, stringResource(R.string.rename), renameEnabled, onRename)
             }
@@ -4471,6 +5095,7 @@ private fun EditablePlaylistRowWithDivider(
 @Composable
 private fun FavoriteGridCard(
     card: FavoriteCardItem,
+    selected: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier) {
@@ -4507,6 +5132,18 @@ private fun FavoriteGridCard(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+            if (selected) {
+                Icon(
+                    Icons.Default.CheckCircle,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier =
+                        Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(10.dp)
+                            .size(24.dp),
+                )
+            }
         }
         Text(card.title, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp), fontSize = 16.sp)
         Text(
@@ -4524,6 +5161,7 @@ private fun ArtworkCard(
     title: String,
     subtitle: String,
     artwork: Uri?,
+    selected: Boolean = false,
     modifier: Modifier = Modifier,
     artworkModifier: Modifier = Modifier,
 ) {
@@ -4546,6 +5184,26 @@ private fun ArtworkCard(
                             .background(Color.Black.copy(alpha = 0.28f)),
                 )
                 Text(title, color = Color.White, fontSize = 20.sp, textAlign = TextAlign.Center)
+            }
+            if (selected) {
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier =
+                        Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(8.dp),
+                ) {
+                    Icon(
+                        Icons.Default.CheckCircle,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                        modifier =
+                            Modifier
+                                .padding(4.dp)
+                                .size(20.dp),
+                    )
+                }
             }
         }
         Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp), fontSize = 16.sp)

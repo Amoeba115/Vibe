@@ -1,6 +1,7 @@
 package me.ayra.music
 
 import android.Manifest
+import android.app.Activity
 import android.app.Application
 import android.content.ComponentName
 import android.content.ContentUris
@@ -16,6 +17,7 @@ import android.os.Environment
 import android.provider.MediaStore
 import android.provider.Settings
 import androidx.activity.ComponentActivity
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -642,6 +644,23 @@ class MusicViewModel(
         }
     }
 
+    fun deleteTracksPermanently(tracks: List<Track>) {
+        if (tracks.isEmpty()) return
+        viewModelScope.launch {
+            libraryScanner.deleteTracksPermanently(tracks)
+            _library.update { state ->
+                val deletedIds = tracks.mapTo(mutableSetOf()) { it.id }
+                val updatedTracks = state.tracks.filterNot { it.id in deletedIds }
+                state.copy(
+                    tracks = updatedTracks,
+                    favorites = state.favorites - deletedIds,
+                    favoriteItems = state.favoriteItems.filterNot { it.type == FavoriteType.Track && it.key.toLongOrNull() in deletedIds },
+                    playlists = libraryScanner.buildPlaylists(updatedTracks),
+                )
+            }
+        }
+    }
+
     fun addTracksToCurrentQueue(tracks: List<Track>) {
         val player = controller ?: return
         if (tracks.isEmpty()) return
@@ -832,6 +851,7 @@ private fun List<TrackStatsEntity>.toTrackStatsMap(): Map<Long, TrackStats> =
 class LibraryScanner(
     context: Context,
 ) {
+    private val appContext = context.applicationContext
     private val dao = LibraryDatabase.get(context).libraryDao()
     private val mediaStoreScanner = MediaStoreScanner(context)
     private val vgmFileScanner = VgmFileScanner(context)
@@ -1022,6 +1042,33 @@ class LibraryScanner(
                     dao.deleteCustomPlaylist(playlistId)
                     dao.deleteFavoriteItem(FavoriteType.Playlist, playlistId)
                 }
+            customPlaylistsCache = dao.loadCustomPlaylists(dao.loadTracks().map { it.toTrack() })
+        }
+
+    suspend fun deleteTracksPermanently(tracks: List<Track>) =
+        withContext(Dispatchers.IO) {
+            val uniqueTracks = tracks.distinctBy { it.id }
+            uniqueTracks.forEach { track ->
+                runCatching {
+                    when (track.uri.scheme) {
+                        "file" -> track.uri.path?.let { File(it).delete() }
+                        else -> dao.loadTracks()
+                            .firstOrNull { it.trackId == track.id }
+                            ?.source
+                            ?.takeIf { it == LibrarySource.Vgm }
+                            ?.let { track.uri.path?.let { path -> File(path).delete() } }
+                            ?: appContext.contentResolver.delete(track.uri, null, null)
+                    }
+                }
+            }
+            val ids = uniqueTracks.map { it.id }
+            if (ids.isNotEmpty()) {
+                dao.deleteTracksByIds(ids)
+                ids.forEach {
+                    dao.deleteFavorite(it)
+                    dao.deleteFavoriteItem(FavoriteType.Track, it.toString())
+                }
+            }
             customPlaylistsCache = dao.loadCustomPlaylists(dao.loadTracks().map { it.toTrack() })
         }
 
@@ -1442,6 +1489,26 @@ fun MusicApp(
     val preferences = remember(context) { MusicPreferences(context) }
     var lastHomeTab by rememberSaveable { mutableStateOf(preferences.loadLastTab(HomeTab.Favorite.ordinal)) }
     var playlistEditMode by rememberSaveable { mutableStateOf(false) }
+    var pendingDeleteTracks by remember { mutableStateOf(emptyList<Track>()) }
+    val deleteRequestLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+            if (result.resultCode == Activity.RESULT_OK) {
+                viewModel.deleteTracksPermanently(pendingDeleteTracks)
+            }
+            pendingDeleteTracks = emptyList()
+        }
+    fun requestPermanentDelete(tracks: List<Track>) {
+        val uniqueTracks = tracks.distinctBy { it.id }
+        if (uniqueTracks.isEmpty()) return
+        val contentUris = uniqueTracks.map { it.uri }.filter { it.scheme == "content" }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && contentUris.isNotEmpty()) {
+            pendingDeleteTracks = uniqueTracks
+            val request = MediaStore.createDeleteRequest(context.contentResolver, contentUris)
+            deleteRequestLauncher.launch(IntentSenderRequest.Builder(request.intentSender).build())
+        } else {
+            viewModel.deleteTracksPermanently(uniqueTracks)
+        }
+    }
     val hidePlayerSheet = navigator.currentRoute == MainRoute.Settings || playlistEditMode
     var playerExpandRequest by rememberSaveable { mutableIntStateOf(0) }
 
@@ -1485,6 +1552,7 @@ fun MusicApp(
                 onReplacePlaylistTracks = viewModel::replacePlaylistTracks,
                 onRenamePlaylist = viewModel::renamePlaylist,
                 onDeletePlaylists = viewModel::deletePlaylists,
+                onDeleteTracksPermanently = ::requestPermanentDelete,
                 onAddTracksToRoute = { tracks -> navigator.navigate(MainRoute.AddToTracks(tracks.map { it.id })) },
                 onPlaylistEditModeChanged = { playlistEditMode = it },
                 initialTabIndex = lastHomeTab,

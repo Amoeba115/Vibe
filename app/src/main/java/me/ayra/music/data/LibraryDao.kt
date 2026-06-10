@@ -19,6 +19,9 @@ interface LibraryDao {
     @Query("DELETE FROM tracks")
     suspend fun deleteAllTracks()
 
+    @Query("DELETE FROM tracks WHERE track_id IN (:trackIds)")
+    suspend fun deleteTracksByIds(trackIds: List<Long>)
+
     @Query("DELETE FROM tracks WHERE source = :source")
     suspend fun deleteTracksBySource(source: String)
 
