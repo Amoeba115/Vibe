@@ -5,6 +5,7 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.EnterTransition
@@ -255,6 +256,7 @@ private const val PLAYLIST_FAVORITE_TRACK = "favorite-track"
 private const val FOLDER_TREE_INTERNAL = "Internal storage"
 private const val FOLDER_TREE_MICRO_SD = "Micro SD"
 private const val FOLDER_TREE_EXTERNAL = "External storage"
+private const val FOLDER_TREE_NAV_DUR = 280
 private const val ALBUM_SNAP_EXPAND_THRESHOLD = 0.35f
 private const val ALBUM_SNAP_FLING_DELTA_PX = 72
 private val HOME_TAB_WIDTH = 104.dp
@@ -4290,6 +4292,7 @@ private fun FolderTab(
 }
 
 @Composable
+@OptIn(ExperimentalAnimationApi::class)
 private fun FolderTreeContent(
     entries: List<FolderTreeEntry>,
     sort: FolderSort,
@@ -4302,11 +4305,6 @@ private fun FolderTreeContent(
     currentTrackId: Long?,
     onTrackMenu: (Track) -> Unit,
 ) {
-    val listState = rememberLazyListState()
-    val nodes = remember(entries, sort, treePath) { entries.nodesAt(treePath, sort) }
-    val tracks = remember(entries, treePath) { entries.tracksAt(treePath) }
-    val showTracks = treePath.isNotEmpty() && tracks.isNotEmpty()
-
     Column(modifier = Modifier.fillMaxSize()) {
         if (treePath.size > 1) {
             FolderTreeBreadcrumb(
@@ -4318,85 +4316,120 @@ private fun FolderTreeContent(
                         .padding(horizontal = 12.dp),
             )
         }
-        LazyColumn(
-            state = listState,
+        AnimatedContent(
+            targetState = treePath,
+            transitionSpec = {
+                val forward = targetState.size > initialState.size
+                if (forward) {
+                    slideIntoContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                        animationSpec = tween(FOLDER_TREE_NAV_DUR),
+                    ) + fadeIn(animationSpec = tween(FOLDER_TREE_NAV_DUR)) togetherWith
+                        slideOutOfContainer(
+                            towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                            animationSpec = tween(FOLDER_TREE_NAV_DUR),
+                        ) + fadeOut(animationSpec = tween(FOLDER_TREE_NAV_DUR))
+                } else {
+                    slideIntoContainer(
+                        towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                        animationSpec = tween(FOLDER_TREE_NAV_DUR),
+                    ) + fadeIn(animationSpec = tween(FOLDER_TREE_NAV_DUR)) togetherWith
+                        slideOutOfContainer(
+                            towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                            animationSpec = tween(FOLDER_TREE_NAV_DUR),
+                        ) + fadeOut(animationSpec = tween(FOLDER_TREE_NAV_DUR))
+                }.using(SizeTransform(clip = false))
+            },
             modifier =
                 Modifier
-                    .fillMaxSize()
-                    .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-                    .background(MaterialTheme.colorScheme.surfaceContainer),
-            contentPadding =
-                PaddingValues(
-                    start = 12.dp,
-                    top = 14.dp,
-                    end = 12.dp,
-                    bottom = MINI_PLAYER_RESERVED_BOTTOM,
-                ),
-        ) {
-            item {
-                FolderTabHeader(
-                    sort = sort,
-                    viewMode = viewMode,
-                    onSortSelected = onSortSelected,
-                    onViewModeSelected = onViewModeSelected,
-                )
-            }
-            if (treePath.isEmpty()) {
-                FOLDER_TREE_ROOT_ORDER.forEach { root ->
-                    val rootNodes = entries.nodesAt(listOf(root), sort)
-                    if (rootNodes.isNotEmpty()) {
-                        item(key = "tree-root-title-$root") {
-                            Text(
-                                text = root,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontSize = 17.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier =
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .padding(top = 6.dp, bottom = 6.dp),
-                            )
-                        }
-                        items(rootNodes, key = { it.key }) { node ->
-                            MediaGroupRow(
-                                artwork = node.tracks.firstOrNull()?.albumArtUri,
-                                title = node.name,
-                                subtitle = node.subtitle,
-                                folder = true,
-                                onClick = { onTreePathChange(listOf(root, node.name)) },
-                                modifier = Modifier.animateItem(),
-                            )
+                    .fillMaxSize(),
+            label = "folder-tree-content",
+        ) { currentTreePath ->
+            val listState = rememberLazyListState()
+            val nodes = remember(entries, sort, currentTreePath) { entries.nodesAt(currentTreePath, sort) }
+            val tracks = remember(entries, currentTreePath) { entries.tracksAt(currentTreePath) }
+            val showTracks = currentTreePath.isNotEmpty() && tracks.isNotEmpty()
+
+            LazyColumn(
+                state = listState,
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainer),
+                contentPadding =
+                    PaddingValues(
+                        start = 12.dp,
+                        top = 14.dp,
+                        end = 12.dp,
+                        bottom = MINI_PLAYER_RESERVED_BOTTOM,
+                    ),
+            ) {
+                item {
+                    FolderTabHeader(
+                        sort = sort,
+                        viewMode = viewMode,
+                        onSortSelected = onSortSelected,
+                        onViewModeSelected = onViewModeSelected,
+                    )
+                }
+                if (currentTreePath.isEmpty()) {
+                    FOLDER_TREE_ROOT_ORDER.forEach { root ->
+                        val rootNodes = entries.nodesAt(listOf(root), sort)
+                        if (rootNodes.isNotEmpty()) {
+                            item(key = "tree-root-title-$root") {
+                                Text(
+                                    text = root,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontSize = 17.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .padding(top = 6.dp, bottom = 6.dp),
+                                )
+                            }
+                            items(rootNodes, key = { it.key }) { node ->
+                                MediaGroupRow(
+                                    artwork = node.tracks.firstOrNull()?.albumArtUri,
+                                    title = node.name,
+                                    subtitle = node.subtitle,
+                                    folder = true,
+                                    onClick = { onTreePathChange(listOf(root, node.name)) },
+                                    modifier = Modifier.animateItem(),
+                                )
+                            }
                         }
                     }
                 }
-            }
-            if (treePath.isNotEmpty()) {
-                items(nodes, key = { it.key }) { node ->
-                    MediaGroupRow(
-                        artwork = node.tracks.firstOrNull()?.albumArtUri,
-                        title = node.name,
-                        subtitle = node.subtitle,
-                        folder = true,
-                        onClick = { onTreePathChange(treePath + node.name) },
-                        modifier = Modifier.animateItem(),
-                    )
+                if (currentTreePath.isNotEmpty()) {
+                    items(nodes, key = { it.key }) { node ->
+                        MediaGroupRow(
+                            artwork = node.tracks.firstOrNull()?.albumArtUri,
+                            title = node.name,
+                            subtitle = node.subtitle,
+                            folder = true,
+                            onClick = { onTreePathChange(currentTreePath + node.name) },
+                            modifier = Modifier.animateItem(),
+                        )
+                    }
                 }
-            }
-            if (showTracks) {
-                items(tracks, key = { it.id }) { track ->
-                    TrackRow(
-                        track = track,
-                        onClick = { onTrackClick(track, tracks) },
-                        currentTrackId = currentTrackId,
-                        onMenuClick = { onTrackMenu(track) },
-                        modifier = Modifier.animateItem(),
-                    )
+                if (showTracks) {
+                    items(tracks, key = { it.id }) { track ->
+                        TrackRow(
+                            track = track,
+                            onClick = { onTrackClick(track, tracks) },
+                            currentTrackId = currentTrackId,
+                            onMenuClick = { onTrackMenu(track) },
+                            modifier = Modifier.animateItem(),
+                        )
+                    }
                 }
-            }
-            if (entries.isEmpty()) {
-                item { EmptyInline(stringResource(R.string.no_folders_found)) }
-            } else if (treePath.isNotEmpty() && nodes.isEmpty() && !showTracks) {
-                item { EmptyInline(stringResource(R.string.no_tracks_found)) }
+                if (entries.isEmpty()) {
+                    item { EmptyInline(stringResource(R.string.no_folders_found)) }
+                } else if (currentTreePath.isNotEmpty() && nodes.isEmpty() && !showTracks) {
+                    item { EmptyInline(stringResource(R.string.no_tracks_found)) }
+                }
             }
         }
     }
