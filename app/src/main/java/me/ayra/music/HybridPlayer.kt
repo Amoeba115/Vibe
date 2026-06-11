@@ -1,7 +1,12 @@
 package me.ayra.music
 
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.SharedPreferences
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
@@ -25,6 +30,7 @@ class HybridPlayer(
     private val appContext = context.applicationContext
     private val applicationHandler = Handler(looper)
     private val preferences = MusicPreferences(appContext)
+    private val audioManager = appContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private val exoPlayer = ExoPlayer.Builder(appContext).setLooper(looper).build()
     private val vgmPlayer: Player? = createVgmPlayer(looper)
     private val stateLock = Any()
@@ -42,7 +48,48 @@ class HybridPlayer(
     private var shuffleModeEnabled = false
     private var volume = 1f
     private var playbackParameters = PlaybackParameters.DEFAULT
+    private var playbackSuppressionReason = PlaybackSuppressionReason.NONE
+    private var resumeAfterAudioFocusGain = false
+    private var noisyReceiverRegistered = false
     private var released = false
+
+    private val audioFocusChangeListener =
+        AudioManager.OnAudioFocusChangeListener { focusChange ->
+            applicationHandler.post {
+                if (released || activePlayer !== vgmPlayer) return@post
+                when (focusChange) {
+                    AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> pauseForAudioFocusLoss()
+                    AudioManager.AUDIOFOCUS_LOSS -> {
+                        pauseForAudioFocusLoss()
+                        resumeAfterAudioFocusGain = false
+                        playWhenReady = false
+                        abandonVgmAudioFocus()
+                    }
+                    AudioManager.AUDIOFOCUS_GAIN -> resumeAfterAudioFocusGain()
+                }
+            }
+        }
+
+    private val audioFocusRequest =
+        AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+            .setAudioAttributes(
+                android.media.AudioAttributes.Builder()
+                    .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .build(),
+            )
+            .setAcceptsDelayedFocusGain(false)
+            .setOnAudioFocusChangeListener(audioFocusChangeListener, applicationHandler)
+            .build()
+
+    private val noisyReceiver =
+        object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                if (intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
+                    applicationHandler.post { pauseForNoisyOutput() }
+                }
+            }
+        }
 
     private val childListener = object : Player.Listener {
         override fun onPlaybackStateChanged(playbackState: Int) {
@@ -72,7 +119,7 @@ class HybridPlayer(
         val currentDuration = currentPlayer?.duration?.takeIf { it > 0 } ?: C.TIME_UNSET
         val currentPosition = currentPlayer?.currentPosition?.coerceAtLeast(0L) ?: 0L
         val currentPlaybackState = currentPlayer?.playbackState ?: Player.STATE_IDLE
-        val currentSuppressionReason = currentPlayer?.playbackSuppressionReason ?: Player.PLAYBACK_SUPPRESSION_REASON_NONE
+        val currentSuppressionReason = media3PlaybackSuppressionReason(currentPlayer)
         val items = synchronized(stateLock) {
             playlist.mapIndexed { index, item ->
                 MediaItemData.Builder(mediaItemUid(item, index))
@@ -191,10 +238,13 @@ class HybridPlayer(
             if (player == null && currentIndex != C.INDEX_UNSET) {
                 openCurrentItem()
             } else {
-                player?.play()
+                playActivePlayer()
             }
         } else {
+            clearSuppression()
+            resumeAfterAudioFocusGain = false
             player?.pause()
+            if (player === vgmPlayer) abandonVgmAudioFocus()
         }
         invalidateState()
         return immediateFuture()
@@ -256,6 +306,7 @@ class HybridPlayer(
 
     override fun handleStop(): ListenableFuture<Any> {
         stopChildren()
+        abandonVgmAudioFocus()
         invalidateState()
         return immediateFuture()
     }
@@ -266,6 +317,7 @@ class HybridPlayer(
             exoPlayer.removeListener(childListener)
             vgmPlayer?.removeListener(childListener)
             preferences.unregisterSettingsListener(settingsListener)
+            abandonVgmAudioFocus()
             exoPlayer.release()
             vgmPlayer?.release()
         }
@@ -276,8 +328,11 @@ class HybridPlayer(
         val item = synchronized(stateLock) { playlist.getOrNull(currentIndex) } ?: return
         val nextPlayer = playerFor(item)
         if (nextPlayer !== activePlayer) {
+            if (activePlayer === vgmPlayer) abandonVgmAudioFocus()
             activePlayer?.stop()
             activePlayer = nextPlayer
+            clearSuppression()
+            resumeAfterAudioFocusGain = false
         } else {
             nextPlayer.stop()
         }
@@ -289,7 +344,7 @@ class HybridPlayer(
         }
         nextPlayer.setMediaItem(item, pendingStartPositionMs)
         nextPlayer.prepare()
-        if (playWhenReady) nextPlayer.play()
+        if (playWhenReady) playActivePlayer()
         invalidateState()
     }
 
@@ -305,6 +360,93 @@ class HybridPlayer(
         activePlayer?.stop()
         activePlayer = null
         playWhenReady = false
+        clearSuppression()
+        resumeAfterAudioFocusGain = false
+        unregisterNoisyReceiver()
+    }
+
+    private fun playActivePlayer() {
+        val player = activePlayer ?: return
+        if (player === vgmPlayer) {
+            if (!requestVgmAudioFocus()) {
+                playbackSuppressionReason = PlaybackSuppressionReason.AUDIO_FOCUS_LOSS
+                playWhenReady = false
+                invalidateState()
+                return
+            }
+            clearSuppression()
+            registerNoisyReceiver()
+        }
+        player.play()
+    }
+
+    private fun requestVgmAudioFocus(): Boolean =
+        audioManager.requestAudioFocus(audioFocusRequest) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+
+    private fun abandonVgmAudioFocus() {
+        audioManager.abandonAudioFocusRequest(audioFocusRequest)
+        unregisterNoisyReceiver()
+    }
+
+    private fun pauseForAudioFocusLoss() {
+        val player = activePlayer ?: return
+        if (player !== vgmPlayer) return
+        resumeAfterAudioFocusGain = playWhenReady && player.isPlaying
+        playbackSuppressionReason = PlaybackSuppressionReason.AUDIO_FOCUS_LOSS
+        player.pause()
+        unregisterNoisyReceiver()
+        invalidateState()
+    }
+
+    private fun resumeAfterAudioFocusGain() {
+        if (playbackSuppressionReason == PlaybackSuppressionReason.AUDIO_FOCUS_LOSS) {
+            playbackSuppressionReason = PlaybackSuppressionReason.NONE
+        }
+        if (resumeAfterAudioFocusGain && playWhenReady && activePlayer === vgmPlayer) {
+            resumeAfterAudioFocusGain = false
+            registerNoisyReceiver()
+            activePlayer?.play()
+        } else {
+            resumeAfterAudioFocusGain = false
+        }
+        invalidateState()
+    }
+
+    private fun pauseForNoisyOutput() {
+        val player = activePlayer ?: return
+        if (player !== vgmPlayer || !playWhenReady) return
+        playbackSuppressionReason = PlaybackSuppressionReason.NOISY
+        resumeAfterAudioFocusGain = false
+        playWhenReady = false
+        player.pause()
+        abandonVgmAudioFocus()
+        invalidateState()
+    }
+
+    private fun clearSuppression() {
+        playbackSuppressionReason = PlaybackSuppressionReason.NONE
+    }
+
+    private fun registerNoisyReceiver() {
+        if (noisyReceiverRegistered) return
+        appContext.registerReceiver(noisyReceiver, IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY))
+        noisyReceiverRegistered = true
+    }
+
+    private fun unregisterNoisyReceiver() {
+        if (!noisyReceiverRegistered) return
+        runCatching { appContext.unregisterReceiver(noisyReceiver) }
+        noisyReceiverRegistered = false
+    }
+
+    private fun media3PlaybackSuppressionReason(currentPlayer: Player?): Int {
+        return when {
+            playbackSuppressionReason == PlaybackSuppressionReason.AUDIO_FOCUS_LOSS ->
+                Player.PLAYBACK_SUPPRESSION_REASON_TRANSIENT_AUDIO_FOCUS_LOSS
+            playbackSuppressionReason == PlaybackSuppressionReason.NOISY ->
+                Player.PLAYBACK_SUPPRESSION_REASON_UNSUITABLE_AUDIO_OUTPUT
+            else -> currentPlayer?.playbackSuppressionReason ?: Player.PLAYBACK_SUPPRESSION_REASON_NONE
+        }
     }
 
     private fun childRepeatMode(): Int = Player.REPEAT_MODE_OFF
@@ -454,4 +596,10 @@ class HybridPlayer(
             .add(Player.COMMAND_RELEASE)
             .build()
     }
+}
+
+private enum class PlaybackSuppressionReason {
+    NONE,
+    AUDIO_FOCUS_LOSS,
+    NOISY,
 }
