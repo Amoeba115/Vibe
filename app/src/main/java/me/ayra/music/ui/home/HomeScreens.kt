@@ -55,8 +55,10 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridScope
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -334,6 +336,7 @@ fun MainScreen(
     val context = LocalContext.current
     val currentRoute = navigator.currentRoute
     val detailStateHolder = rememberSaveableStateHolder()
+    val homeStateHolder = rememberSaveableStateHolder()
     var searchStateVersion by rememberSaveable { mutableIntStateOf(0) }
     var usePopTransition by remember { mutableStateOf(false) }
     var trackMenuTrack by remember { mutableStateOf<Track?>(null) }
@@ -371,33 +374,35 @@ fun MainScreen(
                 label = "home-host",
             ) {
                 CompositionLocalProvider(LocalFancyTabContentBackground provides fancyBackgroundEnabled) {
-                    HomeScreen(
-                        library = library,
-                        sharedTransitionScope = this@SharedTransitionLayout,
-                        animatedVisibilityScope = this,
-                        currentTrackId = currentTrackId,
-                        onRequestPermission = onRequestPermission,
-                        onSettings = { navigate(MainRoute.Settings) },
-                        onTrackClick = onTrackClick,
-                        onToggleFavorite = onToggleFavorite,
-                        onToggleFavoriteItem = onToggleFavoriteItem,
-                        onFolderClick = { navigate(MainRoute.Folder(it.path)) },
-                        onAlbumClick = { navigate(MainRoute.Album(it.id)) },
-                        onArtistClick = { navigate(MainRoute.Artist(it.name)) },
-                        onPlaylistClick = { navigate(MainRoute.Playlist(it.id)) },
-                        onCreatePlaylist = { navigate(MainRoute.SelectPlaylistTracks(it)) },
-                        onSearch = { navigate(MainRoute.Search) },
-                        onReplaceCurrentQueue = onReplaceCurrentQueue,
-                        onRenamePlaylist = onRenamePlaylist,
-                        onDeletePlaylists = onDeletePlaylists,
-                        onDeleteTracksPermanently = onDeleteTracksPermanently,
-                        onAddTracksToRoute = onAddTracksToRoute,
-                        onPlaylistEditModeChanged = onPlaylistEditModeChanged,
-                        onTrackMenu = { trackMenuTrack = it },
-                        initialTabIndex = initialTabIndex,
-                        onTabSelected = onTabSelected,
-                        modifier = Modifier.fillMaxSize(),
-                    )
+                    homeStateHolder.SaveableStateProvider("home") {
+                        HomeScreen(
+                            library = library,
+                            sharedTransitionScope = this@SharedTransitionLayout,
+                            animatedVisibilityScope = this,
+                            currentTrackId = currentTrackId,
+                            onRequestPermission = onRequestPermission,
+                            onSettings = { navigate(MainRoute.Settings) },
+                            onTrackClick = onTrackClick,
+                            onToggleFavorite = onToggleFavorite,
+                            onToggleFavoriteItem = onToggleFavoriteItem,
+                            onFolderClick = { navigate(MainRoute.Folder(it.path)) },
+                            onAlbumClick = { navigate(MainRoute.Album(it.id)) },
+                            onArtistClick = { navigate(MainRoute.Artist(it.name)) },
+                            onPlaylistClick = { navigate(MainRoute.Playlist(it.id)) },
+                            onCreatePlaylist = { navigate(MainRoute.SelectPlaylistTracks(it)) },
+                            onSearch = { navigate(MainRoute.Search) },
+                            onReplaceCurrentQueue = onReplaceCurrentQueue,
+                            onRenamePlaylist = onRenamePlaylist,
+                            onDeletePlaylists = onDeletePlaylists,
+                            onDeleteTracksPermanently = onDeleteTracksPermanently,
+                            onAddTracksToRoute = onAddTracksToRoute,
+                            onPlaylistEditModeChanged = onPlaylistEditModeChanged,
+                            onTrackMenu = { trackMenuTrack = it },
+                            initialTabIndex = initialTabIndex,
+                            onTabSelected = onTabSelected,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
                 }
             }
 
@@ -1699,6 +1704,14 @@ private fun appBackgroundContainerColor(): Color =
     )
 
 @Composable
+private fun rememberHomeLazyListState(): LazyListState =
+    rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
+
+@Composable
+private fun rememberHomeLazyGridState(): LazyGridState =
+    rememberSaveable(saver = LazyGridState.Saver) { LazyGridState() }
+
+@Composable
 private fun FavoriteTab(
     library: LibraryState,
     onTrackClick: (Track, List<Track>) -> Unit,
@@ -1717,6 +1730,7 @@ private fun FavoriteTab(
     onEditSelectionChanged: (Int, Boolean) -> Unit,
 ) {
     val context = LocalContext.current
+    val gridState = rememberHomeLazyGridState()
     var editMode by rememberSaveable { mutableStateOf(false) }
     var selectedKeys by rememberSaveable { mutableStateOf(emptyList<String>()) }
     val favoriteCards =
@@ -1762,6 +1776,7 @@ private fun FavoriteTab(
     }
     Box(modifier = Modifier.fillMaxSize()) {
         LazyVerticalGrid(
+            state = gridState,
             columns = GridCells.Fixed(2),
             modifier =
                 Modifier
@@ -1860,6 +1875,7 @@ private fun PlaylistTab(
     onAddTracksToRoute: (List<Track>) -> Unit,
 ) {
     val context = LocalContext.current
+    val listState = rememberHomeLazyListState()
     var createDialog by rememberSaveable { mutableStateOf(false) }
     var playlistName by rememberSaveable { mutableStateOf("") }
     var renamePlaylist by remember { mutableStateOf<PlaylistGroup?>(null) }
@@ -1957,6 +1973,7 @@ private fun PlaylistTab(
     }
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
+            state = listState,
             modifier =
                 Modifier
                     .fillMaxSize()
@@ -3130,7 +3147,7 @@ private fun TrackTab(
     selectAllRequest: Int,
     onEditSelectionChanged: (Int, Boolean) -> Unit,
 ) {
-    val listState = rememberLazyListState()
+    val listState = rememberHomeLazyListState()
     val preferences = rememberSortPreferences()
     var editMode by rememberSaveable { mutableStateOf(false) }
     var selectedIds by rememberSaveable { mutableStateOf(emptyList<Long>()) }
@@ -3258,6 +3275,7 @@ private fun AlbumTab(
     selectAllRequest: Int,
     onEditSelectionChanged: (Int, Boolean) -> Unit,
 ) {
+    val gridState = rememberHomeLazyGridState()
     val preferences = rememberSortPreferences()
     var editMode by rememberSaveable { mutableStateOf(false) }
     var selectedIds by rememberSaveable { mutableStateOf(emptyList<Long>()) }
@@ -3303,7 +3321,10 @@ private fun AlbumTab(
         )
     }
     Box(modifier = Modifier.fillMaxSize()) {
-        RoundedGridPanel(bottomPadding = if (editMode) 128.dp else MINI_PLAYER_RESERVED_BOTTOM) {
+        RoundedGridPanel(
+            state = gridState,
+            bottomPadding = if (editMode) 128.dp else MINI_PLAYER_RESERVED_BOTTOM,
+        ) {
             item(span = { GridItemSpan(maxLineSpan) }) {
                 SortHeader(
                     label = sort.label,
@@ -3750,7 +3771,7 @@ private fun ArtistTab(
     selectAllRequest: Int,
     onEditSelectionChanged: (Int, Boolean) -> Unit,
 ) {
-    val listState = rememberLazyListState()
+    val listState = rememberHomeLazyListState()
     val preferences = rememberSortPreferences()
     var editMode by rememberSaveable { mutableStateOf(false) }
     var selectedNames by rememberSaveable { mutableStateOf(emptyList<String>()) }
@@ -4168,7 +4189,7 @@ private fun FolderTab(
     selectAllRequest: Int,
     onEditSelectionChanged: (Int, Boolean) -> Unit,
 ) {
-    val listState = rememberLazyListState()
+    val listState = rememberHomeLazyListState()
     val preferences = rememberSortPreferences()
     var editMode by rememberSaveable { mutableStateOf(false) }
     var selectedPaths by rememberSaveable { mutableStateOf(emptyList<String>()) }
@@ -4379,7 +4400,7 @@ private fun FolderTreeContent(
                     .fillMaxSize(),
             label = "folder-tree-content",
         ) { currentTreePath ->
-            val listState = rememberLazyListState()
+            val listState = rememberSaveable(currentTreePath, saver = LazyListState.Saver) { LazyListState() }
             val nodes = remember(entries, sort, currentTreePath) { entries.nodesAt(currentTreePath, sort) }
             val tracks = remember(entries, currentTreePath) { entries.tracksAt(currentTreePath) }
             val showTracks = currentTreePath.isNotEmpty() && tracks.isNotEmpty()
@@ -4720,10 +4741,12 @@ private fun RoundedPanelList(
 
 @Composable
 private fun RoundedGridPanel(
+    state: LazyGridState = rememberLazyGridState(),
     bottomPadding: Dp = MINI_PLAYER_RESERVED_BOTTOM,
     content: LazyGridScope.() -> Unit,
 ) {
     LazyVerticalGrid(
+        state = state,
         columns = GridCells.Fixed(2),
         modifier =
             Modifier
