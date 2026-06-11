@@ -7,7 +7,6 @@
     <string name="done">Done</string>
     <string name="appearance">Appearance</string>
     <string name="music">Music</string>
-    <string name="info">Info</string>
     <string name="look_and_feel">Look and feel</string>
     <string name="look_and_feel_subtitle">Theme, color palette, and preview</string>
     <string name="player">Player</string>
@@ -16,8 +15,9 @@
     <string name="library_subtitle">Scanner and cached local library</string>
     <string name="vgmstream">vgmstream</string>
     <string name="vgmstream_subtitle">Loop, fade, subsong, and channel output</string>
-    <string name="about">About</string>
-    <string name="about_subtitle">Version and project information</string>
+    <string name="about_developer">Developed by AyraHikari</string>
+    <string name="telegram">Telegram</string>
+    <string name="github">GitHub</string>
     <string name="preview_palette_description">Preview updates with your selected palette.</string>
     <string name="material_you">Material You</string>
     <string name="colors">Colors</string>
@@ -87,10 +87,6 @@
     <string name="selected_count">%1$d selected</string>
     <string name="select_folder">Select folder</string>
     <string name="enabled">Enabled</string>
-    <string name="app">App</string>
-    <string name="about_app_subtitle">Material You local music player</string>
-    <string name="version">Version</string>
-    <string name="version_subtitle">Current installed build</string>
     <string name="no_track_selected">No track selected</string>
     <string name="favorite">Favorite</string>
     <string name="playlist">Playlist</string>

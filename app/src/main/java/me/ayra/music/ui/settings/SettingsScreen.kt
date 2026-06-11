@@ -40,10 +40,12 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.MusicNote
@@ -58,6 +60,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
@@ -69,6 +72,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -80,11 +84,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -108,6 +115,9 @@ import me.ayra.music.ui.theme.presetPalettes
 import me.ayra.music.util.MusicPreferences
 import kotlin.math.roundToInt
 
+private const val ABOUT_TELEGRAM_URL = "https://t.me/AyraHikari"
+private const val ABOUT_GITHUB_URL = "https://github.com/AyraHikari"
+
 private enum class SettingsCategory(
     @StringRes val titleRes: Int,
     val depth: Int = 1,
@@ -117,7 +127,6 @@ private enum class SettingsCategory(
     Library(R.string.library),
     HideFolders(R.string.hide_folder, depth = 2),
     Vgmstream(R.string.vgmstream),
-    About(R.string.about),
 }
 
 private data class OptionItem(
@@ -236,10 +245,6 @@ fun SettingsScreen(
                 SettingsCategory.Vgmstream -> {
                     VgmstreamSettings()
                 }
-
-                SettingsCategory.About -> {
-                    AboutSettings()
-                }
             }
         }
 
@@ -258,6 +263,9 @@ private fun SettingsCategoryList(onCategorySelected: (SettingsCategory) -> Unit)
         contentPadding = PaddingValues(start = 20.dp, top = 92.dp, end = 20.dp, bottom = 116.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
+        item {
+            AboutCard()
+        }
         item {
             SettingsSectionTitle(stringResource(R.string.appearance))
             SettingsGroup {
@@ -296,16 +304,130 @@ private fun SettingsCategoryList(onCategorySelected: (SettingsCategory) -> Unit)
                 }
             }
         }
-        item {
-            SettingsSectionTitle(stringResource(R.string.info))
-            SettingsGroup {
-                SettingsNavigationRow(
-                    title = stringResource(R.string.about),
-                    subtitle = stringResource(R.string.about_subtitle),
-                    icon = Icons.Rounded.Info,
-                    onClick = { onCategorySelected(SettingsCategory.About) },
+    }
+}
+
+@Composable
+private fun AboutCard() {
+    val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
+    val appName = stringResource(R.string.app_name)
+    val versionName =
+        remember(context) {
+            runCatching {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    context.packageManager
+                        .getPackageInfo(
+                            context.packageName,
+                            android.content.pm.PackageManager.PackageInfoFlags
+                                .of(0),
+                        ).versionName
+                } else {
+                    @Suppress("DEPRECATION")
+                    context.packageManager.getPackageInfo(context.packageName, 0).versionName
+                }
+            }.getOrNull().orEmpty()
+        }
+    val colorScheme = MaterialTheme.colorScheme
+    val cardBrush =
+        Brush.horizontalGradient(
+            listOf(
+                colorScheme.surfaceContainerHighest,
+                colorScheme.primaryContainer.copy(alpha = 0.82f),
+            ),
+        )
+    val onCard = colorScheme.onPrimaryContainer
+
+    Column(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(28.dp))
+                .background(cardBrush)
+                .padding(horizontal = 20.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Icon(
+                Icons.Rounded.Info,
+                contentDescription = null,
+                tint = onCard,
+                modifier = Modifier.size(20.dp),
+            )
+            if (versionName.isNotBlank()) {
+                Text(
+                    text = "v$versionName",
+                    color = colorScheme.onTertiaryContainer,
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                    modifier =
+                        Modifier
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(colorScheme.tertiaryContainer.copy(alpha = 0.78f))
+                            .padding(horizontal = 22.dp, vertical = 10.dp),
                 )
             }
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                text = appName,
+                color = onCard,
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+            )
+            Text(
+                text = stringResource(R.string.about_developer),
+                color = onCard.copy(alpha = 0.72f),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            AboutLinkButton(
+                label = stringResource(R.string.telegram),
+                icon = { Icon(Icons.AutoMirrored.Rounded.Send, contentDescription = null) },
+                onClick = { uriHandler.openUri(ABOUT_TELEGRAM_URL) },
+                modifier = Modifier.weight(1f),
+            )
+            AboutLinkButton(
+                label = stringResource(R.string.github),
+                icon = { Icon(painterResource(R.drawable.ic_github), contentDescription = null) },
+                onClick = { uriHandler.openUri(ABOUT_GITHUB_URL) },
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun AboutLinkButton(
+    label: String,
+    icon: @Composable () -> Unit,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier =
+            modifier
+                .height(48.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.76f))
+                .clickable(onClick = onClick)
+                .padding(horizontal = 18.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onTertiaryContainer) {
+            icon()
+            Spacer(Modifier.width(10.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                maxLines = 1,
+            )
         }
     }
 }
@@ -898,25 +1020,6 @@ private fun HideFolderRow(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodyMedium,
         )
-    }
-}
-
-@Composable
-private fun AboutSettings() {
-    SettingsPage {
-        SettingsGroup {
-            SettingsValueRow(
-                stringResource(R.string.app),
-                stringResource(R.string.about_app_subtitle),
-                stringResource(R.string.app_name),
-            )
-            SettingsDivider()
-            SettingsValueRow(
-                stringResource(R.string.version),
-                stringResource(R.string.version_subtitle),
-                BuildConfig.VERSION_NAME,
-            )
-        }
     }
 }
 
