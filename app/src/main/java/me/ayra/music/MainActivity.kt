@@ -81,6 +81,8 @@ import me.ayra.music.data.toEntity
 import me.ayra.music.data.toSnapshot
 import me.ayra.music.data.toTrack
 import me.ayra.music.data.toVgmMetadata
+import me.ayra.music.lyrics.Lyrics
+import me.ayra.music.lyrics.LyricsRepository
 import me.ayra.music.ui.home.HomeTab
 import me.ayra.music.ui.home.MainScreen
 import me.ayra.music.ui.navigation.MainRoute
@@ -276,17 +278,22 @@ data class PlayerState(
     val shuffle: Boolean = false,
     val repeatMode: Int = Player.REPEAT_MODE_OFF,
     val queue: List<Track> = emptyList(),
+    val lyrics: Lyrics? = null,
+    val lyricsLoading: Boolean = false,
 )
 
 class MusicViewModel(
     application: Application,
 ) : AndroidViewModel(application) {
     private val libraryScanner = LibraryScanner(application)
+    private val lyricsRepository = LyricsRepository(application)
     private val preferences = MusicPreferences(application)
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var controller: MediaController? = null
     private var restoredTrack = false
     private var lastSavedTrackId = -1L
+    private var loadingLyricsTrackId: Long? = null
+    private var loadedLyricsTrackId: Long? = null
     private val settingsListener =
         SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
             when (key) {
@@ -767,7 +774,31 @@ class MusicViewModel(
                 shuffle = player.shuffleModeEnabled,
                 repeatMode = player.repeatMode,
                 queue = queue,
+                lyrics = if (currentTrack?.id == it.currentTrack?.id) it.lyrics else null,
+                lyricsLoading = if (currentTrack?.id == it.currentTrack?.id) it.lyricsLoading else false,
             )
+        }
+        if (currentTrack != null) {
+            loadLyrics(currentTrack)
+        } else {
+            loadedLyricsTrackId = null
+            loadingLyricsTrackId = null
+        }
+    }
+
+    private fun loadLyrics(track: Track) {
+        if (loadedLyricsTrackId == track.id || loadingLyricsTrackId == track.id) return
+        loadingLyricsTrackId = track.id
+        _playerState.update { it.copy(lyrics = null, lyricsLoading = true) }
+        viewModelScope.launch {
+            val lyrics = lyricsRepository.lyricsFor(track)
+            if (_playerState.value.currentTrack?.id == track.id) {
+                loadedLyricsTrackId = track.id
+                _playerState.update { it.copy(lyrics = lyrics, lyricsLoading = false) }
+            }
+            if (loadingLyricsTrackId == track.id) {
+                loadingLyricsTrackId = null
+            }
         }
     }
 

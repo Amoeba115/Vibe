@@ -88,6 +88,11 @@
     <string name="select_folder">Pilih folder</string>
     <string name="enabled">Diaktifkan</string>
     <string name="no_track_selected">Tidak ada lagu dipilih</string>
+    <string name="loading_lyric">Memuat lirik</string>
+    <string name="no_lyric_found">Lirik tidak ditemukan</string>
+    <string name="no_lyric_found_description">Coba judul atau artis lain</string>
+    <string name="search_lyric">Cari lirik</string>
+    <string name="search_lyric_description">Cari lirik dari situs online</string>
     <string name="favorite">Favorit</string>
     <string name="playlist">Playlist</string>
     <string name="track">Lagu</string>

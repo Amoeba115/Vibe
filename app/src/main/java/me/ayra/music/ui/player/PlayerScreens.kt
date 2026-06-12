@@ -16,10 +16,10 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.AnchoredDraggableDefaults
 import androidx.compose.foundation.gestures.AnchoredDraggableState
@@ -37,12 +37,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -51,10 +53,13 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Album
@@ -63,6 +68,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.LibraryMusic
+import androidx.compose.material.icons.filled.ManageSearch
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
@@ -71,16 +77,26 @@ import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -112,6 +128,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -137,6 +154,9 @@ import me.ayra.music.BuildConfig
 import me.ayra.music.PlayerState
 import me.ayra.music.R
 import me.ayra.music.Track
+import me.ayra.music.lyrics.LrclibLyricsProvider
+import me.ayra.music.lyrics.LyricsRenderer
+import me.ayra.music.lyrics.LyricsSearchResult
 import me.ayra.music.util.MusicPreferences
 import java.util.Collections
 import java.util.LinkedHashMap
@@ -215,7 +235,10 @@ fun AlbumArt(
                         Icons.Default.MusicNote,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(30.dp).padding(12.dp),
+                        modifier =
+                            Modifier
+                                .size(30.dp)
+                                .padding(12.dp),
                     )
                 },
                 error = {
@@ -223,7 +246,10 @@ fun AlbumArt(
                         Icons.Default.MusicNote,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(30.dp).padding(12.dp),
+                        modifier =
+                            Modifier
+                                .size(30.dp)
+                                .padding(12.dp),
                     )
                 },
             )
@@ -436,9 +462,11 @@ fun PlayerSheet(
 
 private fun Modifier.offsetY(offsetPx: Float): Modifier =
     this.then(
-        Modifier.padding(top = 0.dp).then(
-            Modifier.offset { IntOffset(0, offsetPx.roundToInt()) },
-        ),
+        Modifier
+            .padding(top = 0.dp)
+            .then(
+                Modifier.offset { IntOffset(0, offsetPx.roundToInt()) },
+            ),
     )
 
 @OptIn(ExperimentalAnimationApi::class)
@@ -928,8 +956,10 @@ private fun ExpandedPlayerContent(
             when (content) {
                 PlayerUpperContent.Lyrics -> {
                     LyricsContent(
-                        track = track,
+                        playerState = playerState,
                         enabled = enabled,
+                        accent = seekAccent,
+                        onSeek = onSeek,
                         onExit = onExitUpperContent,
                         modifier = Modifier.fillMaxSize(),
                     )
@@ -1110,11 +1140,58 @@ private fun ExpandedPlayerContent(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun LyricsContent(
-    track: Track?,
+    playerState: PlayerState,
     enabled: Boolean,
+    accent: Color,
+    onSeek: (Long) -> Unit,
     onExit: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val track = playerState.currentTrack
+    val coroutineScope = rememberCoroutineScope()
+    val lyricsProvider = remember { LrclibLyricsProvider() }
+    var selectedLyrics by remember(track?.id) { mutableStateOf(playerState.lyrics) }
+    var showSearchSheet by rememberSaveable { mutableStateOf(false) }
+    var searchQuery by rememberSaveable(track?.id) { mutableStateOf(track?.title.orEmpty()) }
+    var searchLoading by rememberSaveable { mutableStateOf(false) }
+    var searchResults by remember { mutableStateOf(emptyList<LyricsSearchResult>()) }
+    val visibleLyrics = selectedLyrics ?: playerState.lyrics
+
+    LaunchedEffect(playerState.lyrics, track?.id) {
+        if (selectedLyrics == null) {
+            selectedLyrics = playerState.lyrics
+        }
+    }
+
+    fun searchLyrics(query: String) {
+        if (query.isBlank()) {
+            searchResults = emptyList()
+            return
+        }
+        searchLoading = true
+        coroutineScope.launch {
+            searchResults = lyricsProvider.searchResults(query)
+            searchLoading = false
+        }
+    }
+
+    if (showSearchSheet) {
+        LyricsSearchSheet(
+            query = searchQuery,
+            loading = searchLoading,
+            results = searchResults,
+            onQueryChange = {
+                searchQuery = it
+            },
+            onDismiss = { showSearchSheet = false },
+            onResultClick = {
+                selectedLyrics = it.lyrics
+                showSearchSheet = false
+            },
+            onSearch = { searchLyrics(searchQuery) },
+        )
+    }
+
     Column(modifier = modifier) {
         Row(
             modifier =
@@ -1144,8 +1221,16 @@ private fun LyricsContent(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceVariant) {
-                Text("x1", modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), fontWeight = FontWeight.Bold)
+            FilledIconButton(
+                onClick = {
+                    showSearchSheet = true
+                    searchQuery = track?.title.orEmpty()
+                    searchLyrics(searchQuery)
+                },
+                shape = CircleShape,
+            )
+            {
+                Icon(Icons.Default.ManageSearch, null)
             }
         }
         Box(
@@ -1155,7 +1240,274 @@ private fun LyricsContent(
                     .padding(bottom = 28.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Text("No lyric found", fontSize = 24.sp, color = MaterialTheme.colorScheme.onSurface)
+            when {
+                playerState.lyricsLoading -> {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                    ) {
+                        CircularProgressIndicator()
+
+                        Text(
+                            text = stringResource(R.string.loading_lyric),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+
+                visibleLyrics != null -> {
+                    LyricsRenderer(
+                        lyrics = visibleLyrics,
+                        positionMs = playerState.positionMs,
+                        accent = accent,
+                        onTimestampClick = onSeek,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+
+                else -> {
+                    Text(stringResource(R.string.no_lyric_found), fontSize = 24.sp, color = MaterialTheme.colorScheme.onSurface)
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun LyricsSearchSheet(
+    query: String,
+    loading: Boolean,
+    results: List<LyricsSearchResult>,
+    onQueryChange: (String) -> Unit,
+    onDismiss: () -> Unit,
+    onResultClick: (LyricsSearchResult) -> Unit,
+    onSearch: () -> Unit,
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = 20.dp, end = 20.dp, bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Column {
+                Text(
+                    text = stringResource(R.string.search_lyric),
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                )
+
+                Text(
+                    text = stringResource(R.string.search_lyric_description),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = onQueryChange,
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    shape = RoundedCornerShape(28.dp),
+                    placeholder = {
+                        Text("Track / Artist")
+                    },
+                    keyboardOptions =
+                        KeyboardOptions(
+                            imeAction = ImeAction.Search,
+                        ),
+                    keyboardActions =
+                        KeyboardActions(
+                            onSearch = { onSearch() },
+                        ),
+                )
+
+                FilledIconButton(
+                    onClick = { onSearch() },
+                ) {
+                    Icon(Icons.Default.Search, null)
+                }
+            }
+            when {
+                loading -> {
+                    Box(
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .height(220.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(16.dp),
+                        ) {
+                            CircularProgressIndicator()
+
+                            Text(
+                                text = stringResource(R.string.loading_lyric),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+
+                results.isEmpty() -> {
+                    Box(
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .height(220.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Icon(
+                                Icons.Default.LibraryMusic,
+                                null,
+                                modifier = Modifier.size(64.dp),
+                            )
+
+                            Spacer(Modifier.height(16.dp))
+
+                            Text(
+                                stringResource(R.string.no_lyric_found),
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+
+                            Text(
+                                stringResource(R.string.no_lyric_found_description),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+
+                else -> {
+                    LazyColumn(
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 500.dp),
+                        contentPadding = PaddingValues(vertical = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        items(
+                            results,
+                            key = { "${it.id}-${it.title}-${it.artist}" },
+                        ) { result ->
+                            LyricsSearchResultRow(
+                                result = result,
+                                onClick = {
+                                    onResultClick(result)
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LyricsSearchResultRow(
+    result: LyricsSearchResult,
+    onClick: () -> Unit,
+) {
+    ElevatedCard(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+    ) {
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.primaryContainer,
+                modifier = Modifier.size(52.dp),
+            ) {
+                Icon(
+                    Icons.Default.MusicNote,
+                    contentDescription = null,
+                    modifier = Modifier.padding(12.dp),
+                )
+            }
+
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text =
+                        result.title.ifBlank {
+                            stringResource(R.string.track)
+                        },
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+
+                Text(
+                    text = result.artist,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+
+                if (result.album.isNotBlank()) {
+                    Text(
+                        text = result.album,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (result.lyrics.lines.any { it.startMs != null }) {
+                    AssistChip(
+                        onClick = {},
+                        enabled = false,
+                        label = {
+                            Text("Synced")
+                        },
+                    )
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(50),
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                ) {
+                    Text(
+                        text = formatDuration(result.durationMs),
+                        modifier =
+                            Modifier.padding(
+                                horizontal = 10.dp,
+                                vertical = 4.dp,
+                            ),
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                }
+            }
         }
     }
 }
@@ -1337,7 +1689,11 @@ private fun SeekBar(
 
                             fun updateValue(x: Float) {
                                 val width = size.width.toFloat().coerceAtLeast(1f)
-                                sliderValue = ((x.coerceIn(0f, width) / width) * safeDuration).coerceIn(0f, safeDuration.toFloat())
+                                sliderValue =
+                                    ((x.coerceIn(0f, width) / width) * safeDuration).coerceIn(
+                                        0f,
+                                        safeDuration.toFloat(),
+                                    )
                             }
 
                             updateValue(down.position.x)

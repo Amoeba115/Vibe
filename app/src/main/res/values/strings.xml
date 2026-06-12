@@ -88,6 +88,11 @@
     <string name="select_folder">Select folder</string>
     <string name="enabled">Enabled</string>
     <string name="no_track_selected">No track selected</string>
+    <string name="loading_lyric">Loading lyric</string>
+    <string name="no_lyric_found">No lyric found</string>
+    <string name="no_lyric_found_description">Try another title or artist</string>
+    <string name="search_lyric">Search lyric</string>
+    <string name="search_lyric_description">Find lyric from online site</string>
     <string name="favorite">Favorite</string>
     <string name="playlist">Playlist</string>
     <string name="track">Track</string>
