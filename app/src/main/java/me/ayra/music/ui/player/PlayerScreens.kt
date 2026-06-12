@@ -125,6 +125,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.pointerInput
@@ -231,7 +232,22 @@ fun AlbumArt(
     modifier: Modifier,
     shape: RoundedCornerShape,
     contentScale: ContentScale = ContentScale.Crop,
+    highQuality: Boolean = false,
 ) {
+    val context = LocalContext.current
+    val model =
+        remember(artwork, highQuality) {
+            if (artwork != null && highQuality) {
+                ImageRequest
+                    .Builder(context)
+                    .data(artwork)
+                    .size(1200)
+                    .memoryCacheKey("${artwork}:player-cover-hq")
+                    .build()
+            } else {
+                artwork
+            }
+        }
     Box(
         modifier =
             modifier
@@ -241,9 +257,10 @@ fun AlbumArt(
     ) {
         if (artwork != null) {
             SubcomposeAsyncImage(
-                model = artwork,
+                model = model,
                 contentDescription = null,
                 contentScale = contentScale,
+                filterQuality = FilterQuality.High,
                 modifier = Modifier.fillMaxSize(),
                 loading = {
                     Icon(
@@ -885,6 +902,7 @@ private fun AnchoredCoverArt(
     AlbumArt(
         artwork = artwork,
         contentScale = contentScale,
+        highQuality = progress > 0.55f,
         modifier =
             modifier
                 .padding(start = startX, top = top)
