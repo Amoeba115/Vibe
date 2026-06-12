@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.AnimatedVisibility
@@ -168,67 +169,67 @@ import kotlin.math.floor
 import kotlin.math.roundToInt
 
 enum class HomeTab(
-    val label: String,
+    @StringRes val labelRes: Int,
 ) {
-    Favorite("Favorite"),
-    Playlist("Playlist"),
-    Track("Track"),
-    Album("Album"),
-    Artist("Artist"),
-    Folder("Folder"),
+    Favorite(R.string.favorite),
+    Playlist(R.string.playlist),
+    Track(R.string.track),
+    Album(R.string.album),
+    Artist(R.string.artist),
+    Folder(R.string.folder),
 }
 
 private enum class TrackSort(
-    val label: String,
+    @StringRes val labelRes: Int,
 ) {
-    Name("Name"),
-    DateAdded("Date added"),
-    Artist("Artist"),
+    Name(R.string.name),
+    DateAdded(R.string.date_added),
+    Artist(R.string.artist),
 }
 
 private enum class AlbumSort(
-    val label: String,
+    @StringRes val labelRes: Int,
 ) {
-    Release("Release"),
-    Name("Name"),
-    Artist("Artist"),
+    Release(R.string.sort_release),
+    Name(R.string.name),
+    Artist(R.string.artist),
 }
 
 private enum class ArtistSort(
-    val label: String,
+    @StringRes val labelRes: Int,
 ) {
-    Name("Name"),
-    DateAdded("Date added"),
+    Name(R.string.name),
+    DateAdded(R.string.date_added),
 }
 
 private enum class FolderSort(
-    val label: String,
+    @StringRes val labelRes: Int,
 ) {
-    Name("Name"),
-    DateAdded("Date added"),
+    Name(R.string.name),
+    DateAdded(R.string.date_added),
 }
 
 private enum class FolderViewMode(
-    val label: String,
+    @StringRes val labelRes: Int,
 ) {
-    Folder("Folder"),
-    Tree("Tree"),
+    Folder(R.string.folder),
+    Tree(R.string.folder_view_tree),
 }
 
 private enum class PlaylistSort(
-    val label: String,
+    @StringRes val labelRes: Int,
 ) {
-    CustomOrder("Custom order"),
-    Name("Name"),
-    Artist("Artist"),
+    CustomOrder(R.string.custom_order),
+    Name(R.string.name),
+    Artist(R.string.artist),
 }
 
 private enum class PlaylistListSort(
-    val label: String,
+    @StringRes val labelRes: Int,
 ) {
-    DateAdded("Date added"),
-    Name("Name"),
-    DatePlayed("Date played"),
+    DateAdded(R.string.date_added),
+    Name(R.string.name),
+    DatePlayed(R.string.sort_date_played),
 }
 
 private enum class SelectPickerTab {
@@ -239,10 +240,10 @@ private enum class SelectPickerTab {
 }
 
 private enum class SubParentSort(
-    val label: String,
+    @StringRes val labelRes: Int,
 ) {
-    Name("Name"),
-    DateAdded("Date added"),
+    Name(R.string.name),
+    DateAdded(R.string.date_added),
 }
 
 private const val SORT_TRACK = "track"
@@ -1222,7 +1223,7 @@ private fun CenteredHomeTabs(
             contentPadding = PaddingValues(horizontal = horizontalPadding),
             userScrollEnabled = enabled,
         ) {
-            itemsIndexed(tabs, key = { _, tab -> tab.label }) { index, tab ->
+            itemsIndexed(tabs, key = { _, tab -> tab.name }) { index, tab ->
                 val progress = (1f - abs(index - pagerPosition)).coerceIn(0f, 1f)
                 val scale = 0.8f + (0.5f * progress)
                 val color =
@@ -1240,7 +1241,7 @@ private fun CenteredHomeTabs(
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        text = tab.label,
+                        text = stringResource(tab.labelRes),
                         color = color,
                         fontSize = 18.sp,
                         fontWeight = if (progress >= 0.5f) FontWeight.SemiBold else FontWeight.Normal,
@@ -1516,7 +1517,7 @@ private fun SearchTrackResultsScreen(
         RoundedPanelList(listState = rememberLazyListState(), topPadding = 0.dp) {
             item {
                 DetailSortHeader(
-                    label = "${trackResults.size} tracks",
+                    label = stringResource(R.string.tracks_count, trackResults.size),
                     onPlay = {
                         trackResults.firstOrNull()?.let {
                             onTrackClick(it, trackResults)
@@ -1570,7 +1571,7 @@ private fun SearchArtistResultsScreen(
         onBack = onBack,
         modifier = modifier,
     ) {
-        item { SortHeader("${artistResults.size} artists") }
+        item { SortHeader(stringResource(R.string.artists_count, artistResults.size)) }
         itemsIndexed(artistResults, key = { _, artist -> artist.name }) { index, artist ->
             MediaGroupRow(
                 artwork = artist.tracks.firstOrNull()?.albumArtUri,
@@ -1614,7 +1615,7 @@ private fun SearchAlbumResultsScreen(
         onBack = onBack,
         modifier = modifier,
     ) {
-        item { SortHeader("${albumResults.size} albums") }
+        item { SortHeader(stringResource(R.string.albums_count, albumResults.size)) }
         itemsIndexed(albumResults, key = { _, album -> album.id }) { index, album ->
             MediaGroupRow(
                 artwork = album.tracks.firstOrNull()?.albumArtUri,
@@ -1816,7 +1817,7 @@ private fun FavoriteTab(
             horizontalArrangement = Arrangement.spacedBy(14.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
-            item(span = { GridItemSpan(maxLineSpan) }) { SortHeader("Favorite date") }
+            item(span = { GridItemSpan(maxLineSpan) }) { SortHeader(stringResource(R.string.sort_favorite_date)) }
             items(favoriteCards, key = { it.selectionKey }) { card ->
                 FavoriteGridCard(
                     card = card,
@@ -2014,11 +2015,11 @@ private fun PlaylistTab(
                 item {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         SortHeader(
-                            label = listSort.label,
+                            label = stringResource(listSort.labelRes),
                             modifier = Modifier.weight(1f),
-                            options = PlaylistListSort.entries.map { it.label },
+                            options = PlaylistListSort.entries.map { stringResource(it.labelRes) },
                             onOptionSelected = { label ->
-                                PlaylistListSort.entries.firstOrNull { it.label == label }?.let {
+                                PlaylistListSort.entries.firstOrNull { context.getString(it.labelRes) == label }?.let {
                                     listSort = it
                                     preferences.saveSort(SORT_PLAYLIST_LIST, it.name)
                                 }
@@ -2301,10 +2302,10 @@ private fun PlaylistDetailScreen(
                     ) {
                         if (!editMode) {
                             SortHeader(
-                                label = sort.label,
-                                options = PlaylistSort.entries.map { it.label },
+                                label = stringResource(sort.labelRes),
+                                options = PlaylistSort.entries.map { stringResource(it.labelRes) },
                                 onOptionSelected = { label ->
-                                    PlaylistSort.entries.firstOrNull { it.label == label }?.let {
+                                    PlaylistSort.entries.firstOrNull { context.getString(it.labelRes) == label }?.let {
                                         sort = it
                                         preferences.saveSort(SORT_PLAYLIST_PREFIX + playlist.id, it.name)
                                     }
@@ -3178,6 +3179,7 @@ private fun TrackTab(
 ) {
     val listState = rememberHomeLazyListState()
     val preferences = rememberSortPreferences()
+    val context = LocalContext.current
     var editMode by rememberSaveable { mutableStateOf(false) }
     var selectedIds by rememberSaveable { mutableStateOf(emptyList<Long>()) }
     var confirmDelete by rememberSaveable { mutableStateOf(false) }
@@ -3230,10 +3232,10 @@ private fun TrackTab(
         IndexedListWithRail(listState = listState, alphabetIndexes = alphabetIndexes) {
             item {
                 SortHeader(
-                    label = sort.label,
-                    options = TrackSort.entries.map { it.label },
+                    label = stringResource(sort.labelRes),
+                    options = TrackSort.entries.map { stringResource(it.labelRes) },
                     onOptionSelected = { label ->
-                        TrackSort.entries.firstOrNull { it.label == label }?.let {
+                        TrackSort.entries.firstOrNull { context.getString(it.labelRes) == label }?.let {
                             sort = it
                             preferences.saveSort(SORT_TRACK, it.name)
                         }
@@ -3306,6 +3308,7 @@ private fun AlbumTab(
 ) {
     val gridState = rememberHomeLazyGridState()
     val preferences = rememberSortPreferences()
+    val context = LocalContext.current
     var editMode by rememberSaveable { mutableStateOf(false) }
     var selectedIds by rememberSaveable { mutableStateOf(emptyList<Long>()) }
     var confirmDelete by rememberSaveable { mutableStateOf(false) }
@@ -3356,10 +3359,10 @@ private fun AlbumTab(
         ) {
             item(span = { GridItemSpan(maxLineSpan) }) {
                 SortHeader(
-                    label = sort.label,
-                    options = AlbumSort.entries.map { it.label },
+                    label = stringResource(sort.labelRes),
+                    options = AlbumSort.entries.map { stringResource(it.labelRes) },
                     onOptionSelected = { label ->
-                        AlbumSort.entries.firstOrNull { it.label == label }?.let {
+                        AlbumSort.entries.firstOrNull { context.getString(it.labelRes) == label }?.let {
                             sort = it
                             preferences.saveSort(SORT_ALBUM, it.name)
                         }
@@ -3702,7 +3705,7 @@ private fun AlbumHeader(
             overflow = TextOverflow.Ellipsis,
         )
         Text(
-            text = "${albumTracks.size} tracks | ${totalDurationMs.formatDuration()}",
+            text = stringResource(R.string.tracks_duration, albumTracks.size, totalDurationMs.formatDuration()),
             modifier = Modifier.padding(top = 8.dp, bottom = 26.dp),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 15.sp,
@@ -3718,6 +3721,7 @@ private fun AlbumTrackListHeader(
     onSubParentSortSelected: (SubParentSort) -> Unit,
     onTrackClick: (Track, List<Track>) -> Unit,
 ) {
+    val context = LocalContext.current
     Surface(
         modifier =
             Modifier
@@ -3735,10 +3739,10 @@ private fun AlbumTrackListHeader(
             )
             if (albumTrackGroups.size > 1) {
                 SortHeader(
-                    label = subParentSort.label,
-                    options = SubParentSort.entries.map { it.label },
+                    label = stringResource(subParentSort.labelRes),
+                    options = SubParentSort.entries.map { stringResource(it.labelRes) },
                     onOptionSelected = { label ->
-                        SubParentSort.entries.firstOrNull { it.label == label }?.let(onSubParentSortSelected)
+                        SubParentSort.entries.firstOrNull { context.getString(it.labelRes) == label }?.let(onSubParentSortSelected)
                     },
                     modifier = Modifier.padding(top = 12.dp),
                 )
@@ -3802,6 +3806,7 @@ private fun ArtistTab(
 ) {
     val listState = rememberHomeLazyListState()
     val preferences = rememberSortPreferences()
+    val context = LocalContext.current
     var editMode by rememberSaveable { mutableStateOf(false) }
     var selectedNames by rememberSaveable { mutableStateOf(emptyList<String>()) }
     var confirmDelete by rememberSaveable { mutableStateOf(false) }
@@ -3853,10 +3858,10 @@ private fun ArtistTab(
         IndexedListWithRail(listState = listState, alphabetIndexes = alphabetIndexes) {
             item {
                 SortHeader(
-                    label = sort.label,
-                    options = ArtistSort.entries.map { it.label },
+                    label = stringResource(sort.labelRes),
+                    options = ArtistSort.entries.map { stringResource(it.labelRes) },
                     onOptionSelected = { label ->
-                        ArtistSort.entries.firstOrNull { it.label == label }?.let {
+                        ArtistSort.entries.firstOrNull { context.getString(it.labelRes) == label }?.let {
                             sort = it
                             preferences.saveSort(SORT_ARTIST, it.name)
                         }
@@ -3905,10 +3910,10 @@ private fun ArtistTab(
 }
 
 private enum class ArtistDetailTab(
-    val label: String,
+    @StringRes val labelRes: Int,
 ) {
-    Track("Track"),
-    Album("Album"),
+    Track(R.string.track),
+    Album(R.string.album),
 }
 
 @Composable
@@ -4002,7 +4007,11 @@ private fun ArtistDetailScreen(
                     color = if (selected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent,
                 ) {
                     Text(
-                        text = "${tab.label} (${if (tab == ArtistDetailTab.Track) artistTracks.size else artistAlbums.size})",
+                        text = stringResource(
+                            R.string.tab_count,
+                            stringResource(tab.labelRes),
+                            if (tab == ArtistDetailTab.Track) artistTracks.size else artistAlbums.size,
+                        ),
                         color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 15.sp,
                         fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
@@ -4188,7 +4197,7 @@ private fun ArtistAlbumTab(
         horizontalArrangement = Arrangement.spacedBy(14.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        item(span = { GridItemSpan(maxLineSpan) }) { SortHeader("Release") }
+        item(span = { GridItemSpan(maxLineSpan) }) { SortHeader(stringResource(R.string.sort_release)) }
         items(albums, key = { it.id }) { album ->
             ArtworkCard(
                 title = album.title,
@@ -4527,25 +4536,26 @@ private fun FolderTabHeader(
     onViewModeSelected: (FolderViewMode) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
     Row(
         modifier = modifier,
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         SortHeader(
-            label = sort.label,
+            label = stringResource(sort.labelRes),
             modifier = Modifier.weight(1f),
-            options = FolderSort.entries.map { it.label },
+            options = FolderSort.entries.map { stringResource(it.labelRes) },
             onOptionSelected = { label ->
-                FolderSort.entries.firstOrNull { it.label == label }?.let(onSortSelected)
+                FolderSort.entries.firstOrNull { context.getString(it.labelRes) == label }?.let(onSortSelected)
             },
         )
         ModeHeader(
-            label = viewMode.label,
+            label = stringResource(viewMode.labelRes),
             modifier = Modifier.width(102.dp),
-            options = FolderViewMode.entries.map { it.label },
+            options = FolderViewMode.entries.map { stringResource(it.labelRes) },
             onOptionSelected = { label ->
-                FolderViewMode.entries.firstOrNull { it.label == label }?.let(onViewModeSelected)
+                FolderViewMode.entries.firstOrNull { context.getString(it.labelRes) == label }?.let(onViewModeSelected)
             },
         )
     }
@@ -4687,7 +4697,7 @@ private fun FolderDetailScreen(
         IndexedListWithRail(listState = listState, topPadding = 0.dp) {
             item {
                 DetailSortHeader(
-                    label = "Name",
+                    label = stringResource(R.string.name),
                     onShuffle = { folder.tracks.firstOrNull()?.let { onTrackClick(it, folder.tracks) } },
                     onPlay = { folder.tracks.firstOrNull()?.let { onTrackClick(it, folder.tracks) } },
                 )

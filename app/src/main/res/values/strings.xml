@@ -149,9 +149,17 @@
     <string name="no_artists_found">No artists found</string>
     <string name="no_albums_found">No albums found</string>
     <string name="tracks_count">%1$d tracks</string>
+    <string name="artists_count">%1$d artists</string>
+    <string name="albums_count">%1$d albums</string>
+    <string name="tracks_duration">%1$d tracks | %2$s</string>
+    <string name="tab_count">%1$s (%2$d)</string>
     <string name="selected_count_plain">%1$d selected</string>
     <string name="custom_order">Custom order</string>
     <string name="date_added">Date added</string>
+    <string name="sort_date_played">Date played</string>
+    <string name="sort_release">Release</string>
+    <string name="sort_favorite_date">Favorite date</string>
+    <string name="folder_view_tree">Tree</string>
     <string name="name">Name</string>
     <string name="show_all">Show all</string>
     <string name="search_results">Search results</string>
