@@ -407,20 +407,20 @@ class MusicViewModel(
                 libraryScanner.refreshLibrary { partial ->
                     if (partial.tracks.isNotEmpty()) {
                         withContext(Dispatchers.Main.immediate) {
-                            if (activeSnapshot.isNotEmpty()) return@withContext
-                            if (partial.snapshot == activeSnapshot) return@withContext
-                            activeSnapshot = partial.snapshot
+                            val mergedPartial = partial.mergeWithActiveLibrary(_library.value.allTracks, activeSnapshot)
+                            if (mergedPartial.snapshot == activeSnapshot) return@withContext
+                            activeSnapshot = mergedPartial.snapshot
                             val hiddenFolders = preferences.loadHiddenFolders()
-                            val visibleTracks = partial.tracks.filterVisible(hiddenFolders)
+                            val visibleTracks = mergedPartial.tracks.filterVisible(hiddenFolders)
                             _library.update {
                                 it.copy(
                                     loading = false,
-                                    allTracks = partial.tracks,
+                                    allTracks = mergedPartial.tracks,
                                     tracks = visibleTracks,
-                                    favorites = partial.favorites,
-                                    favoriteItems = partial.favoriteItems,
+                                    favorites = mergedPartial.favorites,
+                                    favoriteItems = mergedPartial.favoriteItems,
                                     playlists = libraryScanner.buildPlaylists(visibleTracks),
-                                    trackStats = partial.trackStats,
+                                    trackStats = mergedPartial.trackStats,
                                     hiddenFolders = hiddenFolders,
                                     error = null,
                                 )
@@ -886,6 +886,32 @@ data class CachedLibrary(
     val snapshot: List<TrackSnapshot> = emptyList(),
 )
 
+private fun CachedLibrary.mergeWithActiveLibrary(
+    activeTracks: List<Track>,
+    activeSnapshot: List<TrackSnapshot>,
+): CachedLibrary {
+    if (activeTracks.isEmpty() || activeSnapshot.isEmpty() || activeTracks.size != activeSnapshot.size) {
+        return this
+    }
+
+    val merged = LinkedHashMap<String, Pair<TrackSnapshot, Track>>()
+    activeSnapshot.zip(activeTracks).forEach { (snapshot, track) ->
+        merged[snapshot.cacheKey] = snapshot to track
+    }
+    snapshot.zip(tracks).forEach { (snapshot, track) ->
+        merged[snapshot.cacheKey] = snapshot to track
+    }
+
+    val sorted =
+        merged
+            .values
+            .sortedBy { (_, track) -> track.title.lowercase(Locale.getDefault()) }
+    return copy(
+        tracks = sorted.map { it.second },
+        snapshot = sorted.map { it.first },
+    )
+}
+
 private suspend fun LibraryDao.loadLibraryFavorites(): List<FavoriteItem> {
     val itemFavorites = loadFavoriteItems().map { FavoriteItem(it.type, it.key, it.addedAt) }
     val itemTrackIds =
@@ -1262,7 +1288,7 @@ class MediaStoreScanner(
                     val album = cursor.getString(albumColumn)?.takeIf { it.isNotBlank() } ?: "Unknown album"
                     val folder = cursor.getStringOrNull(relativePathColumn)?.trimEnd('/') ?: "Music"
                     val trackMetadata = cursor.getInt(trackNumberColumn).toTrackMetadata()
-                    scanned +=
+                    val rawTrack =
                         ScannedTrack(
                             track =
                                 Track(
@@ -1284,12 +1310,11 @@ class MediaStoreScanner(
                             lastModifiedMs = cursor.getLong(dateModifiedColumn).coerceAtLeast(0L) * 1_000L,
                             sizeBytes = cursor.getLong(sizeColumn).coerceAtLeast(0L),
                         )
-                    if (scanned.size == 1) {
-                        onPartial(scanned.reuseUnchangedCache(dao))
-                    }
+                    scanned += listOf(rawTrack).reuseUnchangedCache(dao).first()
+                    onPartial(scanned.toList())
                 }
             }
-        return scanned.reuseUnchangedCache(dao)
+        return scanned
     }
 
     private suspend fun List<ScannedTrack>.reuseUnchangedCache(dao: LibraryDao): List<ScannedTrack> {
@@ -1467,38 +1492,33 @@ class VgmFileScanner(
         dao: LibraryDao,
         onPartial: suspend (List<ScannedTrack>) -> Unit = {},
     ): List<ScannedTrack> {
-        val files = mutableListOf<File>()
+        val scanned = mutableListOf<ScannedTrack>()
         scanRoots().forEach { root ->
             root.walkReadableFiles { file ->
                 if (!file.isVgmFile()) return@walkReadableFiles
-                files += file
-                if (files.size == 1) {
-                    onPartial(listOf(file.toScannedTrack(emptyMap())))
-                }
+                scanned += file.toScannedTrack(dao)
+                onPartial(
+                    scanned
+                        .distinctBy { it.track.uri }
+                        .sortedWith(compareBy({ it.track.folder.lowercase(Locale.ROOT) }, { it.track.title.lowercase(Locale.ROOT) })),
+                )
             }
         }
-        val cached =
-            if (files.isEmpty()) {
-                emptyMap()
-            } else {
-                dao.loadVgmMetadata(files.map { it.absolutePath }).associateBy { it.path }
-            }
-        val cachedTracks =
-            if (files.isEmpty()) {
-                emptyMap()
-            } else {
-                dao.loadTracksByCacheKey(files.map { it.absolutePath }).associateBy { it.cacheKey }
-            }
-        val cachedAudioInfo =
-            if (cachedTracks.isEmpty()) {
-                emptyMap()
-            } else {
-                dao.loadAudioInfo(cachedTracks.values.map { it.trackId }).associate { it.trackId to it.toAudioInfo() }
-            }
-        return files
-            .map { file -> file.toScannedTrack(cached, cachedAudioInfo) }
+        return scanned
             .distinctBy { it.track.uri }
             .sortedWith(compareBy({ it.track.folder.lowercase(Locale.ROOT) }, { it.track.title.lowercase(Locale.ROOT) }))
+    }
+
+    private suspend fun File.toScannedTrack(dao: LibraryDao): ScannedTrack {
+        val cached = dao.loadVgmMetadata(listOf(absolutePath)).associateBy { it.path }
+        val cachedTrack = dao.loadTracksByCacheKey(listOf(absolutePath)).associateBy { it.cacheKey }
+        val cachedAudioInfo =
+            if (cachedTrack.isEmpty()) {
+                emptyMap()
+            } else {
+                dao.loadAudioInfo(cachedTrack.values.map { it.trackId }).associate { it.trackId to it.toAudioInfo() }
+            }
+        return toScannedTrack(cached, cachedAudioInfo)
     }
 
     private fun File.toScannedTrack(
