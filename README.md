@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="https://raw.githubusercontent.com/AyraHikari/AyraMusic/main/.github/screenshots/banner.jpg">
+  <img src="https://github.com/AyraHikari/AyraMusic/blob/main/.github/screenshots/banner.jpg?raw=true">
 
   <h1>AyraMusic</h1>
 
@@ -42,3 +42,14 @@
 - View detailed audio information including format, bitrate, and sample rate.
 - Extensive customization options for playback, appearance, and library management.
 - Open and play audio files directly from file managers and external apps.
+
+## Screenshots
+
+## Downloads
+
+## Credits
+
+## License
+Apache License 2.0
+
+See <a href="https://github.com/AyraHikari/AyraMusic/blob/main/LICENSE">LICENSE</a> for upstream licenses.
