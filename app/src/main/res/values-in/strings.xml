@@ -142,6 +142,9 @@
     <string name="no_albums_found">Tidak ada album ditemukan</string>
     <string name="tracks_count">%1$d lagu</string>
     <string name="selected_count_plain">%1$d dipilih</string>
+    <string name="custom_order">Urutan kustom</string>
+    <string name="date_added">Tanggal ditambahkan</string>
+    <string name="name">Nama</string>
     <string name="show_all">Tampilkan semua</string>
     <string name="search_results">Hasil pencarian</string>
     <string name="no_tracks_found">Tidak ada lagu ditemukan</string>

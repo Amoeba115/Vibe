@@ -142,6 +142,9 @@
     <string name="no_albums_found">No albums found</string>
     <string name="tracks_count">%1$d tracks</string>
     <string name="selected_count_plain">%1$d selected</string>
+    <string name="custom_order">Custom order</string>
+    <string name="date_added">Date added</string>
+    <string name="name">Name</string>
     <string name="show_all">Show all</string>
     <string name="search_results">Search results</string>
     <string name="no_tracks_found">No tracks found</string>

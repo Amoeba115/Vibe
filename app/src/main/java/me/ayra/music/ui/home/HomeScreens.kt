@@ -302,6 +302,7 @@ private fun MainRoute.saveableStateKey(searchStateVersion: Int): String =
         is MainRoute.Playlist -> "playlist:$id"
         is MainRoute.SelectPlaylistTracks -> "select-playlist-tracks:$name"
         is MainRoute.AddTracksToPlaylist -> "add-tracks-to-playlist:$id"
+        MainRoute.AddTracksToCurrentQueue -> "add-tracks-to-current-queue"
         is MainRoute.AddToPlaylist -> "add-to-playlist:$trackId"
         is MainRoute.AddToTracks -> "add-to-tracks:${trackIds.joinToString(",")}"
     }
@@ -329,6 +330,8 @@ fun MainScreen(
     onDeletePlaylists: (List<String>) -> Unit,
     onDeleteTracksPermanently: (List<Track>) -> Unit,
     onAddTracksToRoute: (List<Track>) -> Unit,
+    onAddTracksToCurrentQueueRoute: () -> Unit,
+    onCurrentQueueTracksAdded: () -> Unit,
     onPlaylistEditModeChanged: (Boolean) -> Unit,
     initialTabIndex: Int,
     onTabSelected: (Int) -> Unit,
@@ -452,6 +455,8 @@ fun MainScreen(
                             onDeletePlaylists = onDeletePlaylists,
                             onDeleteTracksPermanently = onDeleteTracksPermanently,
                             onAddTracksToRoute = onAddTracksToRoute,
+                            onAddTracksToCurrentQueueRoute = onAddTracksToCurrentQueueRoute,
+                            onCurrentQueueTracksAdded = onCurrentQueueTracksAdded,
                             onPlaylistEditModeChanged = onPlaylistEditModeChanged,
                             onTrackMenu = { trackMenuTrack = it },
                             modifier = Modifier.fillMaxSize(),
@@ -530,6 +535,8 @@ private fun DetailHost(
     onDeletePlaylists: (List<String>) -> Unit,
     onDeleteTracksPermanently: (List<Track>) -> Unit,
     onAddTracksToRoute: (List<Track>) -> Unit,
+    onAddTracksToCurrentQueueRoute: () -> Unit,
+    onCurrentQueueTracksAdded: () -> Unit,
     onPlaylistEditModeChanged: (Boolean) -> Unit,
     onTrackMenu: (Track) -> Unit,
     modifier: Modifier = Modifier,
@@ -710,6 +717,20 @@ private fun DetailHost(
                 onDone = { selected ->
                     onAddTracksToPlaylist(route.id, selected)
                     onBack()
+                },
+                modifier = modifier,
+            )
+        }
+
+        MainRoute.AddTracksToCurrentQueue -> {
+            SelectTrackScreen(
+                title = stringResource(R.string.add_tracks),
+                tracks = library.tracks,
+                onBack = onBack,
+                onDone = { selected ->
+                    onAddTracksToCurrentQueue(selected)
+                    onBack()
+                    onCurrentQueueTracksAdded()
                 },
                 modifier = modifier,
             )
@@ -1704,12 +1725,10 @@ private fun appBackgroundContainerColor(): Color =
     )
 
 @Composable
-private fun rememberHomeLazyListState(): LazyListState =
-    rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
+private fun rememberHomeLazyListState(): LazyListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
 
 @Composable
-private fun rememberHomeLazyGridState(): LazyGridState =
-    rememberSaveable(saver = LazyGridState.Saver) { LazyGridState() }
+private fun rememberHomeLazyGridState(): LazyGridState = rememberSaveable(saver = LazyGridState.Saver) { LazyGridState() }
 
 @Composable
 private fun FavoriteTab(
@@ -2711,7 +2730,7 @@ private fun SelectPickerTabs(
                 shape = RoundedCornerShape(18.dp),
                 color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainer,
                 contentColor = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.clickable { onSelected(tab) },
+                modifier = Modifier.padding(bottom = 16.dp).clickable { onSelected(tab) },
             ) {
                 Text(
                     text = tab.label(),

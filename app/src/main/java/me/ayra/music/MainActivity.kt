@@ -1756,6 +1756,7 @@ fun MusicApp(
     }
     val hidePlayerSheet = navigator.currentRoute == MainRoute.Settings || playlistEditMode
     var playerExpandRequest by rememberSaveable { mutableIntStateOf(0) }
+    var playerPlaylistExpandRequest by rememberSaveable { mutableIntStateOf(0) }
     val showFancyBackground =
         fancyBackgroundEnabled &&
             navigator.currentRoute != MainRoute.Settings &&
@@ -1821,6 +1822,8 @@ fun MusicApp(
                 onDeletePlaylists = viewModel::deletePlaylists,
                 onDeleteTracksPermanently = ::requestPermanentDelete,
                 onAddTracksToRoute = { tracks -> navigator.navigate(MainRoute.AddToTracks(tracks.map { it.id })) },
+                onAddTracksToCurrentQueueRoute = { navigator.navigate(MainRoute.AddTracksToCurrentQueue) },
+                onCurrentQueueTracksAdded = { playerPlaylistExpandRequest++ },
                 onPlaylistEditModeChanged = { playlistEditMode = it },
                 initialTabIndex = lastHomeTab,
                 onTabSelected = { tabIndex ->
@@ -1834,7 +1837,9 @@ fun MusicApp(
                     playerState = playerState,
                     isFavorite = playerState.currentTrack?.id in library.favorites,
                     expandRequest = playerExpandRequest,
+                    playlistExpandRequest = playerPlaylistExpandRequest,
                     onExpandRequestConsumed = { playerExpandRequest = 0 },
+                    onPlaylistExpandRequestConsumed = { playerPlaylistExpandRequest = 0 },
                     onSettings = { navigator.navigate(MainRoute.Settings) },
                     onAddTo = { track -> navigator.navigate(MainRoute.AddToPlaylist(track.id)) },
                     onDeleteTrack = { track -> requestPermanentDelete(listOf(track)) },
@@ -1850,6 +1855,8 @@ fun MusicApp(
                         }
                     },
                     onChannelOutput = { navigator.navigate(MainRoute.Settings) },
+                    onAddTracksToCurrentQueueRoute = { navigator.navigate(MainRoute.AddTracksToCurrentQueue) },
+                    onReplaceCurrentQueue = viewModel::replaceCurrentQueue,
                     onToggleFavorite = { playerState.currentTrack?.id?.let(viewModel::toggleFavorite) },
                     onPlayPause = viewModel::togglePlayPause,
                     onPrevious = viewModel::previous,

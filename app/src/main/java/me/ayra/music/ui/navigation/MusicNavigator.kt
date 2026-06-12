@@ -66,6 +66,7 @@ private fun MainRoute.toKey(): String =
         is MainRoute.Playlist -> "playlist:$id"
         is MainRoute.SelectPlaylistTracks -> "selectPlaylistTracks:${Uri.encode(name)}"
         is MainRoute.AddTracksToPlaylist -> "addTracksToPlaylist:${Uri.encode(id)}"
+        MainRoute.AddTracksToCurrentQueue -> "addTracksToCurrentQueue"
         is MainRoute.AddToPlaylist -> "addToPlaylist:$trackId"
         is MainRoute.AddToTracks -> "addToTracks:${trackIds.joinToString(",")}"
     }
@@ -84,6 +85,7 @@ private fun String.toMainRoute(): MainRoute? =
         startsWith("playlist:") -> MainRoute.Playlist(removePrefix("playlist:"))
         startsWith("selectPlaylistTracks:") -> MainRoute.SelectPlaylistTracks(Uri.decode(removePrefix("selectPlaylistTracks:")))
         startsWith("addTracksToPlaylist:") -> MainRoute.AddTracksToPlaylist(Uri.decode(removePrefix("addTracksToPlaylist:")))
+        this == "addTracksToCurrentQueue" -> MainRoute.AddTracksToCurrentQueue
         startsWith("addToPlaylist:") -> removePrefix("addToPlaylist:").toLongOrNull()?.let(MainRoute::AddToPlaylist)
         startsWith("addToTracks:") -> MainRoute.AddToTracks(
             removePrefix("addToTracks:")

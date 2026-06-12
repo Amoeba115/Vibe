@@ -11,6 +11,8 @@ import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -83,8 +85,8 @@ class LrclibLyricsProvider(
                         ?.takeIf { it.second >= 70 } // minimum similarity
                         ?.first
                 best?.jsonObject?.let { obj ->
-                    val synced = obj["syncedLyrics"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
-                    val plain = obj["plainLyrics"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
+                    val synced = obj.lyricText("syncedLyrics")
+                    val plain = obj.lyricText("plainLyrics")
                     when {
                         synced != null -> parseLyrics(synced, "LRCLIB")
                         plain != null -> LrcParser.parsePlain(plain, "LRCLIB")
@@ -107,8 +109,8 @@ class LrclibLyricsProvider(
                     .jsonArray
                     .mapNotNull { record ->
                         val obj = record.jsonObject
-                        val synced = obj["syncedLyrics"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
-                        val plain = obj["plainLyrics"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
+                        val synced = obj.lyricText("syncedLyrics")
+                        val plain = obj.lyricText("plainLyrics")
                         val lyrics =
                             when {
                                 synced != null -> parseLyrics(synced, "LRCLIB")
@@ -133,6 +135,13 @@ class LrclibLyricsProvider(
                     }
             }.getOrDefault(emptyList())
         }
+
+    private fun JsonObject.lyricText(key: String): String? =
+        get(key)
+            ?.jsonPrimitive
+            ?.contentOrNull
+            ?.trim()
+            ?.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
 
     private fun String?.isUnknownArtist(): Boolean {
         val value = this?.trim()?.lowercase() ?: return true
