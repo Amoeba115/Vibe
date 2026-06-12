@@ -93,8 +93,16 @@
     <string name="no_lyric_found_description">Coba judul atau artis lain</string>
     <string name="search_lyric">Cari lirik</string>
     <string name="search_lyric_description">Cari lirik dari situs online</string>
+    <string name="delete_lyric">Hapus lirik</string>
+    <string name="download_lyric">Unduh lirik</string>
     <string name="favorite">Favorit</string>
     <string name="playlist">Playlist</string>
+    <string name="playlist_settings_subtitle">Impor dan ekspor playlist kustom</string>
+    <string name="playlist_layout">Tata letak playlist</string>
+    <string name="import_playlist">Impor</string>
+    <string name="import_playlist_subtitle">Impor file playlist m3u, m3u8, atau JSON</string>
+    <string name="export_playlist">Ekspor</string>
+    <string name="export_playlist_subtitle">Ekspor playlist kustom sebagai file JSON</string>
     <string name="track">Lagu</string>
     <string name="album">Album</string>
     <string name="artist">Artis</string>

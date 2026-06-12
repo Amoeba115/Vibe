@@ -18,12 +18,43 @@ class LocalLyricsProvider(
                 .firstNotNullOfOrNull { file ->
                     runCatching {
                         if (file.isFile && file.canRead()) {
-                            parseLyrics(file.readText(), "Local")
+                            parseLyrics(file.readText(), LyricsRepository.LOCAL_SOURCE)
                         } else {
                             null
                         }
                     }.getOrNull()
                 }
+        }
+
+    suspend fun save(
+        track: Track,
+        lyrics: Lyrics,
+    ): Boolean =
+        withContext(Dispatchers.IO) {
+            val target = writableLyricFile(track) ?: return@withContext false
+            runCatching {
+                target.parentFile?.mkdirs()
+                target.writeText(lyrics.toLrcText())
+            }.isSuccess
+        }
+
+    suspend fun delete(track: Track): Boolean =
+        withContext(Dispatchers.IO) {
+            lyricCandidates(track)
+                .firstOrNull { it.isFile && it.canWrite() }
+                ?.let { runCatching { it.delete() }.getOrDefault(false) }
+                ?: false
+        }
+
+    private fun writableLyricFile(track: Track): File? =
+        lyricCandidates(track).firstOrNull { candidate ->
+            candidate.parentFile?.let { it.exists() && it.canWrite() } == true
+        } ?: run {
+            if (track.uri.scheme == "file") {
+                track.uri.path?.let { path -> File(path).withExtension("lrc") }
+            } else {
+                queryFilePath(track.uri)?.let { path -> File(path).withExtension("lrc") }
+            }
         }
 
     private fun lyricCandidates(track: Track): List<File> {
@@ -68,3 +99,19 @@ class LocalLyricsProvider(
         File(parentFile, "${nameWithoutExtension}.$extension")
 }
 
+private fun Lyrics.toLrcText(): String =
+    if (synchronized) {
+        lines.joinToString(separator = "\n") { line ->
+            line.startMs?.let { "${it.toLrcTimestamp()}${line.text}" } ?: line.text
+        }
+    } else {
+        lines.joinToString(separator = "\n") { it.text }
+    }
+
+private fun Long.toLrcTimestamp(): String {
+    val totalCentiseconds = (coerceAtLeast(0L) / 10L).toInt()
+    val minutes = totalCentiseconds / 6_000
+    val seconds = (totalCentiseconds % 6_000) / 100
+    val centiseconds = totalCentiseconds % 100
+    return "[${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}.${centiseconds.toString().padStart(2, '0')}]"
+}

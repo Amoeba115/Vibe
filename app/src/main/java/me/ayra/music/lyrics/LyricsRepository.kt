@@ -23,6 +23,25 @@ class LyricsRepository(
 
     suspend fun searchResults(query: String): List<LyricsSearchResult> =
         providers.flatMap { provider -> provider.searchResults(query) }
+
+    suspend fun saveLocal(
+        track: Track,
+        lyrics: Lyrics,
+    ): Boolean {
+        val saved = localProvider.save(track, lyrics)
+        if (saved) cache[track.id] = lyrics.copy(source = LOCAL_SOURCE)
+        return saved
+    }
+
+    suspend fun deleteLocal(track: Track): Boolean {
+        val deleted = localProvider.delete(track)
+        if (deleted) cache.remove(track.id)
+        return deleted
+    }
+
+    companion object {
+        const val LOCAL_SOURCE = "Local"
+    }
 }
 
 fun parseLyrics(

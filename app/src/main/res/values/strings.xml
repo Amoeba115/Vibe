@@ -93,8 +93,16 @@
     <string name="no_lyric_found_description">Try another title or artist</string>
     <string name="search_lyric">Search lyric</string>
     <string name="search_lyric_description">Find lyric from online site</string>
+    <string name="delete_lyric">Delete lyric</string>
+    <string name="download_lyric">Download lyric</string>
     <string name="favorite">Favorite</string>
     <string name="playlist">Playlist</string>
+    <string name="playlist_settings_subtitle">Import and export custom playlists</string>
+    <string name="playlist_layout">Playlist layout</string>
+    <string name="import_playlist">Import</string>
+    <string name="import_playlist_subtitle">Import m3u, m3u8, or ams playlist files</string>
+    <string name="export_playlist">Export</string>
+    <string name="export_playlist_subtitle">Export custom playlists as a JSON file</string>
     <string name="track">Track</string>
     <string name="album">Album</string>
     <string name="artist">Artist</string>

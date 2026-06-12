@@ -125,6 +125,7 @@ private enum class SettingsCategory(
     LookAndFeel(R.string.look_and_feel),
     Player(R.string.player),
     Library(R.string.library),
+    Playlist(R.string.playlist),
     HideFolders(R.string.hide_folder, depth = 2),
     Vgmstream(R.string.vgmstream),
 }
@@ -166,6 +167,8 @@ fun SettingsScreen(
     library: LibraryState,
     onRescan: () -> Unit,
     onHiddenFoldersChanged: (Set<String>) -> Unit,
+    onImportPlaylist: () -> Unit,
+    onExportPlaylists: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var selectedCategory by rememberSaveable { mutableStateOf<SettingsCategory?>(null) }
@@ -234,6 +237,13 @@ fun SettingsScreen(
                     )
                 }
 
+                SettingsCategory.Playlist -> {
+                    PlaylistSettings(
+                        onImport = onImportPlaylist,
+                        onExport = onExportPlaylists,
+                    )
+                }
+
                 SettingsCategory.HideFolders -> {
                     HideFolderSettings(
                         folders = library.allFolders,
@@ -292,6 +302,13 @@ private fun SettingsCategoryList(onCategorySelected: (SettingsCategory) -> Unit)
                     subtitle = stringResource(R.string.library_subtitle),
                     icon = Icons.Rounded.LibraryMusic,
                     onClick = { onCategorySelected(SettingsCategory.Library) },
+                )
+                SettingsDivider()
+                SettingsNavigationRow(
+                    title = stringResource(R.string.playlist),
+                    subtitle = stringResource(R.string.playlist_settings_subtitle),
+                    icon = Icons.Rounded.MusicNote,
+                    onClick = { onCategorySelected(SettingsCategory.Playlist) },
                 )
                 if (BuildConfig.IS_VGM_BUILD) {
                     SettingsDivider()
@@ -709,6 +726,31 @@ private fun PlayerSettings() {
                     crossfadeSeconds = it.roundToInt().coerceIn(0, 5)
                     preferences.saveCrossfadeSeconds(crossfadeSeconds)
                 },
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlaylistSettings(
+    onImport: () -> Unit,
+    onExport: () -> Unit,
+) {
+    SettingsPage {
+        SettingsSectionTitle(stringResource(R.string.playlist_layout))
+        SettingsGroup {
+            SettingsNavigationRow(
+                title = stringResource(R.string.import_playlist),
+                subtitle = stringResource(R.string.import_playlist_subtitle),
+                icon = Icons.Rounded.LibraryMusic,
+                onClick = onImport,
+            )
+            SettingsDivider()
+            SettingsNavigationRow(
+                title = stringResource(R.string.export_playlist),
+                subtitle = stringResource(R.string.export_playlist_subtitle),
+                icon = Icons.Rounded.MusicNote,
+                onClick = onExport,
             )
         }
     }

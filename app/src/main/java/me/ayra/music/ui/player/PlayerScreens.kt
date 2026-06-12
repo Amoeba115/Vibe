@@ -161,6 +161,7 @@ import me.ayra.music.R
 import me.ayra.music.Track
 import me.ayra.music.lyrics.LrclibLyricsProvider
 import me.ayra.music.lyrics.LyricsRenderer
+import me.ayra.music.lyrics.LyricsRepository
 import me.ayra.music.lyrics.LyricsSearchResult
 import me.ayra.music.util.MusicPreferences
 import sh.calvin.reorderable.ReorderableItem
@@ -1192,9 +1193,12 @@ private fun LyricsContent(
     modifier: Modifier = Modifier,
 ) {
     val track = playerState.currentTrack
+    val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val lyricsProvider = remember { LrclibLyricsProvider() }
+    val lyricsRepository = remember(context) { LyricsRepository(context) }
     var selectedLyrics by remember(track?.id) { mutableStateOf(playerState.lyrics) }
+    var menuExpanded by rememberSaveable { mutableStateOf(false) }
     var showSearchSheet by rememberSaveable { mutableStateOf(false) }
     var searchQuery by rememberSaveable(track?.id) { mutableStateOf(track?.title.orEmpty()) }
     var searchLoading by rememberSaveable { mutableStateOf(false) }
@@ -1265,16 +1269,54 @@ private fun LyricsContent(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            FilledIconButton(
-                onClick = {
-                    showSearchSheet = true
-                    searchQuery = track?.title.orEmpty()
-                    searchLyrics(searchQuery)
-                },
-                shape = CircleShape,
-            )
-            {
-                Icon(Icons.Default.ManageSearch, null)
+            Box {
+                FilledIconButton(
+                    onClick = { menuExpanded = true },
+                    shape = CircleShape,
+                    enabled = enabled && track != null,
+                ) {
+                    Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.menu))
+                }
+                DropdownMenu(
+                    expanded = menuExpanded,
+                    onDismissRequest = { menuExpanded = false },
+                ) {
+                    val currentLyrics = visibleLyrics
+                    val isLocalLyrics = currentLyrics?.source == LyricsRepository.LOCAL_SOURCE
+                    if (currentLyrics != null) {
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    stringResource(
+                                        if (isLocalLyrics) R.string.delete_lyric else R.string.download_lyric,
+                                    ),
+                                )
+                            },
+                            onClick = {
+                                menuExpanded = false
+                                val currentTrack = track ?: return@DropdownMenuItem
+                                coroutineScope.launch {
+                                    if (isLocalLyrics) {
+                                        if (lyricsRepository.deleteLocal(currentTrack)) {
+                                            selectedLyrics = null
+                                        }
+                                    } else if (lyricsRepository.saveLocal(currentTrack, currentLyrics)) {
+                                        selectedLyrics = currentLyrics.copy(source = LyricsRepository.LOCAL_SOURCE)
+                                    }
+                                }
+                            },
+                        )
+                    }
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.search_lyric)) },
+                        onClick = {
+                            menuExpanded = false
+                            showSearchSheet = true
+                            searchQuery = track?.title.orEmpty()
+                            searchLyrics(searchQuery)
+                        },
+                    )
+                }
             }
         }
         Box(
