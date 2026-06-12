@@ -17,6 +17,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
+import android.provider.OpenableColumns
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -91,6 +92,8 @@ import me.ayra.music.ui.player.PlayerSheet
 import me.ayra.music.ui.theme.MusicTheme
 import me.ayra.music.ui.theme.ThemeMode
 import me.ayra.music.util.MusicPreferences
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
 import java.util.Locale
 
@@ -98,6 +101,7 @@ const val EXTRA_OPEN_FULLSCREEN_PLAYER = "me.ayra.music.extra.OPEN_FULLSCREEN_PL
 
 class MainActivity : ComponentActivity() {
     private var openPlayerRequest by mutableIntStateOf(0)
+    private var openViewUri by mutableStateOf<Uri?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -129,7 +133,11 @@ class MainActivity : ComponentActivity() {
                     preferences.saveAmoledMode(it)
                 },
             ) {
-                MusicApp(openPlayerRequest = openPlayerRequest)
+                MusicApp(
+                    openPlayerRequest = openPlayerRequest,
+                    openViewUri = openViewUri,
+                    onOpenViewUriConsumed = { openViewUri = null },
+                )
             }
         }
     }
@@ -144,6 +152,12 @@ class MainActivity : ComponentActivity() {
         if (intent?.getBooleanExtra(EXTRA_OPEN_FULLSCREEN_PLAYER, false) == true) {
             openPlayerRequest += 1
             intent.removeExtra(EXTRA_OPEN_FULLSCREEN_PLAYER)
+        }
+        if (intent?.action == Intent.ACTION_VIEW) {
+            intent.data?.let { uri ->
+                openViewUri = uri
+                openPlayerRequest += 1
+            }
         }
     }
 }
@@ -294,6 +308,7 @@ class MusicViewModel(
     private var lastSavedTrackId = -1L
     private var loadingLyricsTrackId: Long? = null
     private var loadedLyricsTrackId: Long? = null
+    private var pendingExternalUri: Uri? = null
     private val settingsListener =
         SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
             when (key) {
@@ -336,7 +351,10 @@ class MusicViewModel(
                                     object : Player.Listener {
                                         override fun onIsPlayingChanged(isPlaying: Boolean) = publishPlayerState()
 
-                                        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) = publishPlayerState()
+                                        override fun onPlayWhenReadyChanged(
+                                            playWhenReady: Boolean,
+                                            reason: Int,
+                                        ) = publishPlayerState()
 
                                         override fun onMediaItemTransition(
                                             mediaItem: MediaItem?,
@@ -345,7 +363,8 @@ class MusicViewModel(
 
                                         override fun onPlaybackStateChanged(playbackState: Int) = publishPlayerState()
 
-                                        override fun onPlaybackSuppressionReasonChanged(playbackSuppressionReason: Int) = publishPlayerState()
+                                        override fun onPlaybackSuppressionReasonChanged(playbackSuppressionReason: Int) =
+                                            publishPlayerState()
 
                                         override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
                                             preferences.saveShuffleEnabled(shuffleModeEnabled)
@@ -360,6 +379,10 @@ class MusicViewModel(
                                 )
                             }
                         restoreOrSyncPlayerQueue(_library.value.tracks)
+                        pendingExternalUri?.let { uri ->
+                            pendingExternalUri = null
+                            playExternalUri(uri)
+                        }
                         publishPlayerState()
                     },
                     ContextCompat.getMainExecutor(context),
@@ -481,6 +504,20 @@ class MusicViewModel(
         player.play()
         recordTrackPlayed(track.id)
         _playerState.update { it.copy(queue = queue) }
+        publishPlayerState()
+    }
+
+    fun playExternalUri(uri: Uri) {
+        val player =
+            controller ?: run {
+                pendingExternalUri = uri
+                return
+            }
+        val track = getApplication<Application>().trackFromExternalUri(uri)
+        player.setMediaItem(track.toMediaItem())
+        player.prepare()
+        player.play()
+        _playerState.update { it.copy(queue = listOf(track), currentTrack = track) }
         publishPlayerState()
     }
 
@@ -748,6 +785,34 @@ class MusicViewModel(
         }
     }
 
+    fun importPlaylist(uri: Uri) {
+        viewModelScope.launch {
+            val imported =
+                withContext(Dispatchers.IO) {
+                    val app = getApplication<Application>()
+                    val text =
+                        app.contentResolver
+                            .openInputStream(uri)
+                            ?.use { input ->
+                                input.bufferedReader().use { it.readText() }
+                            }.orEmpty()
+                    parseImportedPlaylists(uri, text, _library.value.allTracks.ifEmpty { _library.value.tracks })
+                }
+            if (imported.isEmpty()) return@launch
+            imported.forEach { playlist ->
+                if (playlist.tracks.isNotEmpty()) {
+                    libraryScanner.createPlaylist(playlist.name, playlist.tracks)
+                }
+            }
+            val visibleTracks = _library.value.tracks
+            _library.update { state ->
+                state.copy(playlists = libraryScanner.buildPlaylists(visibleTracks))
+            }
+        }
+    }
+
+    fun exportPlaylistsJson(): String = exportCustomPlaylists(_library.value.playlists.filter { it.id.startsWith("custom-") })
+
     private fun publishPlayerState() {
         val player = controller ?: return
         val queue =
@@ -877,6 +942,143 @@ private fun Track.toMediaItem(): MediaItem =
                 .setArtworkUri(albumArtUri)
                 .build(),
         ).build()
+
+private fun Context.trackFromExternalUri(uri: Uri): Track {
+    val displayName =
+        if (uri.scheme == "content") {
+            runCatching {
+                contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) cursor.getString(0) else null
+                }
+            }.getOrNull()
+        } else {
+            uri.lastPathSegment
+        }
+    val title = displayName?.substringBeforeLast('.')?.takeIf { it.isNotBlank() } ?: "External audio"
+    return Track(
+        id = stableExternalTrackId(uri.toString()),
+        title = title,
+        artist = "Unknown artist",
+        album = "Unknown album",
+        durationMs = 0L,
+        uri = uri,
+        albumId = 0L,
+        folder = uri.path?.substringBeforeLast('/', missingDelimiterValue = "External") ?: "External",
+    )
+}
+
+private fun stableExternalTrackId(value: String): Long {
+    var hash = 1125899906842597L
+    value.forEach { hash = 31 * hash + it.code }
+    return hash and Long.MAX_VALUE
+}
+
+private data class ImportedPlaylist(
+    val name: String,
+    val tracks: List<Track>,
+)
+
+private fun parseImportedPlaylists(
+    uri: Uri,
+    text: String,
+    libraryTracks: List<Track>,
+): List<ImportedPlaylist> {
+    if (text.isBlank()) return emptyList()
+    val name =
+        uri.lastPathSegment
+            ?.substringAfterLast('/')
+            ?.substringBeforeLast('.')
+            ?.ifBlank { null } ?: "Imported playlist"
+    return if (text.trimStart().startsWith("{")) {
+        parseAmsPlaylists(text, name, libraryTracks)
+    } else {
+        listOf(ImportedPlaylist(name, resolvePlaylistEntries(text.readM3uEntries(), libraryTracks)))
+    }
+}
+
+private fun parseAmsPlaylists(
+    text: String,
+    fallbackName: String,
+    libraryTracks: List<Track>,
+): List<ImportedPlaylist> =
+    runCatching {
+        val root = JSONObject(text)
+        val playlists = root.optJSONArray("playlists")
+        if (playlists != null) {
+            (0 until playlists.length()).mapNotNull { index ->
+                playlists.optJSONObject(index)?.toImportedPlaylist(fallbackName, libraryTracks)
+            }
+        } else {
+            listOfNotNull(root.toImportedPlaylist(fallbackName, libraryTracks))
+        }
+    }.getOrDefault(emptyList())
+
+private fun JSONObject.toImportedPlaylist(
+    fallbackName: String,
+    libraryTracks: List<Track>,
+): ImportedPlaylist? {
+    val entries = optJSONArray("tracks") ?: return null
+    val references =
+        (0 until entries.length()).mapNotNull { index ->
+            val item = entries.get(index)
+            when (item) {
+                is JSONObject -> item.optString("uri").ifBlank { item.optString("path") }.ifBlank { item.optString("title") }
+                else -> item?.toString()
+            }?.takeIf { it.isNotBlank() }
+        }
+    return ImportedPlaylist(
+        name = optString("name").ifBlank { fallbackName },
+        tracks = resolvePlaylistEntries(references, libraryTracks),
+    )
+}
+
+private fun String.readM3uEntries(): List<String> =
+    lineSequence()
+        .map { it.trim() }
+        .filter { it.isNotBlank() && !it.startsWith("#") }
+        .toList()
+
+private fun resolvePlaylistEntries(
+    entries: List<String>,
+    libraryTracks: List<Track>,
+): List<Track> {
+    val byUri = libraryTracks.associateBy { it.uri.toString() }
+    val byPath = libraryTracks.mapNotNull { track -> track.uri.path?.let { it to track } }.toMap()
+    val byName = libraryTracks.associateBy { it.title.lowercase(Locale.ROOT) }
+    return entries
+        .mapNotNull { raw ->
+            val normalized = raw.replace('\\', '/')
+            byUri[raw]
+                ?: byPath[normalized]
+                ?: libraryTracks.firstOrNull { it.uri.path?.replace('\\', '/') == normalized }
+                ?: byName[File(normalized).nameWithoutExtension.lowercase(Locale.ROOT)]
+        }.distinctBy { it.id }
+}
+
+private fun exportCustomPlaylists(playlists: List<PlaylistGroup>): String {
+    val root = JSONObject()
+    val array = JSONArray()
+    playlists.forEach { playlist ->
+        val playlistJson = JSONObject()
+        playlistJson.put("name", playlist.title)
+        val tracksJson = JSONArray()
+        playlist.tracks.forEach { track ->
+            tracksJson.put(
+                JSONObject()
+                    .put("uri", track.uri.toString())
+                    .put("title", track.title)
+                    .put("artist", track.artist)
+                    .put("album", track.album),
+            )
+        }
+        playlistJson.put("tracks", tracksJson)
+        array.put(playlistJson)
+    }
+    root.put("format", "ams")
+    root.put("version", 1)
+    root.put("playlists", array)
+    return root.toString(2)
+}
 
 data class CachedLibrary(
     val tracks: List<Track>,
@@ -1693,6 +1895,8 @@ private fun android.database.Cursor.getStringOrNull(column: Int): String? = if (
 @Composable
 fun MusicApp(
     openPlayerRequest: Int = 0,
+    openViewUri: Uri? = null,
+    onOpenViewUriConsumed: () -> Unit = {},
     viewModel: MusicViewModel = viewModel(),
 ) {
     val context = LocalContext.current
@@ -1751,6 +1955,21 @@ fun MusicApp(
             }
             pendingDeleteTracks = emptyList()
         }
+    var pendingExportText by remember { mutableStateOf<String?>(null) }
+    val importPlaylistLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            uri?.let(viewModel::importPlaylist)
+        }
+    val exportPlaylistLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+            val text = pendingExportText
+            pendingExportText = null
+            if (uri != null && text != null) {
+                context.contentResolver.openOutputStream(uri)?.use { output ->
+                    output.write(text.toByteArray())
+                }
+            }
+        }
 
     fun requestPermanentDelete(tracks: List<Track>) {
         val uniqueTracks = tracks.distinctBy { it.id }
@@ -1788,6 +2007,14 @@ fun MusicApp(
                 navigator.back()
             }
             playerExpandRequest = openPlayerRequest
+        }
+    }
+
+    LaunchedEffect(openViewUri) {
+        openViewUri?.let { uri ->
+            viewModel.playExternalUri(uri)
+            playerExpandRequest++
+            onOpenViewUriConsumed()
         }
     }
 
@@ -1833,6 +2060,21 @@ fun MusicApp(
                 onToggleFavoriteItem = viewModel::toggleFavoriteItem,
                 onRescan = viewModel::rescanLibrary,
                 onHiddenFoldersChanged = viewModel::setHiddenFolders,
+                onImportPlaylist = {
+                    importPlaylistLauncher.launch(
+                        arrayOf(
+                            "audio/x-mpegurl",
+                            "application/vnd.apple.mpegurl",
+                            "application/json",
+                            "text/plain",
+                            "*/*",
+                        ),
+                    )
+                },
+                onExportPlaylists = {
+                    pendingExportText = viewModel.exportPlaylistsJson()
+                    exportPlaylistLauncher.launch("playlists")
+                },
                 onCreatePlaylist = viewModel::createPlaylist,
                 onAddTracksToPlaylist = viewModel::addTracksToPlaylist,
                 onAddTracksToCurrentQueue = viewModel::addTracksToCurrentQueue,
