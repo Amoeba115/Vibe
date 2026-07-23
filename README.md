@@ -1,16 +1,5 @@
 <p align="center">
   <img src="app\src\main\Dabbing logo-modified1.png" alt="Vibe cover" width="320">
-
-
-  <a href="https://github.com/Amoeba115/Vibe/releases">
-    <img src="https://img.shields.io/github/v/release/Vibe/releases">
-  </a>
-
-  <h4>Download</h4>
-
-  <a href="https://github.com/Amoeba115/Vibe/releases">
-    <img src="https://raw.githubusercontent.com/NeoApplications/Neo-Backup/034b226cea5c1b30eb4f6a6f313e4dadcbb0ece4/badge_github.png" width="200">
-  </a>
 </p>
 
 # Vibe
