@@ -4,7 +4,7 @@
 
 # Vibe
 
-Vibe is a refined fork of **AyraMusic**, an Android local music player built with Jetpack Compose. This fork keeps the original app’s clean local-first foundation, but focuses on real-world reliability for very large libraries, better playlist compatibility, and a more polished day-to-day listening experience.
+Vibe is a refined/specialized fork of **AyraMusic**, an Android local music player. This fork keeps the original app’s clean local-first foundation, but where the original focused on VGM support, Vibe focuses on support for massive mp3 and FLAC libraries, as well as other standard audio file types. Vibe also includes optimized scanning, playlist support, and track info/metadata management, with a few other small tweaks here and there. 
 
 ## Features
 
@@ -18,3 +18,11 @@ Vibe is a refined fork of **AyraMusic**, an Android local music player built wit
 - Manual metadata editor from now-playing menu (title, artist, album, track/disc, year)
 - VGM-specific support removed to simplify the app and focus local audio playback
 - Updated branding/theme polish (name, icon, and accent refresh)
+
+
+## Notes from Amoeba115
+
+- I did all testing on my phone, a de-googled Motorola from a few years ago running Android 16. I unfortunately don't have any other devices to test on, so if it doesn't work for you, I'm sorry.
+- Still, feel free to reach out if there's an issue, and I'll see what I can do to fix it!
+- I built this because I'm a huge fan of Ayra's work with their Samsung Music port, but after de-googling my phone, that didn't work anymore. I saw that Ayra had AyraMusic, a standalone music player inspired by Samsung Music, and it worked, but I saw room to optimize it for my specific situation (huge library and de-googled phone) the way Ayra optimized it for their situation (lots of video game music)
+- Nearly all credit goes to Ayra for the core scaffolding of this app, I just rewrote the scanning and indexing logic and made other small tweaks here and there.
