@@ -1,4 +1,4 @@
-<p align="ceter">
+<p align="center">
   <img src="app/src/main/Dabbing logo-modified1.png" alt="Vibe cover" width="320">
   <br><br>
   <a href="https://github.com/amoeba115/vibe/releases/latest">
