@@ -2,7 +2,7 @@
   <img src="app/src/main/Dabbing logo-modified1.png" alt="Vibe cover" width="320">
   <br><br>
   <a href="https://github.com/amoeba115/vibe/releases/latest">
-    <img src="https://img.shields.io/github/v/release/amoeba115/vibe?style=for-the-badge&logo=android&logoColor=white&label=Download%20APK&color=2EA44F" alt="Download Latest APK">
+    <img src="https://img.shields.io/github/v/tag/amoeba115/vibe?style=for-the-badge&logo=android&logoColor=white&label=Download%20APK&color=2EA44F" alt="Download Latest APK">
   </a>
 </p>
 
