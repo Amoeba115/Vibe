@@ -142,23 +142,6 @@ data class ArtistCacheEntity(
     val trackCount: Int,
 )
 
-@Entity(tableName = "vgm_metadata_cache")
-data class VgmMetadataEntity(
-    @PrimaryKey
-    val path: String,
-    @ColumnInfo(name = "last_modified_ms")
-    val lastModifiedMs: Long,
-    @ColumnInfo(name = "size_bytes")
-    val sizeBytes: Long,
-    val title: String,
-    val artist: String,
-    val album: String,
-    @ColumnInfo(name = "duration_ms")
-    val durationMs: Long,
-    val folder: String,
-)
-
 object LibrarySource {
     const val MediaStore = "mediastore"
-    const val Vgm = "vgm"
 }

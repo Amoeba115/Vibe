@@ -44,36 +44,15 @@ android {
 
     buildTypes {
         debug {
-            buildConfigField("boolean", "IS_VGM_BUILD", "false")
             signingConfig = signingConfigs["release"]
         }
         release {
             isMinifyEnabled = true
             isShrinkResources = false
-            buildConfigField("boolean", "IS_VGM_BUILD", "false")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            signingConfig = signingConfigs["release"]
-        }
-        create("debugVGM") {
-            initWith(getByName("debug"))
-            matchingFallbacks += listOf("debug")
-            // applicationIdSuffix = ".vgm.debug"
-            versionNameSuffix = "-vgm-debug"
-            isDebuggable = true
-            buildConfigField("boolean", "IS_VGM_BUILD", "true")
-            signingConfig = signingConfigs["release"]
-        }
-        create("releaseVGM") {
-            initWith(getByName("release"))
-            matchingFallbacks += listOf("release")
-            isMinifyEnabled = true
-            isShrinkResources = false
-            // applicationIdSuffix = ".vgm"
-            versionNameSuffix = "-vgm"
-            buildConfigField("boolean", "IS_VGM_BUILD", "true")
             signingConfig = signingConfigs["release"]
         }
     }
@@ -113,10 +92,6 @@ dependencies {
     implementation(libs.ktor.client.content.negotiation)
     implementation(libs.ktor.serialization.kotlinx.json)
     ksp(libs.androidx.room.compiler)
-    add("debugVGMImplementation", project(":vgmstream-core"))
-    add("debugVGMImplementation", project(":vgmstream-media3"))
-    add("releaseVGMImplementation", project(":vgmstream-core"))
-    add("releaseVGMImplementation", project(":vgmstream-media3"))
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

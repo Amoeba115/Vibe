@@ -28,6 +28,12 @@ interface LibraryDao {
     @Query("DELETE FROM tracks WHERE source = :source AND cache_key NOT IN (:cacheKeys)")
     suspend fun deleteMissingTracks(source: String, cacheKeys: List<String>)
 
+    @Query("SELECT cache_key FROM tracks WHERE source = :source")
+    suspend fun loadTrackCacheKeysBySource(source: String): List<String>
+
+    @Query("DELETE FROM tracks WHERE cache_key IN (:cacheKeys)")
+    suspend fun deleteTracksByCacheKeys(cacheKeys: List<String>)
+
     @Query("SELECT * FROM audio_info WHERE track_id IN (:trackIds)")
     suspend fun loadAudioInfo(trackIds: List<Long>): List<AudioInfoEntity>
 
@@ -36,6 +42,9 @@ interface LibraryDao {
 
     @Query("DELETE FROM audio_info WHERE track_id IN (:trackIds)")
     suspend fun deleteAudioInfoByTrackIds(trackIds: List<Long>)
+
+    @Query("DELETE FROM audio_info")
+    suspend fun deleteAllAudioInfo()
 
     @Query("DELETE FROM audio_info WHERE track_id NOT IN (:trackIds)")
     suspend fun deleteMissingAudioInfo(trackIds: List<Long>)
@@ -112,26 +121,22 @@ interface LibraryDao {
     @Query("DELETE FROM artist_cache")
     suspend fun deleteArtistCache()
 
-    @Query("SELECT * FROM vgm_metadata_cache WHERE path IN (:paths)")
-    suspend fun loadVgmMetadata(paths: List<String>): List<VgmMetadataEntity>
-
-    @Upsert
-    suspend fun upsertVgmMetadata(metadata: List<VgmMetadataEntity>)
-
-    @Query("DELETE FROM vgm_metadata_cache")
-    suspend fun deleteAllVgmMetadata()
-
-    @Query("DELETE FROM vgm_metadata_cache WHERE path NOT IN (:paths)")
-    suspend fun deleteMissingVgmMetadata(paths: List<String>)
-
     @Transaction
     suspend fun replaceSourceTracks(source: String, tracks: List<TrackEntity>) {
         if (tracks.isEmpty()) {
             deleteTracksBySource(source)
         } else {
-            deleteMissingTracks(source, tracks.map { it.cacheKey })
+            val incomingKeys = tracks.map { it.cacheKey }.toHashSet()
+            loadTrackCacheKeysBySource(source)
+                .filterNot { it in incomingKeys }
+                .chunked(SQLITE_IN_LIMIT)
+                .forEach { chunk -> deleteTracksByCacheKeys(chunk) }
             upsertTracks(tracks)
         }
+    }
+
+    companion object {
+        private const val SQLITE_IN_LIMIT = 900
     }
 
     @Transaction
@@ -161,13 +166,4 @@ interface LibraryDao {
         )
     }
 
-    @Transaction
-    suspend fun replaceVgmMetadata(metadata: List<VgmMetadataEntity>) {
-        if (metadata.isEmpty()) {
-            deleteAllVgmMetadata()
-        } else {
-            deleteMissingVgmMetadata(metadata.map { it.path })
-            upsertVgmMetadata(metadata)
-        }
-    }
 }

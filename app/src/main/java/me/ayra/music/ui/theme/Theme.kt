@@ -24,6 +24,7 @@ import me.ayra.music.util.MusicPreferences
 
 const val THEME_SEED_SYSTEM = MusicPreferences.THEME_SEED_SYSTEM
 const val THEME_SEED_NEUTRAL = MusicPreferences.THEME_SEED_NEUTRAL
+const val THEME_SEED_DEFAULT = MusicPreferences.THEME_SEED_DEFAULT
 
 enum class ThemeMode(
     val label: String,
@@ -35,7 +36,7 @@ enum class ThemeMode(
 
 class ThemeState(
     initialThemeMode: ThemeMode = ThemeMode.Auto,
-    initialThemeColorSeed: String = THEME_SEED_SYSTEM,
+    initialThemeColorSeed: String = THEME_SEED_DEFAULT,
     initialAmoledMode: Boolean = false,
     initialColorScheme: ColorScheme = lightColorScheme(),
     private val onThemeModeChange: (ThemeMode) -> Unit = {},
@@ -78,7 +79,7 @@ data class ColorPaletteOption(
 val presetPalettes =
     listOf(
         ColorPaletteOption("Blue", 0xFF247EE0.toInt()),
-        ColorPaletteOption("Green", 0xFF2E7D32.toInt()),
+        ColorPaletteOption("Green", 0xFF115315.toInt()),
         ColorPaletteOption("Cyan", 0xFF00838F.toInt()),
         ColorPaletteOption("Rose", 0xFFC2185B.toInt()),
         ColorPaletteOption("Amber", 0xFFFF8F00.toInt()),
@@ -91,7 +92,7 @@ private val LightColorScheme = lightColorScheme(primary = Purple40, secondary = 
 @Composable
 fun MusicTheme(
     themeMode: ThemeMode = ThemeMode.Auto,
-    themeColorSeed: String = THEME_SEED_SYSTEM,
+    themeColorSeed: String = THEME_SEED_DEFAULT,
     amoledMode: Boolean = false,
     onThemeModeChange: (ThemeMode) -> Unit = {},
     onThemeColorSeedChange: (String) -> Unit = {},

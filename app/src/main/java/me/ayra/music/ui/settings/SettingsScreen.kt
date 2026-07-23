@@ -53,7 +53,6 @@ import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.RadioButtonUnchecked
 import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.HorizontalDivider
@@ -99,7 +98,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import me.ayra.music.BuildConfig
 import me.ayra.music.FolderGroup
 import me.ayra.music.LibraryState
 import me.ayra.music.R
@@ -117,6 +115,7 @@ import kotlin.math.roundToInt
 
 private const val ABOUT_TELEGRAM_URL = "https://t.me/AyraHikari"
 private const val ABOUT_GITHUB_URL = "https://github.com/AyraHikari"
+private const val ABOUT_AMOEBA_GITHUB_URL = "https://github.com/Amoeba115"
 
 private enum class SettingsCategory(
     @StringRes val titleRes: Int,
@@ -127,33 +126,12 @@ private enum class SettingsCategory(
     Library(R.string.library),
     Playlist(R.string.playlist),
     HideFolders(R.string.hide_folder, depth = 2),
-    Vgmstream(R.string.vgmstream),
 }
 
 private data class OptionItem(
     val value: String,
     @StringRes val labelRes: Int,
 )
-
-private val loopModeOptions =
-    listOf(
-        OptionItem(MusicPreferences.VGM_LOOP_FOLLOW_APP, R.string.loop_mode_follow_app),
-        OptionItem("Normal", R.string.loop_mode_normal),
-        OptionItem("Forever", R.string.loop_mode_forever),
-        OptionItem("IgnoreLoop", R.string.loop_mode_ignore),
-    )
-
-private val channelOutputOptions =
-    listOf(
-        OptionItem("Auto", R.string.channel_output_auto),
-        OptionItem("AllChannels", R.string.channel_output_all),
-        OptionItem("Channel1", R.string.channel_output_1),
-        OptionItem("Channel2", R.string.channel_output_2),
-        OptionItem("Channel3", R.string.channel_output_3),
-        OptionItem("Channel4", R.string.channel_output_4),
-        OptionItem("Stereo12", R.string.channel_output_stereo12),
-        OptionItem("Stereo34", R.string.channel_output_stereo34),
-    )
 
 private val miniPlayerStyleOptions =
     listOf(
@@ -239,6 +217,8 @@ fun SettingsScreen(
 
                 SettingsCategory.Playlist -> {
                     PlaylistSettings(
+                        importing = library.importingPlaylist,
+                        importMessage = library.playlistImportMessage,
                         onImport = onImportPlaylist,
                         onExport = onExportPlaylists,
                     )
@@ -252,9 +232,6 @@ fun SettingsScreen(
                     )
                 }
 
-                SettingsCategory.Vgmstream -> {
-                    VgmstreamSettings()
-                }
             }
         }
 
@@ -310,15 +287,6 @@ private fun SettingsCategoryList(onCategorySelected: (SettingsCategory) -> Unit)
                     icon = Icons.Rounded.MusicNote,
                     onClick = { onCategorySelected(SettingsCategory.Playlist) },
                 )
-                if (BuildConfig.IS_VGM_BUILD) {
-                    SettingsDivider()
-                    SettingsNavigationRow(
-                        title = stringResource(R.string.vgmstream),
-                        subtitle = stringResource(R.string.vgmstream_subtitle),
-                        icon = Icons.Rounded.Settings,
-                        onClick = { onCategorySelected(SettingsCategory.Vgmstream) },
-                    )
-                }
             }
         }
     }
@@ -414,6 +382,39 @@ private fun AboutCard() {
                 icon = { Icon(painterResource(R.drawable.ic_github), contentDescription = null) },
                 onClick = { uriHandler.openUri(ABOUT_GITHUB_URL) },
                 modifier = Modifier.weight(1f),
+            )
+        }
+        AboutLinkButton(
+            label = stringResource(R.string.github_amoeba115),
+            icon = { Icon(painterResource(R.drawable.ic_github), contentDescription = null) },
+            onClick = { uriHandler.openUri(ABOUT_AMOEBA_GITHUB_URL) },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(
+                text = stringResource(R.string.about_changes_title),
+                color = onCard,
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+            )
+            Text(
+                text = stringResource(R.string.about_change_vgm_removed),
+                color = onCard.copy(alpha = 0.84f),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+                text = stringResource(R.string.about_change_large_library),
+                color = onCard.copy(alpha = 0.84f),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+                text = stringResource(R.string.about_change_playlist_import),
+                color = onCard.copy(alpha = 0.84f),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+                text = stringResource(R.string.about_change_track_info_metadata),
+                color = onCard.copy(alpha = 0.84f),
+                style = MaterialTheme.typography.bodySmall,
             )
         }
     }
@@ -733,6 +734,8 @@ private fun PlayerSettings() {
 
 @Composable
 private fun PlaylistSettings(
+    importing: Boolean,
+    importMessage: String?,
     onImport: () -> Unit,
     onExport: () -> Unit,
 ) {
@@ -741,8 +744,9 @@ private fun PlaylistSettings(
         SettingsGroup {
             SettingsNavigationRow(
                 title = stringResource(R.string.import_playlist),
-                subtitle = stringResource(R.string.import_playlist_subtitle),
+                subtitle = if (importing) stringResource(R.string.import_playlist_in_progress) else stringResource(R.string.import_playlist_subtitle),
                 icon = Icons.Rounded.LibraryMusic,
+                enabled = !importing,
                 onClick = onImport,
             )
             SettingsDivider()
@@ -750,152 +754,25 @@ private fun PlaylistSettings(
                 title = stringResource(R.string.export_playlist),
                 subtitle = stringResource(R.string.export_playlist_subtitle),
                 icon = Icons.Rounded.MusicNote,
+                enabled = !importing,
                 onClick = onExport,
             )
-        }
-    }
-}
-
-@Composable
-private fun VgmstreamSettings() {
-    val preferences = rememberPreferences()
-    var loopMode by rememberSaveable { mutableStateOf(preferences.loadVgmLoopMode()) }
-    var loopCount by rememberSaveable { mutableFloatStateOf(preferences.loadVgmLoopCount()) }
-    var fadeLength by rememberSaveable { mutableIntStateOf(preferences.loadVgmFadeLengthSeconds()) }
-    var fadeDelay by rememberSaveable { mutableIntStateOf(preferences.loadVgmFadeDelaySeconds()) }
-    var disableSubsongs by rememberSaveable { mutableStateOf(preferences.loadVgmDisableSubsongs()) }
-    var downmix by rememberSaveable { mutableStateOf(preferences.loadVgmDownmixEnabled()) }
-    var downmixChannels by rememberSaveable { mutableIntStateOf(preferences.loadVgmDownmixChannels()) }
-    var channelOutput by rememberSaveable { mutableStateOf(preferences.loadVgmChannelOutput()) }
-    var loopDialog by rememberSaveable { mutableStateOf(false) }
-    var loopCountDialog by rememberSaveable { mutableStateOf(false) }
-    var channelDialog by rememberSaveable { mutableStateOf(false) }
-
-    if (loopDialog) {
-        SingleChoiceDialog(
-            title = stringResource(R.string.loop_mode),
-            options = loopModeOptions,
-            selectedValue = loopMode,
-            onDismiss = { loopDialog = false },
-            onSelect = {
-                loopMode = it
-                preferences.saveVgmLoopMode(it)
-                loopDialog = false
-            },
-        )
-    }
-    if (loopCountDialog) {
-        LoopCountDialog(
-            value = loopCount,
-            onDismiss = { loopCountDialog = false },
-            onSave = {
-                loopCount = it
-                preferences.saveVgmLoopCount(it)
-                loopCountDialog = false
-            },
-        )
-    }
-    if (channelDialog) {
-        SingleChoiceDialog(
-            title = stringResource(R.string.channel_output),
-            options = channelOutputOptions,
-            selectedValue = channelOutput,
-            onDismiss = { channelDialog = false },
-            onSelect = {
-                channelOutput = it
-                preferences.saveVgmChannelOutput(it)
-                channelDialog = false
-            },
-        )
-    }
-
-    SettingsPage {
-        SettingsGroup {
-            SettingsValueRow(
-                title = stringResource(R.string.loop_mode),
-                subtitle = stringResource(R.string.loop_mode_subtitle),
-                value =
-                    loopModeOptions.firstOrNull { it.value == loopMode }?.let { stringResource(it.labelRes) }
-                        ?: stringResource(R.string.loop_mode_normal),
-                onClick = { loopDialog = true },
-            )
-            SettingsDivider()
-            SettingsValueRow(
-                title = stringResource(R.string.loop_count),
-                subtitle = stringResource(R.string.loop_count_subtitle),
-                value = "%.1f".format(loopCount),
-                onClick = { loopCountDialog = true },
-            )
-            SettingsDivider()
-            SliderSettingRow(
-                title = stringResource(R.string.fade_length),
-                subtitle = stringResource(R.string.fade_length_subtitle),
-                valueLabel = if (fadeLength == 0) stringResource(R.string.disabled) else "${fadeLength}s",
-                value = fadeLength.toFloat(),
-                valueRange = 0f..30f,
-                steps = 29,
-                onValueChange = {
-                    fadeLength = it.roundToInt().coerceIn(0, 30)
-                    preferences.saveVgmFadeLengthSeconds(fadeLength)
-                },
-            )
-            SettingsDivider()
-            SliderSettingRow(
-                title = stringResource(R.string.fade_delay),
-                subtitle = stringResource(R.string.fade_delay_subtitle),
-                valueLabel = if (fadeDelay == 0) stringResource(R.string.disabled) else "${fadeDelay}s",
-                value = fadeDelay.toFloat(),
-                valueRange = 0f..30f,
-                steps = 29,
-                onValueChange = {
-                    fadeDelay = it.roundToInt().coerceIn(0, 30)
-                    preferences.saveVgmFadeDelaySeconds(fadeDelay)
-                },
-            )
-            SettingsDivider()
-            SettingsSwitchRow(
-                title = stringResource(R.string.disable_subsongs),
-                subtitle = stringResource(R.string.disable_subsongs_subtitle),
-                checked = disableSubsongs,
-                onCheckedChange = {
-                    disableSubsongs = it
-                    preferences.saveVgmDisableSubsongs(it)
-                },
-            )
-            SettingsDivider()
-            SettingsSwitchRow(
-                title = stringResource(R.string.downmix),
-                subtitle = stringResource(R.string.downmix_subtitle),
-                checked = downmix,
-                onCheckedChange = {
-                    downmix = it
-                    preferences.saveVgmDownmixEnabled(it)
-                },
-            )
-            if (downmix) {
+            if (importing || importMessage != null) {
                 SettingsDivider()
-                SliderSettingRow(
-                    title = stringResource(R.string.downmix_channel),
-                    subtitle = stringResource(R.string.downmix_channel_subtitle),
-                    valueLabel = downmixChannels.toString(),
-                    value = downmixChannels.toFloat(),
-                    valueRange = 1f..6f,
-                    steps = 4,
-                    onValueChange = {
-                        downmixChannels = it.roundToInt().coerceIn(1, 6)
-                        preferences.saveVgmDownmixChannels(downmixChannels)
-                    },
-                )
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    if (importing) {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    }
+                    Text(
+                        text = importMessage ?: stringResource(R.string.import_playlist_in_progress),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
             }
-            SettingsDivider()
-            SettingsValueRow(
-                title = stringResource(R.string.channel_output),
-                subtitle = stringResource(R.string.channel_output_subtitle),
-                value =
-                    channelOutputOptions.firstOrNull { it.value == channelOutput }?.let { stringResource(it.labelRes) }
-                        ?: stringResource(R.string.channel_output_auto),
-                onClick = { channelDialog = true },
-            )
         }
     }
 }
@@ -910,7 +787,7 @@ private fun LibrarySettings(
         SettingsGroup {
             ScanSettingsRow(
                 scanning = library.scanning,
-                trackCount = library.tracks.size,
+                trackCount = if (library.scanning) library.scannedTrackCount else library.tracks.size,
                 onClick = onScan,
             )
             SettingsDivider()
@@ -1142,31 +1019,44 @@ private fun SettingsNavigationRow(
     title: String,
     subtitle: String,
     icon: ImageVector,
+    enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
     Row(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .clickable(onClick = onClick)
+                .clickable(enabled = enabled, onClick = onClick)
                 .padding(horizontal = 18.dp, vertical = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Surface(modifier = Modifier.size(42.dp), shape = CircleShape, color = MaterialTheme.colorScheme.secondaryContainer) {
             Box(contentAlignment = Alignment.Center) {
-                Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = if (enabled) 1f else 0.48f),
+                )
             }
         }
         Column(modifier = Modifier.weight(1f).padding(start = 14.dp)) {
             Text(
                 title,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 1f else 0.48f),
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
             )
             Spacer(Modifier.height(4.dp))
-            Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                subtitle,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 1f else 0.48f),
+                style = MaterialTheme.typography.bodyMedium,
+            )
         }
-        Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Icon(
+            Icons.Rounded.ChevronRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 1f else 0.48f),
+        )
     }
 }
 
@@ -1331,69 +1221,6 @@ private fun SingleChoiceDialog(
             }
         },
         confirmButton = {},
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.cancel))
-            }
-        },
-    )
-}
-
-@Composable
-private fun LoopCountDialog(
-    value: Float,
-    onDismiss: () -> Unit,
-    onSave: (Float) -> Unit,
-) {
-    var sliderValue by rememberSaveable(value) { mutableFloatStateOf(value.coerceIn(0f, 99f)) }
-    var textValue by rememberSaveable(value) { mutableStateOf("%.1f".format(value)) }
-    val normalizedText = textValue.replace(',', '.')
-    val parsed = normalizedText.toFloatOrNull()
-    val valid = parsed != null && parsed in 0f..99f
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.loop_count)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Text(stringResource(R.string.loop_count_subtitle), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Slider(
-                    value = sliderValue,
-                    onValueChange = {
-                        sliderValue = it
-                        textValue = "%.1f".format(it)
-                    },
-                    valueRange = 1f..99f,
-                    steps = 98,
-                )
-                OutlinedTextField(
-                    value = textValue,
-                    onValueChange = {
-                        textValue = it
-                        it.toFloatOrNull()?.takeIf { parsedValue -> parsedValue in 0f..99f }?.let { parsedValue ->
-                            sliderValue = parsedValue
-                        }
-                    },
-                    singleLine = true,
-                    isError = textValue.isNotBlank() && !valid,
-                    supportingText = {
-                        if (textValue.isNotBlank() && !valid) {
-                            Text(stringResource(R.string.invalid_loop_count))
-                        }
-                    },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { parsed?.takeIf { it in 0f..99f }?.let(onSave) },
-                enabled = valid,
-            ) {
-                Text(stringResource(R.string.done))
-            }
-        },
         dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text(stringResource(R.string.cancel))

@@ -30,6 +30,18 @@ class MusicPreferences(
         preferences.edit().putString(KEY_LAST_QUEUE_IDS, trackIds.joinToString(",")).apply()
     }
 
+    fun loadLastLibraryRefreshMs(): Long = preferences.getLong(KEY_LAST_LIBRARY_REFRESH_MS, 0L)
+
+    fun saveLastLibraryRefreshMs(value: Long) {
+        preferences.edit().putLong(KEY_LAST_LIBRARY_REFRESH_MS, value.coerceAtLeast(0L)).apply()
+    }
+
+    fun loadMediaStoreLibraryState(): String? = preferences.getString(KEY_MEDIASTORE_LIBRARY_STATE, null)
+
+    fun saveMediaStoreLibraryState(value: String) {
+        preferences.edit().putString(KEY_MEDIASTORE_LIBRARY_STATE, value).apply()
+    }
+
     fun loadSort(
         key: String,
         defaultValue: String,
@@ -48,7 +60,7 @@ class MusicPreferences(
         preferences.edit().putString(KEY_THEME_MODE, value).apply()
     }
 
-    fun loadThemeColorSeed(): String = preferences.getString(KEY_THEME_COLOR_SEED, THEME_SEED_SYSTEM) ?: THEME_SEED_SYSTEM
+    fun loadThemeColorSeed(): String = preferences.getString(KEY_THEME_COLOR_SEED, THEME_SEED_DEFAULT) ?: THEME_SEED_DEFAULT
 
     fun saveThemeColorSeed(value: String) {
         preferences.edit().putString(KEY_THEME_COLOR_SEED, value).apply()
@@ -143,54 +155,6 @@ class MusicPreferences(
         preferences.edit().putInt(KEY_REPEAT_MODE, value.coerceIn(0, 2)).apply()
     }
 
-    fun loadVgmLoopMode(): String = preferences.getString(KEY_VGM_LOOP_MODE, VGM_LOOP_FOLLOW_APP) ?: VGM_LOOP_FOLLOW_APP
-
-    fun saveVgmLoopMode(value: String) {
-        preferences.edit().putString(KEY_VGM_LOOP_MODE, value).apply()
-    }
-
-    fun loadVgmLoopCount(): Float = preferences.getFloat(KEY_VGM_LOOP_COUNT, 2f).coerceIn(0f, 99f)
-
-    fun saveVgmLoopCount(value: Float) {
-        preferences.edit().putFloat(KEY_VGM_LOOP_COUNT, value.coerceIn(0f, 99f)).apply()
-    }
-
-    fun loadVgmFadeLengthSeconds(): Int = preferences.getInt(KEY_VGM_FADE_LENGTH_SECONDS, 3).coerceIn(0, 30)
-
-    fun saveVgmFadeLengthSeconds(value: Int) {
-        preferences.edit().putInt(KEY_VGM_FADE_LENGTH_SECONDS, value.coerceIn(0, 30)).apply()
-    }
-
-    fun loadVgmFadeDelaySeconds(): Int = preferences.getInt(KEY_VGM_FADE_DELAY_SECONDS, 0).coerceIn(0, 30)
-
-    fun saveVgmFadeDelaySeconds(value: Int) {
-        preferences.edit().putInt(KEY_VGM_FADE_DELAY_SECONDS, value.coerceIn(0, 30)).apply()
-    }
-
-    fun loadVgmDisableSubsongs(): Boolean = preferences.getBoolean(KEY_VGM_DISABLE_SUBSONGS, false)
-
-    fun saveVgmDisableSubsongs(value: Boolean) {
-        preferences.edit().putBoolean(KEY_VGM_DISABLE_SUBSONGS, value).apply()
-    }
-
-    fun loadVgmDownmixEnabled(): Boolean = preferences.getBoolean(KEY_VGM_DOWNMIX_ENABLED, false)
-
-    fun saveVgmDownmixEnabled(value: Boolean) {
-        preferences.edit().putBoolean(KEY_VGM_DOWNMIX_ENABLED, value).apply()
-    }
-
-    fun loadVgmDownmixChannels(): Int = preferences.getInt(KEY_VGM_DOWNMIX_CHANNELS, 2).coerceIn(1, 6)
-
-    fun saveVgmDownmixChannels(value: Int) {
-        preferences.edit().putInt(KEY_VGM_DOWNMIX_CHANNELS, value.coerceIn(1, 6)).apply()
-    }
-
-    fun loadVgmChannelOutput(): String = preferences.getString(KEY_VGM_CHANNEL_OUTPUT, "Auto") ?: "Auto"
-
-    fun saveVgmChannelOutput(value: String) {
-        preferences.edit().putString(KEY_VGM_CHANNEL_OUTPUT, value).apply()
-    }
-
     fun registerSettingsListener(listener: android.content.SharedPreferences.OnSharedPreferenceChangeListener) {
         preferences.registerOnSharedPreferenceChangeListener(listener)
     }
@@ -205,9 +169,9 @@ class MusicPreferences(
         const val THEME_MODE_DARK = "Dark"
         const val THEME_SEED_SYSTEM = "system"
         const val THEME_SEED_NEUTRAL = "neutral"
+        const val THEME_SEED_DEFAULT = "FF115315"
         const val MINI_PLAYER_STYLE_FLOATING = "floating"
         const val MINI_PLAYER_STYLE_FILLED = "filled"
-        const val VGM_LOOP_FOLLOW_APP = "FollowApp"
         const val KEY_PLAYBACK_SPEED = "playback_speed"
         const val KEY_PAUSE_WHEN_VOLUME_ZERO = "pause_when_volume_zero"
         const val KEY_HIDDEN_FOLDERS = "hidden_folders"
@@ -215,6 +179,8 @@ class MusicPreferences(
         private const val KEY_LAST_TAB = "last_tab"
         private const val KEY_LAST_TRACK_ID = "last_track_id"
         private const val KEY_LAST_QUEUE_IDS = "last_queue_ids"
+        private const val KEY_LAST_LIBRARY_REFRESH_MS = "last_library_refresh_ms"
+        private const val KEY_MEDIASTORE_LIBRARY_STATE = "mediastore_library_state"
         private const val KEY_SORT_PREFIX = "sort_"
         private const val NO_TRACK_ID = -1L
         private const val KEY_THEME_MODE = "theme_mode"
@@ -229,13 +195,5 @@ class MusicPreferences(
         private const val KEY_LAST_FOLDER_TREE_PATH = "last_folder_tree_path"
         private const val KEY_SHUFFLE_ENABLED = "shuffle_enabled"
         private const val KEY_REPEAT_MODE = "repeat_mode"
-        private const val KEY_VGM_LOOP_MODE = "vgm_loop_mode"
-        private const val KEY_VGM_LOOP_COUNT = "vgm_loop_count"
-        private const val KEY_VGM_FADE_LENGTH_SECONDS = "vgm_fade_length_seconds"
-        private const val KEY_VGM_FADE_DELAY_SECONDS = "vgm_fade_delay_seconds"
-        private const val KEY_VGM_DISABLE_SUBSONGS = "vgm_disable_subsongs"
-        private const val KEY_VGM_DOWNMIX_ENABLED = "vgm_downmix_enabled"
-        private const val KEY_VGM_DOWNMIX_CHANNELS = "vgm_downmix_channels"
-        private const val KEY_VGM_CHANNEL_OUTPUT = "vgm_channel_output"
     }
 }

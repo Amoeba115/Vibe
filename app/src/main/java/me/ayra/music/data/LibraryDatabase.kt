@@ -17,10 +17,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         CustomPlaylistTrackEntity::class,
         AlbumCacheEntity::class,
         ArtistCacheEntity::class,
-        VgmMetadataEntity::class,
         AudioInfoEntity::class,
     ],
-    version = 9,
+    version = 10,
     exportSchema = false,
 )
 abstract class LibraryDatabase : RoomDatabase() {
@@ -46,6 +45,7 @@ abstract class LibraryDatabase : RoomDatabase() {
                         MIGRATION_6_7,
                         MIGRATION_7_8,
                         MIGRATION_8_9,
+                        MIGRATION_9_10,
                     )
                     .fallbackToDestructiveMigration(false)
                     .build()
@@ -149,6 +149,13 @@ abstract class LibraryDatabase : RoomDatabase() {
                     """.trimIndent(),
                 )
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_audio_info_track_id ON audio_info(track_id)")
+            }
+        }
+
+        private val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DROP TABLE IF EXISTS vgm_metadata_cache")
+                db.execSQL("DELETE FROM tracks WHERE source = 'vgm'")
             }
         }
     }

@@ -24,7 +24,3 @@ dependencyResolutionManagement {
 
 rootProject.name = "Music"
 include(":app")
-include(":vgmstream-core")
-project(":vgmstream-core").projectDir = file("vgmstream-android/vgmstream-core")
-include(":vgmstream-media3")
-project(":vgmstream-media3").projectDir = file("vgmstream-android/vgmstream-media3")

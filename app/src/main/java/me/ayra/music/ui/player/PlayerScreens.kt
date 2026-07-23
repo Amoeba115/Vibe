@@ -1,10 +1,14 @@
 package me.ayra.music.ui.player
 
 import android.content.Context
+import android.content.ContentValues
 import android.content.SharedPreferences
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.provider.MediaStore
+import android.provider.OpenableColumns
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedContent
@@ -156,7 +160,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.ayra.music.AudioInfo
-import me.ayra.music.BuildConfig
 import me.ayra.music.PlayerState
 import me.ayra.music.R
 import me.ayra.music.Track
@@ -201,23 +204,6 @@ private data class MiniPlayerAccent(
     val fullscreen: Color,
     val onFullscreen: Color,
 )
-
-private data class ChannelOutputOption(
-    val value: String,
-    val labelRes: Int,
-)
-
-private val playerChannelOutputOptions =
-    listOf(
-        ChannelOutputOption("Auto", R.string.channel_output_auto),
-        ChannelOutputOption("AllChannels", R.string.channel_output_all),
-        ChannelOutputOption("Channel1", R.string.channel_output_1),
-        ChannelOutputOption("Channel2", R.string.channel_output_2),
-        ChannelOutputOption("Channel3", R.string.channel_output_3),
-        ChannelOutputOption("Channel4", R.string.channel_output_4),
-        ChannelOutputOption("Stereo12", R.string.channel_output_stereo12),
-        ChannelOutputOption("Stereo34", R.string.channel_output_stereo34),
-    )
 
 private val artworkSeedColorCache =
     Collections.synchronizedMap(
@@ -322,6 +308,7 @@ fun PlayerSheet(
     onShuffle: () -> Unit,
     onQueueTrackClick: (Track) -> Unit,
     onRepeat: () -> Unit,
+    onTrackMetadataUpdated: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -484,6 +471,7 @@ fun PlayerSheet(
             onPlayPause = onPlayPause,
             onNext = onNext,
             onRepeat = onRepeat,
+            onTrackMetadataUpdated = onTrackMetadataUpdated,
             modifier =
                 Modifier
                     .fillMaxWidth()
@@ -552,6 +540,7 @@ private fun PlayerSurface(
     onPlayPause: () -> Unit,
     onNext: () -> Unit,
     onRepeat: () -> Unit,
+    onTrackMetadataUpdated: () -> Unit,
     modifier: Modifier,
     shape: RoundedCornerShape,
 ) {
@@ -692,6 +681,7 @@ private fun PlayerSurface(
                     onPlayPause = onPlayPause,
                     onNext = onNext,
                     onRepeat = onRepeat,
+                    onTrackMetadataUpdated = onTrackMetadataUpdated,
                     seekAccent = animatedMiniAccent.primary,
                     modifier = Modifier.fillMaxSize(),
                 )
@@ -751,6 +741,7 @@ private fun PlayerSurface(
                     onPlayPause = onPlayPause,
                     onNext = onNext,
                     onRepeat = onRepeat,
+                    onTrackMetadataUpdated = onTrackMetadataUpdated,
                     seekAccent = animatedMiniAccent.primary,
                     modifier = Modifier.fillMaxSize(),
                 )
@@ -948,17 +939,33 @@ private fun ExpandedPlayerContent(
     onPlayPause: () -> Unit,
     onNext: () -> Unit,
     onRepeat: () -> Unit,
+    onTrackMetadataUpdated: () -> Unit,
     seekAccent: Color,
     modifier: Modifier = Modifier,
 ) {
     val track = playerState.currentTrack
     val context = LocalContext.current
-    val preferences = remember(context) { MusicPreferences(context) }
     var menuExpanded by rememberSaveable { mutableStateOf(false) }
     var confirmDelete by rememberSaveable { mutableStateOf(false) }
-    var channelDialog by rememberSaveable { mutableStateOf(false) }
-    var channelOutput by rememberSaveable { mutableStateOf(preferences.loadVgmChannelOutput()) }
-    val isVgmstreamTrack = track?.isVgmstreamTrack() == true
+    var infoDialogTrack by remember(track?.id) { mutableStateOf<Track?>(null) }
+    var editorTrack by remember(track?.id) { mutableStateOf<Track?>(null) }
+
+    infoDialogTrack?.let { selectedTrack ->
+        TrackInfoDialog(
+            track = selectedTrack,
+            onDismiss = { infoDialogTrack = null },
+        )
+    }
+    editorTrack?.let { selectedTrack ->
+        TrackMetadataEditorDialog(
+            track = selectedTrack,
+            onDismiss = { editorTrack = null },
+            onSaved = {
+                editorTrack = null
+                onTrackMetadataUpdated()
+            },
+        )
+    }
 
     if (confirmDelete && track != null) {
         AlertDialog(
@@ -982,18 +989,6 @@ private fun ExpandedPlayerContent(
             },
         )
     }
-    if (channelDialog) {
-        PlayerChannelOutputDialog(
-            selectedValue = channelOutput,
-            onDismiss = { channelDialog = false },
-            onSelect = {
-                channelOutput = it
-                preferences.saveVgmChannelOutput(it)
-                channelDialog = false
-            },
-        )
-    }
-
     Column(
         modifier =
             modifier
@@ -1061,6 +1056,22 @@ private fun ExpandedPlayerContent(
                                     onDismissRequest = { menuExpanded = false },
                                 ) {
                                     DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.track_info)) },
+                                        enabled = track != null,
+                                        onClick = {
+                                            menuExpanded = false
+                                            infoDialogTrack = track
+                                        },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.edit_metadata)) },
+                                        enabled = track != null,
+                                        onClick = {
+                                            menuExpanded = false
+                                            editorTrack = track
+                                        },
+                                    )
+                                    DropdownMenuItem(
                                         text = { Text(stringResource(R.string.delete)) },
                                         enabled = track != null,
                                         onClick = {
@@ -1092,15 +1103,6 @@ private fun ExpandedPlayerContent(
                                             track?.let(onArtist)
                                         },
                                     )
-                                    if (isVgmstreamTrack) {
-                                        DropdownMenuItem(
-                                            text = { Text(stringResource(R.string.channel_output)) },
-                                            onClick = {
-                                                menuExpanded = false
-                                                channelDialog = true
-                                            },
-                                        )
-                                    }
                                     DropdownMenuItem(
                                         text = { Text(stringResource(R.string.settings)) },
                                         onClick = {
@@ -1197,6 +1199,253 @@ private fun ExpandedPlayerContent(
             onNext = onNext,
             onRepeat = onRepeat,
         )
+    }
+}
+
+private data class TrackFileInfo(
+    val displayName: String,
+    val mimeType: String,
+    val sizeBytes: Long,
+    val path: String,
+)
+
+private data class MetadataUpdateResult(
+    val success: Boolean,
+    val message: String,
+)
+
+@Composable
+private fun TrackInfoDialog(
+    track: Track,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    val info = remember(track.id, track.uri) { resolveTrackFileInfo(context, track) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.track_info)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("${stringResource(R.string.file_name)}: ${info.displayName}")
+                Text("${stringResource(R.string.file_type)}: ${info.mimeType}")
+                Text("${stringResource(R.string.file_size)}: ${formatFileSize(info.sizeBytes)}")
+                Text("${stringResource(R.string.file_path)}: ${info.path}")
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.ok))
+            }
+        },
+    )
+}
+
+@Composable
+private fun TrackMetadataEditorDialog(
+    track: Track,
+    onDismiss: () -> Unit,
+    onSaved: () -> Unit,
+) {
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    var title by remember(track.id) { mutableStateOf(track.title) }
+    var artist by remember(track.id) { mutableStateOf(track.artist) }
+    var album by remember(track.id) { mutableStateOf(track.album) }
+    var trackNumber by remember(track.id) { mutableStateOf(track.trackNumber.takeIf { it > 0 }?.toString().orEmpty()) }
+    var discNumber by remember(track.id) { mutableStateOf(track.discNumber.takeIf { it > 0 }?.toString().orEmpty()) }
+    var year by remember(track.id) { mutableStateOf(track.year.takeIf { it > 0 }?.toString().orEmpty()) }
+    var saving by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = { if (!saving) onDismiss() },
+        title = { Text(stringResource(R.string.edit_metadata)) },
+        text = {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.heightIn(max = 360.dp)) {
+                item {
+                    OutlinedTextField(
+                        value = title,
+                        onValueChange = { title = it },
+                        singleLine = true,
+                        label = { Text(stringResource(R.string.track)) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                item {
+                    OutlinedTextField(
+                        value = artist,
+                        onValueChange = { artist = it },
+                        singleLine = true,
+                        label = { Text(stringResource(R.string.artist)) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                item {
+                    OutlinedTextField(
+                        value = album,
+                        onValueChange = { album = it },
+                        singleLine = true,
+                        label = { Text(stringResource(R.string.album)) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                item {
+                    OutlinedTextField(
+                        value = trackNumber,
+                        onValueChange = { trackNumber = it.filter(Char::isDigit) },
+                        singleLine = true,
+                        label = { Text(stringResource(R.string.track_number)) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                item {
+                    OutlinedTextField(
+                        value = discNumber,
+                        onValueChange = { discNumber = it.filter(Char::isDigit) },
+                        singleLine = true,
+                        label = { Text(stringResource(R.string.disc_number)) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                item {
+                    OutlinedTextField(
+                        value = year,
+                        onValueChange = { year = it.filter(Char::isDigit) },
+                        singleLine = true,
+                        label = { Text(stringResource(R.string.year)) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = !saving && title.trim().isNotEmpty(),
+                onClick = {
+                    saving = true
+                    coroutineScope.launch {
+                        val result =
+                            withContext(Dispatchers.IO) {
+                                updateTrackMetadata(
+                                    context = context,
+                                    track = track,
+                                    title = title.trim(),
+                                    artist = artist.trim(),
+                                    album = album.trim(),
+                                    trackNumber = trackNumber.toIntOrNull(),
+                                    discNumber = discNumber.toIntOrNull(),
+                                    year = year.toIntOrNull(),
+                                )
+                            }
+                        saving = false
+                        Toast.makeText(context, result.message, Toast.LENGTH_SHORT).show()
+                        if (result.success) onSaved()
+                    }
+                },
+            ) {
+                if (saving) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                } else {
+                    Text(stringResource(R.string.save))
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !saving) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+    )
+}
+
+private fun resolveTrackFileInfo(
+    context: Context,
+    track: Track,
+): TrackFileInfo {
+    val resolver = context.contentResolver
+    var displayName = track.title
+    var mimeType = resolver.getType(track.uri).orEmpty()
+    var sizeBytes = -1L
+    var path = track.uri.toString()
+    resolver.query(
+        track.uri,
+        arrayOf(
+            OpenableColumns.DISPLAY_NAME,
+            OpenableColumns.SIZE,
+            MediaStore.MediaColumns.MIME_TYPE,
+            MediaStore.MediaColumns.DATA,
+        ),
+        null,
+        null,
+        null,
+    )?.use { cursor ->
+        if (cursor.moveToFirst()) {
+            cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME).takeIf { it >= 0 }?.let { index ->
+                cursor.getString(index)?.takeIf(String::isNotBlank)?.let { displayName = it }
+            }
+            cursor.getColumnIndex(OpenableColumns.SIZE).takeIf { it >= 0 }?.let { index ->
+                if (!cursor.isNull(index)) sizeBytes = cursor.getLong(index)
+            }
+            cursor.getColumnIndex(MediaStore.MediaColumns.MIME_TYPE).takeIf { it >= 0 }?.let { index ->
+                cursor.getString(index)?.takeIf(String::isNotBlank)?.let { mimeType = it }
+            }
+            cursor.getColumnIndex(MediaStore.MediaColumns.DATA).takeIf { it >= 0 }?.let { index ->
+                cursor.getString(index)?.takeIf(String::isNotBlank)?.let { path = it }
+            }
+        }
+    }
+    if (mimeType.isBlank()) mimeType = context.getString(R.string.unknown_value)
+    return TrackFileInfo(
+        displayName = displayName,
+        mimeType = mimeType,
+        sizeBytes = sizeBytes,
+        path = path,
+    )
+}
+
+private fun updateTrackMetadata(
+    context: Context,
+    track: Track,
+    title: String,
+    artist: String,
+    album: String,
+    trackNumber: Int?,
+    discNumber: Int?,
+    year: Int?,
+): MetadataUpdateResult {
+    return runCatching {
+        val values =
+            ContentValues().apply {
+                put(MediaStore.Audio.Media.TITLE, title)
+                put(MediaStore.Audio.Media.ARTIST, artist)
+                put(MediaStore.Audio.Media.ALBUM, album)
+                trackNumber?.let { put(MediaStore.Audio.Media.TRACK, it.coerceAtLeast(0)) } ?: putNull(MediaStore.Audio.Media.TRACK)
+                discNumber?.let { put(MediaStore.Audio.Media.CD_TRACK_NUMBER, it.coerceAtLeast(0)) }
+                year?.let { put(MediaStore.Audio.Media.YEAR, it.coerceAtLeast(0)) } ?: putNull(MediaStore.Audio.Media.YEAR)
+            }
+        val rows = context.contentResolver.update(track.uri, values, null, null)
+        if (rows > 0) {
+            MetadataUpdateResult(true, context.getString(R.string.metadata_saved))
+        } else {
+            MetadataUpdateResult(false, context.getString(R.string.metadata_save_failed))
+        }
+    }.getOrElse { error ->
+        MetadataUpdateResult(
+            false,
+            error.localizedMessage?.takeIf { it.isNotBlank() } ?: context.getString(R.string.metadata_save_failed),
+        )
+    }
+}
+
+private fun formatFileSize(sizeBytes: Long): String {
+    if (sizeBytes < 0) return "Unknown"
+    val kb = 1024.0
+    val mb = kb * 1024.0
+    val gb = mb * 1024.0
+    return when {
+        sizeBytes >= gb -> String.format("%.2f GB", sizeBytes / gb)
+        sizeBytes >= mb -> String.format("%.2f MB", sizeBytes / mb)
+        sizeBytes >= kb -> String.format("%.1f KB", sizeBytes / kb)
+        else -> "$sizeBytes B"
     }
 }
 
@@ -2259,58 +2508,6 @@ private fun AudioInfo.formatAudioInfo(): String? {
             channels?.let { if (it > 2) "$it channels" else "" },
         ).filter { it.isNotBlank() }
     return parts.takeIf { it.isNotEmpty() }?.joinToString(" • ")
-}
-
-private fun Track.isVgmstreamTrack(): Boolean = BuildConfig.IS_VGM_BUILD && uri.scheme.equals("file", ignoreCase = true)
-
-@Composable
-private fun PlayerChannelOutputDialog(
-    selectedValue: String,
-    onDismiss: () -> Unit,
-    onSelect: (String) -> Unit,
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.channel_output)) },
-        text = {
-            Column {
-                playerChannelOutputOptions.forEach { option ->
-                    Row(
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable { onSelect(option.value) }
-                                .padding(horizontal = 12.dp, vertical = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        val selected = option.value == selectedValue
-                        Icon(
-                            if (selected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
-                            contentDescription = null,
-                            tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(24.dp),
-                        )
-                        Text(
-                            text = stringResource(option.labelRes),
-                            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                            modifier =
-                                Modifier
-                                    .weight(1f)
-                                    .padding(start = 14.dp),
-                        )
-                    }
-                }
-            }
-        },
-        confirmButton = {},
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.cancel))
-            }
-        },
-    )
 }
 
 private suspend fun loadTrackSeedColor(

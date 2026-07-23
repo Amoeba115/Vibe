@@ -85,38 +85,6 @@ fun ScannedTrack.toEntity(): TrackEntity =
         sizeBytes = sizeBytes,
     )
 
-fun TrackEntity.toVgmMetadata(): VgmMetadataEntity =
-    VgmMetadataEntity(
-        path = cacheKey,
-        lastModifiedMs = lastModifiedMs,
-        sizeBytes = sizeBytes,
-        title = title,
-        artist = artist,
-        album = album,
-        durationMs = durationMs,
-        folder = folder,
-    )
-
-fun VgmMetadataEntity.toEntity(uriString: String, trackId: Long): TrackEntity =
-    TrackEntity(
-        cacheKey = path,
-        trackId = trackId,
-        title = title,
-        artist = artist,
-        album = album,
-        durationMs = durationMs,
-        uriString = uriString,
-        albumId = 0L,
-        folder = folder,
-        trackNumber = 0,
-        discNumber = 0,
-        year = 0,
-        dateAddedMs = lastModifiedMs,
-        source = LibrarySource.Vgm,
-        lastModifiedMs = lastModifiedMs,
-        sizeBytes = sizeBytes,
-    )
-
 fun AudioInfoEntity.toAudioInfo(): AudioInfo =
     AudioInfo(
         trackId = trackId,

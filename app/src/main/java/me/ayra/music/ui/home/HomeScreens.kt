@@ -157,6 +157,7 @@ import me.ayra.music.LibraryState
 import me.ayra.music.PlaylistGroup
 import me.ayra.music.R
 import me.ayra.music.Track
+import me.ayra.music.TrackStats
 import me.ayra.music.ui.navigation.MainRoute
 import me.ayra.music.ui.navigation.MusicNavigator
 import me.ayra.music.ui.player.AlbumArt
@@ -167,6 +168,7 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
 import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.math.roundToInt
+import kotlin.random.Random
 
 enum class HomeTab(
     @StringRes val labelRes: Int,
@@ -488,11 +490,11 @@ fun MainScreen(
                     },
                     onAlbum = {
                         trackMenuTrack = null
-                        library.albums.firstOrNull { it.id == track.albumId }?.let { navigate(MainRoute.Album(it.id)) }
+                        library.albumsById[track.albumId]?.let { navigate(MainRoute.Album(it.id)) }
                     },
                     onArtist = {
                         trackMenuTrack = null
-                        library.artists.firstOrNull { it.name == track.artist }?.let { navigate(MainRoute.Artist(it.name)) }
+                        library.artistsByName[track.artist]?.let { navigate(MainRoute.Artist(it.name)) }
                     },
                 )
             }
@@ -549,6 +551,10 @@ private fun DetailHost(
     onTrackMenu: (Track) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val smartPlaylists =
+        remember(library.tracks, library.favoriteItems, library.trackStats) {
+            library.smartPlaylists()
+        }
     when (route) {
         MainRoute.Home -> {
             Box(modifier = modifier)
@@ -615,7 +621,7 @@ private fun DetailHost(
         }
 
         is MainRoute.Album -> {
-            val album = library.albums.firstOrNull { it.id == route.id }
+            val album = library.albumsById[route.id]
             if (album == null) {
                 Box(modifier = modifier)
             } else {
@@ -625,6 +631,7 @@ private fun DetailHost(
                     onSettings = onSettings,
                     onSearch = onSearch,
                     onTrackClick = onTrackClick,
+                    trackStats = library.trackStats,
                     currentTrackId = currentTrackId,
                     onTrackMenu = onTrackMenu,
                     sharedTransitionScope = sharedTransitionScope,
@@ -637,17 +644,22 @@ private fun DetailHost(
         }
 
         is MainRoute.Artist -> {
-            val artist = library.artists.firstOrNull { it.name == route.name }
+            val artist = library.artistsByName[route.name]
             if (artist == null) {
                 Box(modifier = modifier)
             } else {
                 ArtistDetailScreen(
                     artist = artist,
-                    albums = library.albums.filter { albumGroup -> albumGroup.tracks.any { it.artist == artist.name } },
+                    albums =
+                        artist.tracks
+                            .groupBy { it.albumId }
+                            .values
+                            .map { items -> AlbumGroup(items.first().albumId, items.first().album, items.first().artist, items) },
                     onBack = onBack,
                     onSettings = onSettings,
                     onSearch = onSearch,
                     onTrackClick = onTrackClick,
+                    trackStats = library.trackStats,
                     currentTrackId = currentTrackId,
                     onTrackMenu = onTrackMenu,
                     onAlbumClick = onAlbumClick,
@@ -659,7 +671,7 @@ private fun DetailHost(
         }
 
         is MainRoute.Folder -> {
-            val folder = library.folders.firstOrNull { it.path == route.path }
+            val folder = library.foldersByPath[route.path]
             if (folder == null) {
                 Box(modifier = modifier)
             } else {
@@ -670,6 +682,7 @@ private fun DetailHost(
                     onSettings = onSettings,
                     onSearch = onSearch,
                     onTrackClick = onTrackClick,
+                    trackStats = library.trackStats,
                     currentTrackId = currentTrackId,
                     onTrackMenu = onTrackMenu,
                     onToggleFavorite = onToggleFavorite,
@@ -681,7 +694,7 @@ private fun DetailHost(
         }
 
         is MainRoute.Playlist -> {
-            val playlist = library.findPlaylist(route.id)
+            val playlist = library.findPlaylist(route.id, smartPlaylists)
             if (playlist == null) {
                 Box(modifier = modifier)
             } else {
@@ -689,6 +702,7 @@ private fun DetailHost(
                     playlist = playlist,
                     onBack = onBack,
                     onTrackClick = onTrackClick,
+                    trackStats = library.trackStats,
                     currentTrackId = currentTrackId,
                     onTrackMenu = onTrackMenu,
                     isFavorite = library.isFavoriteItem(FavoriteType.Playlist, playlist.id),
@@ -719,7 +733,7 @@ private fun DetailHost(
         }
 
         is MainRoute.AddTracksToPlaylist -> {
-            val playlist = library.findPlaylist(route.id)
+            val playlist = library.findPlaylist(route.id, smartPlaylists)
             SelectTrackScreen(
                 title = playlist?.title ?: stringResource(R.string.add_tracks),
                 tracks = library.tracks,
@@ -747,7 +761,7 @@ private fun DetailHost(
         }
 
         is MainRoute.AddToPlaylist -> {
-            val track = library.tracks.firstOrNull { it.id == route.trackId }
+            val track = library.tracksById[route.trackId]
             AddToPlaylistScreen(
                 tracks = listOfNotNull(track),
                 playlists = library.playlists,
@@ -775,7 +789,7 @@ private fun DetailHost(
         }
 
         is MainRoute.AddToTracks -> {
-            val selectedTracks = route.trackIds.mapNotNull { id -> library.tracks.firstOrNull { it.id == id } }
+            val selectedTracks = route.trackIds.mapNotNull { id -> library.tracksById[id] }
             AddToPlaylistScreen(
                 tracks = selectedTracks,
                 playlists = library.playlists,
@@ -972,7 +986,7 @@ private fun HomeScreen(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = "Music",
+                        text = stringResource(R.string.app_name),
                         style = MaterialTheme.typography.headlineMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary,
@@ -1524,7 +1538,7 @@ private fun SearchTrackResultsScreen(
                         }
                     },
                     onShuffle = {
-                        val shuffled = trackResults.shuffled()
+                        val shuffled = trackResults.smartAntiRepeatShuffle(library.trackStats)
                         shuffled.firstOrNull()?.let {
                             onTrackClick(it, shuffled)
                         }
@@ -2128,6 +2142,7 @@ private fun PlaylistDetailScreen(
     playlist: PlaylistGroup,
     onBack: () -> Unit,
     onTrackClick: (Track, List<Track>) -> Unit,
+    trackStats: Map<Long, TrackStats>,
     currentTrackId: Long?,
     onTrackMenu: (Track) -> Unit,
     isFavorite: Boolean,
@@ -2288,6 +2303,25 @@ private fun PlaylistDetailScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 15.sp,
                         )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            TextButton(
+                                onClick = {
+                                    val shuffledTracks = tracks.smartAntiRepeatShuffle(trackStats)
+                                    shuffledTracks.firstOrNull()?.let { onTrackClick(it, shuffledTracks) }
+                                },
+                                enabled = tracks.isNotEmpty(),
+                            ) {
+                                Text(stringResource(R.string.shuffle_play))
+                            }
+                            TextButton(
+                                onClick = { tracks.firstOrNull()?.let { onTrackClick(it, tracks) } },
+                                enabled = tracks.isNotEmpty(),
+                            ) {
+                                Text(stringResource(R.string.play))
+                            }
+                        }
                     }
                 }
             }
@@ -3105,6 +3139,7 @@ private fun LibraryState.favoriteCards(): List<FavoriteCardItem> {
 
 private fun LibraryState.smartPlaylists(): List<PlaylistGroup> {
     if (tracks.isEmpty()) return emptyList()
+    val tracksById = tracks.associateBy { it.id }
     val latestDateAdded = tracks.maxOfOrNull { it.dateAddedMs } ?: 0L
     val recentlyAdded =
         if (latestDateAdded <= 0L) {
@@ -3132,7 +3167,7 @@ private fun LibraryState.smartPlaylists(): List<PlaylistGroup> {
         favoriteItems
             .filter { it.type == FavoriteType.Track }
             .sortedByDescending { it.addedAt }
-            .mapNotNull { favorite -> favorite.key.toLongOrNull()?.let { trackId -> tracks.firstOrNull { it.id == trackId } } }
+            .mapNotNull { favorite -> favorite.key.toLongOrNull()?.let(tracksById::get) }
     return listOf(
         PlaylistGroup(PLAYLIST_RECENTLY_ADDED, "Recently added", recentlyAdded, recentlyAdded.firstOrNull()?.albumArtUri),
         PlaylistGroup(PLAYLIST_MOST_PLAYED, "Most played", mostPlayed, mostPlayed.firstOrNull()?.albumArtUri),
@@ -3141,8 +3176,11 @@ private fun LibraryState.smartPlaylists(): List<PlaylistGroup> {
     )
 }
 
-private fun LibraryState.findPlaylist(id: String): PlaylistGroup? =
-    smartPlaylists().firstOrNull { it.id == id }
+private fun LibraryState.findPlaylist(
+    id: String,
+    smartPlaylists: List<PlaylistGroup>,
+): PlaylistGroup? =
+    smartPlaylists.firstOrNull { it.id == id }
         ?: playlists.firstOrNull { it.id == id || it.title == id }
 
 private fun LibraryState.customPlaylistComparator(sort: PlaylistListSort): Comparator<PlaylistGroup> =
@@ -3424,6 +3462,7 @@ private fun AlbumDetailScreen(
     onSettings: () -> Unit,
     onSearch: () -> Unit,
     onTrackClick: (Track, List<Track>) -> Unit,
+    trackStats: Map<Long, TrackStats>,
     currentTrackId: Long?,
     onTrackMenu: (Track) -> Unit,
     sharedTransitionScope: SharedTransitionScope,
@@ -3507,6 +3546,8 @@ private fun AlbumDetailScreen(
                     album = album,
                     albumTracks = albumTracks,
                     totalDurationMs = totalDurationMs,
+                    trackStats = trackStats,
+                    onTrackClick = onTrackClick,
                     coverModifier =
                         with(sharedTransitionScope) {
                             Modifier.sharedElement(
@@ -3526,6 +3567,7 @@ private fun AlbumDetailScreen(
                         subParentSort = it
                         preferences.saveSort(SORT_SUB_PARENT_PREFIX + album.id, it.name)
                     },
+                    trackStats = trackStats,
                     onTrackClick = onTrackClick,
                 )
             }
@@ -3671,6 +3713,8 @@ private fun AlbumHeader(
     album: AlbumGroup,
     albumTracks: List<Track>,
     totalDurationMs: Long,
+    trackStats: Map<Long, TrackStats>,
+    onTrackClick: (Track, List<Track>) -> Unit,
     coverModifier: Modifier = Modifier,
 ) {
     Column(
@@ -3710,6 +3754,25 @@ private fun AlbumHeader(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 15.sp,
         )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            TextButton(
+                onClick = {
+                    val shuffledTracks = albumTracks.smartAntiRepeatShuffle(trackStats)
+                    shuffledTracks.firstOrNull()?.let { onTrackClick(it, shuffledTracks) }
+                },
+                enabled = albumTracks.isNotEmpty(),
+            ) {
+                Text(stringResource(R.string.shuffle_play))
+            }
+            TextButton(
+                onClick = { albumTracks.firstOrNull()?.let { onTrackClick(it, albumTracks) } },
+                enabled = albumTracks.isNotEmpty(),
+            ) {
+                Text(stringResource(R.string.play))
+            }
+        }
     }
 }
 
@@ -3719,6 +3782,7 @@ private fun AlbumTrackListHeader(
     albumTrackGroups: List<AlbumTrackGroup>,
     subParentSort: SubParentSort,
     onSubParentSortSelected: (SubParentSort) -> Unit,
+    trackStats: Map<Long, TrackStats>,
     onTrackClick: (Track, List<Track>) -> Unit,
 ) {
     val context = LocalContext.current
@@ -3735,6 +3799,7 @@ private fun AlbumTrackListHeader(
         ) {
             AlbumTrackListActions(
                 albumTracks = albumTracks,
+                trackStats = trackStats,
                 onTrackClick = onTrackClick,
             )
             if (albumTrackGroups.size > 1) {
@@ -3754,6 +3819,7 @@ private fun AlbumTrackListHeader(
 @Composable
 private fun AlbumTrackListActions(
     albumTracks: List<Track>,
+    trackStats: Map<Long, TrackStats>,
     onTrackClick: (Track, List<Track>) -> Unit,
 ) {
     Row(
@@ -3763,7 +3829,7 @@ private fun AlbumTrackListActions(
         Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceVariant) {
             IconButton(
                 onClick = {
-                    val shuffledTracks = albumTracks.shuffled()
+                    val shuffledTracks = albumTracks.smartAntiRepeatShuffle(trackStats)
                     shuffledTracks.firstOrNull()?.let { onTrackClick(it, shuffledTracks) }
                 },
                 modifier = Modifier.size(42.dp),
@@ -3924,6 +3990,7 @@ private fun ArtistDetailScreen(
     onSettings: () -> Unit,
     onSearch: () -> Unit,
     onTrackClick: (Track, List<Track>) -> Unit,
+    trackStats: Map<Long, TrackStats>,
     currentTrackId: Long?,
     onTrackMenu: (Track) -> Unit,
     onAlbumClick: (AlbumGroup) -> Unit,
@@ -4031,6 +4098,7 @@ private fun ArtistDetailScreen(
                     ArtistTrackTab(
                         albums = artistAlbums,
                         tracks = artistTracks,
+                        trackStats = trackStats,
                         onTrackClick = onTrackClick,
                         currentTrackId = currentTrackId,
                         onTrackMenu = onTrackMenu,
@@ -4052,6 +4120,7 @@ private fun ArtistDetailScreen(
 private fun ArtistTrackTab(
     albums: List<AlbumGroup>,
     tracks: List<Track>,
+    trackStats: Map<Long, TrackStats>,
     onTrackClick: (Track, List<Track>) -> Unit,
     currentTrackId: Long?,
     onTrackMenu: (Track) -> Unit,
@@ -4073,7 +4142,7 @@ private fun ArtistTrackTab(
                 Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceVariant) {
                     IconButton(
                         onClick = {
-                            val shuffledTracks = tracks.shuffled()
+                            val shuffledTracks = tracks.smartAntiRepeatShuffle(trackStats)
                             shuffledTracks.firstOrNull()?.let { onTrackClick(it, shuffledTracks) }
                         },
                         modifier = Modifier.size(42.dp),
@@ -4651,6 +4720,7 @@ private fun FolderDetailScreen(
     onSettings: () -> Unit,
     onSearch: () -> Unit,
     onTrackClick: (Track, List<Track>) -> Unit,
+    trackStats: Map<Long, TrackStats>,
     currentTrackId: Long?,
     onTrackMenu: (Track) -> Unit,
     onToggleFavorite: (Long) -> Unit,
@@ -4698,7 +4768,10 @@ private fun FolderDetailScreen(
             item {
                 DetailSortHeader(
                     label = stringResource(R.string.name),
-                    onShuffle = { folder.tracks.firstOrNull()?.let { onTrackClick(it, folder.tracks) } },
+                    onShuffle = {
+                        val shuffledTracks = folder.tracks.smartAntiRepeatShuffle(trackStats)
+                        shuffledTracks.firstOrNull()?.let { onTrackClick(it, shuffledTracks) }
+                    },
                     onPlay = { folder.tracks.firstOrNull()?.let { onTrackClick(it, folder.tracks) } },
                 )
             }
@@ -5021,6 +5094,52 @@ private fun List<Track>.sortedForArtistPlayback(): List<Track> =
                 },
             ),
         ).flatMap { it.sortedForAlbumPlayback() }
+
+private fun List<Track>.smartAntiRepeatShuffle(trackStats: Map<Long, TrackStats>): List<Track> {
+    val uniqueTracks = distinctBy { it.id }
+    if (uniqueTracks.size < 2) return uniqueTracks
+
+    val now = System.currentTimeMillis()
+    val random = Random(now xor uniqueTracks.size.toLong())
+    val ranked =
+        uniqueTracks
+            .map { track ->
+                val stats = trackStats[track.id]
+                val lastPlayed = stats?.lastPlayed ?: 0L
+                val playCount = (stats?.playCount ?: 0).coerceAtLeast(0)
+                val ageScore =
+                    if (lastPlayed <= 0L) {
+                        1.0
+                    } else {
+                        ((now - lastPlayed).coerceAtLeast(0L).toDouble() / SHUFFLE_RECENCY_WINDOW_MS).coerceIn(0.0, 1.0)
+                    }
+                val playPenalty = (playCount.toDouble() / SHUFFLE_PLAYCOUNT_SOFT_CAP).coerceIn(0.0, 1.0)
+                val score = random.nextDouble() + (ageScore * 0.6) - (playPenalty * 0.35)
+                track to score
+            }.sortedByDescending { it.second }
+            .map { it.first }
+            .toMutableList()
+
+    val mixed = ArrayList<Track>(ranked.size)
+    var lastArtist: String? = null
+    var lastAlbumId: Long? = null
+    while (ranked.isNotEmpty()) {
+        val nextIndex =
+            ranked.indexOfFirst { candidate ->
+                val artistChanged = !candidate.artist.equals(lastArtist, ignoreCase = true)
+                val albumChanged = candidate.albumId != lastAlbumId
+                artistChanged && albumChanged
+            }.takeIf { it >= 0 } ?: 0
+        val selected = ranked.removeAt(nextIndex)
+        mixed += selected
+        lastArtist = selected.artist
+        lastAlbumId = selected.albumId
+    }
+    return mixed
+}
+
+private const val SHUFFLE_RECENCY_WINDOW_MS = 1000L * 60L * 60L * 24L * 14L
+private const val SHUFFLE_PLAYCOUNT_SOFT_CAP = 30.0
 
 private fun AlbumGroup.releaseYear(): Int = tracks.mapNotNull { it.year.takeIf { year -> year > 0 } }.minOrNull() ?: 0
 

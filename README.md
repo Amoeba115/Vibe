@@ -3,9 +3,7 @@
 
   <h1>AyraMusic</h1>
 
-  A FOSS Music client for Android with
-  <a href="https://github.com/AyraHikari/vgmstream-android">vgmstream-android</a>
-  using Jetpack Compose.
+  A FOSS Music client for Android built with Jetpack Compose.
 
   <br><br>
 
@@ -26,7 +24,7 @@
 
 - Modern Material You design with dynamic colors, dark mode, AMOLED black theme, and customizable accents.
 - Fast and smooth music playback with queue, shuffle, repeat, and lock screen controls.
-- Support for both regular audio formats and many game music formats.
+- Support for regular local audio formats.
 - Automatically scans and organizes your music library.
 - Browse music by tracks, albums, artists, playlists, folders, and favorites.
 - Flexible folder browser with list and tree navigation modes.
