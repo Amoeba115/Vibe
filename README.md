@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="app/src/main/1024.png" alt="Vibe cover" width="320">
+  <img src="app\src\main\Dabbing logo-modified1.png" alt="Vibe cover" width="320">
 </p>
 
 # Vibe
