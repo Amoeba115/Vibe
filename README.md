@@ -1,5 +1,5 @@
 <p align="center">
-  <img src=".github/screenshots/banner.jpg" alt="Vibe cover">
+  <img src="app/src/main/1024.png" alt="Vibe cover" width="320">
 </p>
 
 # Vibe
