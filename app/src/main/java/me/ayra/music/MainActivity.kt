@@ -64,6 +64,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import me.ayra.music.data.AudioInfoEntity
 import me.ayra.music.data.CustomPlaylistEntity
@@ -238,12 +240,26 @@ object FavoriteType {
     const val Playlist = "playlist"
 }
 
+enum class PlaylistImportFileState {
+    Queued,
+    Processing,
+    Completed,
+    Failed,
+}
+
+data class PlaylistImportFileStatus(
+    val fileName: String,
+    val state: PlaylistImportFileState,
+    val detail: String? = null,
+)
+
 data class LibraryState(
     val loading: Boolean = false,
     val scanning: Boolean = false,
     val scannedTrackCount: Int = 0,
     val importingPlaylist: Boolean = false,
     val playlistImportMessage: String? = null,
+    val playlistImportStatuses: List<PlaylistImportFileStatus> = emptyList(),
     val permissionGranted: Boolean = false,
     val allTracks: List<Track> = emptyList(),
     val tracks: List<Track> = emptyList(),
@@ -295,6 +311,7 @@ class MusicViewModel(
     private var loadingLyricsTrackId: Long? = null
     private var loadedLyricsTrackId: Long? = null
     private var pendingExternalUri: Uri? = null
+    private val playlistWriteMutex = Mutex()
     private val settingsListener =
         SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
             when (key) {
@@ -689,7 +706,7 @@ class MusicViewModel(
     ) {
         if (tracks.isEmpty()) return
         viewModelScope.launch {
-            libraryScanner.addTracksToPlaylist(playlistId, tracks)
+            libraryScanner.addTracksToPlaylist(playlistId, tracks, addToTop = preferences.loadPlaylistAddToTop())
             val visibleTracks = _library.value.tracks
             _library.update { state ->
                 state.copy(playlists = libraryScanner.buildPlaylists(visibleTracks))
@@ -782,80 +799,181 @@ class MusicViewModel(
         tracks: List<Track>,
     ) {
         viewModelScope.launch {
-            libraryScanner.replacePlaylistTracks(playlistId, tracks)
-            val visibleTracks = _library.value.tracks
-            _library.update { state ->
-                state.copy(playlists = libraryScanner.buildPlaylists(visibleTracks))
+            playlistWriteMutex.withLock {
+                libraryScanner.replacePlaylistTracks(playlistId, tracks)
+                val visibleTracks = _library.value.tracks
+                _library.update { state ->
+                    state.copy(playlists = libraryScanner.buildPlaylists(visibleTracks))
+                }
             }
         }
     }
 
     fun importPlaylist(uri: Uri) {
+        importPlaylists(listOf(uri))
+    }
+
+    fun importPlaylists(uris: List<Uri>) {
+        if (uris.isEmpty()) return
         viewModelScope.launch {
             val app = getApplication<Application>()
-            _library.update { it.copy(importingPlaylist = true, playlistImportMessage = null) }
-            runCatching {
-                val candidateTracks =
-                    _library.value.allTracks
-                        .ifEmpty { _library.value.tracks }
-                        .ifEmpty { runCatching { libraryScanner.loadCachedLibrary().tracks }.getOrDefault(emptyList()) }
-                val imported =
-                    withContext(Dispatchers.IO) {
-                        val text =
-                            app.contentResolver
-                                .openInputStream(uri)
-                                ?.use { input ->
-                                    input.bufferedReader().use { it.readText() }
-                                }.orEmpty()
-                        parseImportedPlaylists(uri, text, candidateTracks)
-                    }
-                if (imported.isEmpty()) return@runCatching PlaylistImportResult.NoEntries
-                var createdCount = 0
-                imported.forEach { playlist ->
-                    val tracks =
-                        if (playlist.tracks.isNotEmpty()) {
-                            playlist.tracks
-                        } else {
-                            withContext(Dispatchers.IO) {
-                                app.resolvePlaylistEntriesFromMediaStore(playlist.entries, candidateTracks)
-                            }
+            val statuses =
+                uris.map { uri ->
+                    PlaylistImportFileStatus(
+                        fileName = app.playlistImportFileName(uri),
+                        state = PlaylistImportFileState.Queued,
+                    )
+                }
+            _library.update {
+                it.copy(
+                    importingPlaylist = true,
+                    playlistImportMessage = null,
+                    playlistImportStatuses = statuses,
+                )
+            }
+            val candidateTracks =
+                _library.value.allTracks
+                    .ifEmpty { _library.value.tracks }
+                    .ifEmpty { runCatching { libraryScanner.loadCachedLibrary().tracks }.getOrDefault(emptyList()) }
+            val mediaStoreIndex =
+                withContext(Dispatchers.IO) {
+                    app.buildPlaylistMediaStoreIndex(candidateTracks)
+                }
+            var importedPlaylistCount = 0
+            var failedFileCount = 0
+            uris.forEachIndexed { index, uri ->
+                _library.update { state ->
+                    state.copy(
+                        playlistImportStatuses =
+                            state.playlistImportStatuses.mapIndexed { statusIndex, item ->
+                                if (statusIndex == index) item.copy(state = PlaylistImportFileState.Processing, detail = null) else item
+                            },
+                    )
+                }
+                val result = runCatching { importPlaylistUri(app, uri, candidateTracks, mediaStoreIndex) }
+                if (result.isSuccess) {
+                    val importResult = result.getOrThrow()
+                    val statusState: PlaylistImportFileState
+                    val detail: String
+                    when (importResult) {
+                        is PlaylistImportResult.Success -> {
+                            importedPlaylistCount += importResult.playlistCount
+                            statusState = PlaylistImportFileState.Completed
+                            detail = app.getString(R.string.import_playlist_success_count, importResult.playlistCount)
                         }
-                    if (tracks.isNotEmpty()) {
-                        libraryScanner.createPlaylist(playlist.name, tracks)
-                        createdCount++
+
+                        PlaylistImportResult.NoEntries -> {
+                            failedFileCount++
+                            statusState = PlaylistImportFileState.Failed
+                            detail = app.getString(R.string.import_playlist_failed_no_entries)
+                        }
+
+                        PlaylistImportResult.NoMatches -> {
+                            failedFileCount++
+                            statusState = PlaylistImportFileState.Failed
+                            detail = app.getString(R.string.import_playlist_failed_no_matches)
+                        }
+                    }
+                    _library.update { state ->
+                        state.copy(
+                            playlistImportStatuses =
+                                state.playlistImportStatuses.mapIndexed { statusIndex, item ->
+                                    if (statusIndex == index) {
+                                        item.copy(
+                                            state = statusState,
+                                            detail = detail,
+                                        )
+                                    } else {
+                                        item
+                                    }
+                                },
+                        )
+                    }
+                } else {
+                    failedFileCount++
+                    _library.update { state ->
+                        state.copy(
+                            playlistImportStatuses =
+                                state.playlistImportStatuses.mapIndexed { statusIndex, item ->
+                                    if (statusIndex == index) {
+                                        item.copy(
+                                            state = PlaylistImportFileState.Failed,
+                                            detail = app.getString(R.string.import_playlist_failed_generic),
+                                        )
+                                    } else {
+                                        item
+                                    }
+                                },
+                        )
                     }
                 }
-                if (createdCount == 0) return@runCatching PlaylistImportResult.NoMatches
+            }
+            if (importedPlaylistCount > 0) {
                 val visibleTracks = _library.value.tracks
                 _library.update { state ->
                     state.copy(playlists = libraryScanner.buildPlaylists(visibleTracks))
                 }
-                PlaylistImportResult.Success(createdCount)
-            }.onSuccess { result ->
-                val message =
-                    when (result) {
-                        is PlaylistImportResult.Success ->
-                            app.getString(R.string.import_playlist_success_count, result.playlistCount)
-                        PlaylistImportResult.NoEntries ->
-                            app.getString(R.string.import_playlist_failed_no_entries)
-                        PlaylistImportResult.NoMatches ->
-                            app.getString(R.string.import_playlist_failed_no_matches)
-                    }
-                _library.update {
-                    it.copy(
-                        importingPlaylist = false,
-                        playlistImportMessage = message,
+            }
+            val summary =
+                if (uris.size == 1) {
+                    _library.value.playlistImportStatuses.firstOrNull()?.detail ?: app.getString(R.string.import_playlist_failed_generic)
+                } else {
+                    app.getString(
+                        R.string.import_playlist_batch_summary,
+                        uris.size,
+                        importedPlaylistCount,
+                        failedFileCount,
                     )
                 }
-            }.onFailure {
-                _library.update { state ->
-                    state.copy(
-                        importingPlaylist = false,
-                        playlistImportMessage = app.getString(R.string.import_playlist_failed_generic),
-                    )
-                }
+            _library.update {
+                it.copy(
+                    importingPlaylist = false,
+                    playlistImportMessage = summary,
+                )
             }
         }
+    }
+
+    private suspend fun importPlaylistUri(
+        app: Application,
+        uri: Uri,
+        candidateTracks: List<Track>,
+        mediaStoreIndex: PlaylistMediaStoreIndex,
+    ): PlaylistImportResult {
+        val imported =
+            withContext(Dispatchers.IO) {
+                val text =
+                    app.contentResolver
+                        .openInputStream(uri)
+                        ?.use { input ->
+                            input.bufferedReader().use { it.readText() }
+                        }.orEmpty()
+                parseImportedPlaylists(uri, text, candidateTracks)
+            }
+        if (imported.isEmpty()) return PlaylistImportResult.NoEntries
+        var createdCount = 0
+        imported.forEach { playlist ->
+            val hasPathEntries = playlist.entries.any { entry -> entry.contains('/') || entry.contains('\\') }
+            val shouldUseMediaStoreLookup = hasPathEntries || playlist.tracks.isEmpty()
+            val mediaStoreTracks =
+                if (shouldUseMediaStoreLookup) {
+                    mediaStoreIndex.resolve(playlist.entries)
+                } else {
+                    emptyList()
+                }
+            val tracks =
+                if (hasPathEntries) {
+                    mediaStoreTracks.ifEmpty { playlist.tracks }
+                } else {
+                    playlist.tracks.ifEmpty { mediaStoreTracks }
+                }
+            if (tracks.isNotEmpty()) {
+                libraryScanner.createPlaylist(playlist.name, tracks)
+                createdCount++
+            }
+        }
+        if (createdCount == 0) return PlaylistImportResult.NoMatches
+        return PlaylistImportResult.Success(createdCount)
     }
 
     fun exportPlaylistsJson(): String = exportCustomPlaylists(_library.value.playlists.filter { it.id.startsWith("custom-") })
@@ -1040,6 +1158,23 @@ private sealed interface PlaylistImportResult {
     data object NoMatches : PlaylistImportResult
 }
 
+private fun Application.playlistImportFileName(uri: Uri): String {
+    val fallback =
+        uri.lastPathSegment
+            ?.substringAfterLast('/')
+            ?.ifBlank { null } ?: "Playlist file"
+    if (uri.scheme != "content") return fallback
+    return runCatching {
+        contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                cursor.getString(0) ?: fallback
+            } else {
+                fallback
+            }
+        } ?: fallback
+    }.getOrDefault(fallback)
+}
+
 private fun parseImportedPlaylists(
     uri: Uri,
     text: String,
@@ -1107,8 +1242,21 @@ private fun resolvePlaylistEntries(
     libraryTracks: List<Track>,
 ): List<Track> {
     val byUri = libraryTracks.associateBy { it.uri.toString() }
-    val byPath = libraryTracks.mapNotNull { track -> track.uri.path?.replace('\\', '/')?.let { it to track } }.toMap()
-    val byName = libraryTracks.associateBy { it.title.lowercase(Locale.ROOT) }
+    val byPath =
+        libraryTracks.mapNotNull { track ->
+            val path = track.uri.path?.replace('\\', '/') ?: return@mapNotNull null
+            normalizePathForMatch(path).takeIf { it.isNotBlank() }?.let { normalized -> normalized to track }
+        }.toMap()
+    val indexedByTail = mutableMapOf<String, Track?>()
+    val indexedByFileName = mutableMapOf<String, Track?>()
+    libraryTracks.forEach { track ->
+        val normalizedPath = normalizePathForMatch(track.uri.path ?: track.uri.toString())
+        if (normalizedPath.isBlank()) return@forEach
+        normalizedPath.pathTailsForMatch(maxSegments = 7).forEach { tail ->
+            indexedByTail.putUniqueTrack(tail, track)
+        }
+        indexedByFileName.putUniqueTrack(normalizedPath.substringAfterLast('/'), track)
+    }
     val candidates =
         libraryTracks.map { track ->
             TrackMatchCandidate(
@@ -1117,24 +1265,60 @@ private fun resolvePlaylistEntries(
                 normalizedArtist = normalizeForMatch(track.artist),
                 normalizedAlbum = normalizeForMatch(track.album),
                 normalizedFolder = normalizeForMatch(track.folder.replace('\\', '/')),
+                normalizedFileName = normalizePathForMatch(track.uri.lastPathSegment.orEmpty()).substringAfterLast('/'),
+                trackNumber = track.trackNumber,
             )
         }
     return entries
         .mapNotNull { raw ->
-            val normalized = raw.replace('\\', '/')
+            val normalizedEntry = normalizePathForMatch(raw.replace('\\', '/'))
+            if (normalizedEntry.isBlank()) return@mapNotNull null
+            val fileName = normalizedEntry.substringAfterLast('/')
             byUri[raw]
-                ?: byPath[normalized]
-                ?: libraryTracks.firstOrNull { it.uri.path?.replace('\\', '/') == normalized }
-                ?: byName[File(normalized).nameWithoutExtension.lowercase(Locale.ROOT)]
-                ?: resolveByRelativePathHeuristics(normalized, candidates)
+                ?: byPath[normalizedEntry]
+                ?: normalizedEntry.firstUniqueTrackTailMatch(indexedByTail, maxSegments = 7)
+                ?: indexedByFileName[fileName]
+                ?: resolveByRelativePathHeuristics(normalizedEntry, candidates)
         }.distinctBy { it.id }
 }
 
-private fun Context.resolvePlaylistEntriesFromMediaStore(
-    entries: List<String>,
-    libraryTracks: List<Track>,
-): List<Track> {
-    if (entries.isEmpty() || libraryTracks.isEmpty()) return emptyList()
+private data class PlaylistMediaStoreIndex(
+    val tracksById: Map<Long, Track>,
+    val indexedByPath: Map<String, Long>,
+    val indexedByTail: Map<String, Long?>,
+    val indexedByFileName: Map<String, Long?>,
+) {
+    fun resolve(entries: List<String>): List<Track> {
+        if (entries.isEmpty() || tracksById.isEmpty()) return emptyList()
+        return entries
+            .asSequence()
+            .mapNotNull { entry ->
+                val normalizedEntry = normalizePathForMatch(entry)
+                if (normalizedEntry.isBlank()) return@mapNotNull null
+                val fileName = normalizedEntry.substringAfterLast('/')
+                val id =
+                    indexedByPath[normalizedEntry]
+                        ?: normalizedEntry
+                            .pathTailsForMatch()
+                            .asSequence()
+                            .mapNotNull { tail -> indexedByTail[tail] }
+                            .firstOrNull()
+                        ?: indexedByFileName[fileName]
+                id?.let(tracksById::get)
+            }.distinctBy { it.id }
+            .toList()
+    }
+}
+
+private fun Context.buildPlaylistMediaStoreIndex(libraryTracks: List<Track>): PlaylistMediaStoreIndex {
+    if (libraryTracks.isEmpty()) {
+        return PlaylistMediaStoreIndex(
+            tracksById = emptyMap(),
+            indexedByPath = emptyMap(),
+            indexedByTail = emptyMap(),
+            indexedByFileName = emptyMap(),
+        )
+    }
     val tracksById = libraryTracks.associateBy { it.id }
     val projection =
         buildList {
@@ -1188,23 +1372,12 @@ private fun Context.resolvePlaylistEntriesFromMediaStore(
         }
     }
 
-    return entries
-        .asSequence()
-        .mapNotNull { entry ->
-            val normalizedEntry = normalizePathForMatch(entry)
-            if (normalizedEntry.isBlank()) return@mapNotNull null
-            val fileName = normalizedEntry.substringAfterLast('/')
-            val id =
-                indexedByPath[normalizedEntry]
-                    ?: normalizedEntry
-                        .pathTailsForMatch()
-                        .asSequence()
-                        .mapNotNull { tail -> indexedByTail[tail] }
-                        .firstOrNull()
-                    ?: indexedByFileName[fileName]
-            id?.let(tracksById::get)
-        }.distinctBy { it.id }
-        .toList()
+    return PlaylistMediaStoreIndex(
+        tracksById = tracksById,
+        indexedByPath = indexedByPath,
+        indexedByTail = indexedByTail,
+        indexedByFileName = indexedByFileName,
+    )
 }
 
 private data class TrackMatchCandidate(
@@ -1213,6 +1386,8 @@ private data class TrackMatchCandidate(
     val normalizedArtist: String,
     val normalizedAlbum: String,
     val normalizedFolder: String,
+    val normalizedFileName: String,
+    val trackNumber: Int,
 )
 
 private fun resolveByRelativePathHeuristics(
@@ -1226,27 +1401,44 @@ private fun resolveByRelativePathHeuristics(
     val normalizedSegments = rawSegments.map(::normalizeForMatch)
     val filename = rawSegments.last()
     val filenameStem = File(filename).nameWithoutExtension
+    val normalizedFileName = normalizePathForMatch(filename).substringAfterLast('/')
     val titleHints = extractTitleHints(filenameStem).map(::normalizeForMatch).filter { it.isNotBlank() }
     val artistHint = normalizedSegments.getOrNull(normalizedSegments.lastIndex - 2).orEmpty()
     val albumHint = normalizedSegments.getOrNull(normalizedSegments.lastIndex - 1).orEmpty()
+    val requestedTrackNumber = extractTrackNumberHint(filenameStem)
 
-    val best =
-        candidates.maxByOrNull { candidate ->
+    val scored =
+        candidates.map { candidate ->
             var score = 0
             if (titleHints.any { it == candidate.normalizedTitle }) score += 70
             if (titleHints.any { hint -> hint.contains(candidate.normalizedTitle) || candidate.normalizedTitle.contains(hint) }) score += 35
             if (artistHint.isNotBlank() && (candidate.normalizedArtist.contains(artistHint) || artistHint.contains(candidate.normalizedArtist))) score += 20
             if (albumHint.isNotBlank() && (candidate.normalizedAlbum.contains(albumHint) || albumHint.contains(candidate.normalizedAlbum))) score += 15
             if (candidate.normalizedFolder.isNotBlank() && normalizedPath.contains(candidate.normalizedFolder)) score += 25
-            score
-        }
-    return best?.takeIf {
-        val bestTitleMatched =
-            titleHints.any { hint ->
-                hint == it.normalizedTitle || hint.contains(it.normalizedTitle) || it.normalizedTitle.contains(hint)
-            }
-        bestTitleMatched
-    }?.track
+            if (normalizedFileName.isNotBlank() && candidate.normalizedFileName == normalizedFileName) score += 120
+            if (requestedTrackNumber != null && candidate.trackNumber == requestedTrackNumber) score += 50
+            candidate to score
+        }.filter { (_, score) -> score > 0 }
+    if (scored.isEmpty()) return null
+
+    val bestScore = scored.maxOf { it.second }
+    val top = scored.filter { it.second == bestScore }.map { it.first }
+    if (top.isEmpty()) return null
+
+    val byTrackNumber =
+        requestedTrackNumber
+            ?.let { trackNumber -> top.filter { it.trackNumber == trackNumber } }
+            .orEmpty()
+    if (byTrackNumber.size == 1) return byTrackNumber.first().track
+    if (byTrackNumber.size > 1) {
+        val exactFileName = byTrackNumber.filter { it.normalizedFileName == normalizedFileName }
+        return exactFileName.singleOrNull()?.track
+    }
+
+    val exactFileName = top.filter { it.normalizedFileName == normalizedFileName }
+    if (exactFileName.size == 1) return exactFileName.first().track
+
+    return if (top.size == 1) top.first().track else null
 }
 
 private fun extractTitleHints(filenameStem: String): List<String> {
@@ -1260,6 +1452,21 @@ private fun extractTitleHints(filenameStem: String): List<String> {
         .takeIf { it.isNotBlank() }
         ?.let(hints::add)
     return hints.toList()
+}
+
+private fun extractTrackNumberHint(filenameStem: String): Int? {
+    if (filenameStem.isBlank()) return null
+    val patterns =
+        listOf(
+            Regex("^\\s*(\\d{1,3})\\s*[-.]\\s*"),
+            Regex("\\s-\\s(\\d{1,3})\\s-\\s"),
+            Regex("\\((\\d{1,3})\\)"),
+        )
+    patterns.forEach { pattern ->
+        val value = pattern.find(filenameStem)?.groupValues?.getOrNull(1)?.toIntOrNull()
+        if (value != null) return value
+    }
+    return null
 }
 
 private fun normalizeForMatch(value: String): String {
@@ -1314,6 +1521,32 @@ private fun String.pathTailsForMatch(maxSegments: Int = 4): List<String> {
     if (segments.isEmpty()) return emptyList()
     val maxWindow = minOf(maxSegments, segments.size)
     return (maxWindow downTo 1).map { count -> segments.takeLast(count).joinToString("/") }
+}
+
+private fun String.firstUniqueTrackTailMatch(
+    indexedByTail: Map<String, Track?>,
+    maxSegments: Int = 7,
+): Track? {
+    pathTailsForMatch(maxSegments).forEach { tail ->
+        if (indexedByTail.containsKey(tail)) {
+            return indexedByTail[tail]
+        }
+    }
+    return null
+}
+
+private fun MutableMap<String, Track?>.putUniqueTrack(
+    key: String,
+    value: Track,
+) {
+    val hasKey = containsKey(key)
+    val existing = this[key]
+    this[key] =
+        when {
+            !hasKey -> value
+            existing?.id == value.id -> value
+            else -> null
+        }
 }
 
 private fun MutableMap<String, Long?>.putUnique(
@@ -1558,19 +1791,30 @@ class LibraryScanner(
     suspend fun addTracksToPlaylist(
         playlistId: String,
         tracks: List<Track>,
+        addToTop: Boolean = false,
     ) = withContext(Dispatchers.IO) {
         val existing = dao.loadCustomPlaylistTracks().filter { it.playlistId == playlistId }
         val existingIds = existing.map { it.trackId }.toSet()
         val now = System.currentTimeMillis()
-        val additions =
+        val uniqueNewTracks =
             tracks
                 .distinctBy { it.id }
                 .filterNot { it.id in existingIds }
-                .mapIndexed { index, track ->
-                    CustomPlaylistTrackEntity(playlistId, track.id, existing.size + index, now)
-                }
-        if (additions.isNotEmpty()) {
-            dao.upsertCustomPlaylistTracks(additions)
+        if (uniqueNewTracks.isNotEmpty()) {
+            if (addToTop) {
+                val shiftedExisting = existing.map { item -> item.copy(position = item.position + uniqueNewTracks.size) }
+                val additions =
+                    uniqueNewTracks.mapIndexed { index, track ->
+                        CustomPlaylistTrackEntity(playlistId, track.id, index, now)
+                    }
+                dao.upsertCustomPlaylistTracks(shiftedExisting + additions)
+            } else {
+                val additions =
+                    uniqueNewTracks.mapIndexed { index, track ->
+                        CustomPlaylistTrackEntity(playlistId, track.id, existing.size + index, now)
+                    }
+                dao.upsertCustomPlaylistTracks(additions)
+            }
             customPlaylistsCache = dao.loadCustomPlaylists(dao.loadTracks().map { it.toTrack() })
         }
     }
@@ -2113,8 +2357,10 @@ fun MusicApp(
         }
     var pendingExportText by remember { mutableStateOf<String?>(null) }
     val importPlaylistLauncher =
-        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-            uri?.let(viewModel::importPlaylist)
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+            if (uris.isNotEmpty()) {
+                viewModel.importPlaylists(uris)
+            }
         }
     val exportPlaylistLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->

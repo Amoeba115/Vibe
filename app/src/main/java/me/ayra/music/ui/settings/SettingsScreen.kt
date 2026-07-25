@@ -100,6 +100,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import me.ayra.music.FolderGroup
 import me.ayra.music.LibraryState
+import me.ayra.music.PlaylistImportFileState
+import me.ayra.music.PlaylistImportFileStatus
 import me.ayra.music.R
 import me.ayra.music.ui.player.AlbumArt
 import me.ayra.music.ui.theme.LocalThemeState
@@ -219,6 +221,7 @@ fun SettingsScreen(
                     PlaylistSettings(
                         importing = library.importingPlaylist,
                         importMessage = library.playlistImportMessage,
+                        importStatuses = library.playlistImportStatuses,
                         onImport = onImportPlaylist,
                         onExport = onExportPlaylists,
                     )
@@ -390,32 +393,32 @@ private fun AboutCard() {
             onClick = { uriHandler.openUri(ABOUT_AMOEBA_GITHUB_URL) },
             modifier = Modifier.fillMaxWidth(),
         )
+        val keyChanges =
+            listOf(
+                stringResource(R.string.about_change_rebrand),
+                stringResource(R.string.about_change_vgm_removed),
+                stringResource(R.string.about_change_library_incremental),
+                stringResource(R.string.about_change_large_library),
+                stringResource(R.string.about_change_smart_shuffle),
+                stringResource(R.string.about_change_playlist_import),
+                stringResource(R.string.about_change_playlist_edit_reliability),
+                stringResource(R.string.about_change_playlist_controls),
+                stringResource(R.string.about_change_track_info_metadata),
+                stringResource(R.string.about_change_lyrics_control),
+            )
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(
                 text = stringResource(R.string.about_changes_title),
                 color = onCard,
                 style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
             )
-            Text(
-                text = stringResource(R.string.about_change_vgm_removed),
-                color = onCard.copy(alpha = 0.84f),
-                style = MaterialTheme.typography.bodySmall,
-            )
-            Text(
-                text = stringResource(R.string.about_change_large_library),
-                color = onCard.copy(alpha = 0.84f),
-                style = MaterialTheme.typography.bodySmall,
-            )
-            Text(
-                text = stringResource(R.string.about_change_playlist_import),
-                color = onCard.copy(alpha = 0.84f),
-                style = MaterialTheme.typography.bodySmall,
-            )
-            Text(
-                text = stringResource(R.string.about_change_track_info_metadata),
-                color = onCard.copy(alpha = 0.84f),
-                style = MaterialTheme.typography.bodySmall,
-            )
+            keyChanges.forEach { change ->
+                Text(
+                    text = change,
+                    color = onCard.copy(alpha = 0.84f),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
         }
     }
 }
@@ -736,9 +739,13 @@ private fun PlayerSettings() {
 private fun PlaylistSettings(
     importing: Boolean,
     importMessage: String?,
+    importStatuses: List<PlaylistImportFileStatus>,
     onImport: () -> Unit,
     onExport: () -> Unit,
 ) {
+    val preferences = rememberPreferences()
+    var addTracksToTop by rememberSaveable { mutableStateOf(preferences.loadPlaylistAddToTop()) }
+
     SettingsPage {
         SettingsSectionTitle(stringResource(R.string.playlist_layout))
         SettingsGroup {
@@ -757,7 +764,17 @@ private fun PlaylistSettings(
                 enabled = !importing,
                 onClick = onExport,
             )
-            if (importing || importMessage != null) {
+            SettingsDivider()
+            SettingsSwitchRow(
+                title = stringResource(R.string.playlist_add_to_top),
+                subtitle = stringResource(R.string.playlist_add_to_top_subtitle),
+                checked = addTracksToTop,
+                onCheckedChange = {
+                    addTracksToTop = it
+                    preferences.savePlaylistAddToTop(it)
+                },
+            )
+            if (importing || importMessage != null || importStatuses.isNotEmpty()) {
                 SettingsDivider()
                 Column(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp),
@@ -771,6 +788,32 @@ private fun PlaylistSettings(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodyMedium,
                     )
+                    importStatuses.forEach { status ->
+                        val statusLabel =
+                            when (status.state) {
+                                PlaylistImportFileState.Queued -> stringResource(R.string.import_status_queued)
+                                PlaylistImportFileState.Processing -> stringResource(R.string.import_status_processing)
+                                PlaylistImportFileState.Completed -> stringResource(R.string.import_status_completed)
+                                PlaylistImportFileState.Failed -> stringResource(R.string.import_status_failed)
+                            }
+                        Text(
+                            text =
+                                buildString {
+                                    append("• ")
+                                    append(status.fileName)
+                                    append(" - ")
+                                    append(statusLabel)
+                                    status.detail?.takeIf { it.isNotBlank() }?.let {
+                                        append(": ")
+                                        append(it)
+                                    }
+                                },
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
         }

@@ -9,11 +9,13 @@ class LyricsRepository(
 ) {
     private val localProvider = LocalLyricsProvider(context.applicationContext)
     private val cache = LinkedHashMap<Long, Lyrics?>()
+    private val selectedOverrides = LinkedHashMap<Long, Lyrics>()
 
     suspend fun lyricsFor(track: Track): Lyrics? {
         cache[track.id]?.let { return it }
         val lyrics =
             localProvider.find(track)
+                ?: selectedOverrides[track.id]
                 ?: providers.firstNotNullOfOrNull { provider ->
                     provider.search(track.title, track.artist)
                 }
@@ -24,18 +26,40 @@ class LyricsRepository(
     suspend fun searchResults(query: String): List<LyricsSearchResult> =
         providers.flatMap { provider -> provider.searchResults(query) }
 
+    suspend fun localLyricsFor(track: Track): Lyrics? = localProvider.find(track)
+
+    fun selectedLyricsFor(trackId: Long): Lyrics? = selectedOverrides[trackId]
+
+    fun setSelectedLyrics(
+        trackId: Long,
+        lyrics: Lyrics?,
+    ) {
+        if (lyrics == null) {
+            selectedOverrides.remove(trackId)
+            cache.remove(trackId)
+        } else {
+            selectedOverrides[trackId] = lyrics
+            cache[trackId] = lyrics
+        }
+    }
+
     suspend fun saveLocal(
         track: Track,
         lyrics: Lyrics,
     ): Boolean {
         val saved = localProvider.save(track, lyrics)
-        if (saved) cache[track.id] = lyrics.copy(source = LOCAL_SOURCE)
+        if (saved) {
+            selectedOverrides.remove(track.id)
+            cache[track.id] = lyrics.copy(source = LOCAL_SOURCE)
+        }
         return saved
     }
 
     suspend fun deleteLocal(track: Track): Boolean {
         val deleted = localProvider.delete(track)
-        if (deleted) cache.remove(track.id)
+        if (deleted) {
+            selectedOverrides[track.id]?.let { cache[track.id] = it } ?: cache.remove(track.id)
+        }
         return deleted
     }
 
