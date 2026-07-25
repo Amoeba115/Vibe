@@ -31,34 +31,35 @@ class LocalLyricsProvider(
         lyrics: Lyrics,
     ): Boolean =
         withContext(Dispatchers.IO) {
-            val target = writableLyricFile(track) ?: return@withContext false
-            runCatching {
-                target.parentFile?.mkdirs()
-                target.writeText(lyrics.toLrcText())
-            }.isSuccess
+            writableLyricFiles(track).any { target ->
+                runCatching {
+                    target.parentFile?.mkdirs()
+                    target.writeText(lyrics.toLrcText())
+                }.isSuccess
+            }
         }
 
     suspend fun delete(track: Track): Boolean =
         withContext(Dispatchers.IO) {
             lyricCandidates(track)
-                .firstOrNull { it.isFile && it.canWrite() }
-                ?.let { runCatching { it.delete() }.getOrDefault(false) }
-                ?: false
+                .asSequence()
+                .filter { it.isFile && it.canWrite() }
+                .map { runCatching { it.delete() }.getOrDefault(false) }
+                .any { it }
         }
 
-    private fun writableLyricFile(track: Track): File? =
-        lyricCandidates(track).firstOrNull { candidate ->
-            candidate.parentFile?.let { it.exists() && it.canWrite() } == true
-        } ?: run {
-            if (track.uri.scheme == "file") {
-                track.uri.path?.let { path -> File(path).withExtension("lrc") }
-            } else {
-                queryFilePath(track.uri)?.let { path -> File(path).withExtension("lrc") }
+    private fun writableLyricFiles(track: Track): List<File> {
+        val writableFromCandidates =
+            lyricCandidates(track).filter { candidate ->
+                candidate.parentFile?.let { it.exists() && it.canWrite() } == true
             }
-        }
+        val fallback = appPrivateLyricFile(track)
+        return (writableFromCandidates + fallback).distinctBy { it.absolutePath }
+    }
 
     private fun lyricCandidates(track: Track): List<File> {
         val candidates = linkedSetOf<File>()
+        candidates += appPrivateLyricFile(track)
         if (track.uri.scheme == "file") {
             track.uri.path?.let { path ->
                 File(path).let { file ->
@@ -83,6 +84,12 @@ class LocalLyricsProvider(
             candidates += File(directory, "${track.title}.lrc")
         }
         return candidates.toList()
+    }
+
+    private fun appPrivateLyricFile(track: Track): File {
+        val key = (track.uri.toString().hashCode().toLong() and 0xffffffffL).toString(16)
+        val fileName = "${track.id}_$key.lrc"
+        return File(File(context.filesDir, "lyrics"), fileName)
     }
 
     private fun queryFilePath(uri: Uri): String? {

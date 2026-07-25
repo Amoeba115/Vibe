@@ -85,6 +85,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderCopy
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
@@ -161,6 +162,8 @@ import me.ayra.music.TrackStats
 import me.ayra.music.ui.navigation.MainRoute
 import me.ayra.music.ui.navigation.MusicNavigator
 import me.ayra.music.ui.player.AlbumArt
+import me.ayra.music.ui.player.TrackInfoDialog
+import me.ayra.music.ui.player.TrackMetadataEditorDialog
 import me.ayra.music.ui.settings.SettingsScreen
 import me.ayra.music.util.MusicPreferences
 import sh.calvin.reorderable.ReorderableItem
@@ -350,6 +353,8 @@ fun MainScreen(
     var usePopTransition by remember { mutableStateOf(false) }
     var trackMenuTrack by remember { mutableStateOf<Track?>(null) }
     var deleteMenuTrack by remember { mutableStateOf<Track?>(null) }
+    var infoMenuTrack by remember { mutableStateOf<Track?>(null) }
+    var metadataMenuTrack by remember { mutableStateOf<Track?>(null) }
 
     fun navigate(route: MainRoute) {
         usePopTransition = false
@@ -488,6 +493,14 @@ fun MainScreen(
                         trackMenuTrack = null
                         shareTracks(context, listOf(track))
                     },
+                    onTrackInfo = {
+                        trackMenuTrack = null
+                        infoMenuTrack = track
+                    },
+                    onEditMetadata = {
+                        trackMenuTrack = null
+                        metadataMenuTrack = track
+                    },
                     onAlbum = {
                         trackMenuTrack = null
                         library.albumsById[track.albumId]?.let { navigate(MainRoute.Album(it.id)) }
@@ -505,6 +518,22 @@ fun MainScreen(
                         onDeleteTracksPermanently(listOf(track))
                     },
                     onDismiss = { deleteMenuTrack = null },
+                )
+            }
+            infoMenuTrack?.let { track ->
+                TrackInfoDialog(
+                    track = track,
+                    onDismiss = { infoMenuTrack = null },
+                )
+            }
+            metadataMenuTrack?.let { track ->
+                TrackMetadataEditorDialog(
+                    track = track,
+                    onDismiss = { metadataMenuTrack = null },
+                    onSaved = {
+                        metadataMenuTrack = null
+                        onRescan()
+                    },
                 )
             }
         }
@@ -2163,20 +2192,60 @@ private fun PlaylistDetailScreen(
     var renameDialog by rememberSaveable(playlist.id) { mutableStateOf(false) }
     var renameName by rememberSaveable(playlist.id) { mutableStateOf(playlist.title) }
     var editMode by rememberSaveable(playlist.id) { mutableStateOf(false) }
+    var showExitEditDialog by rememberSaveable(playlist.id) { mutableStateOf(false) }
     var selectedIds by rememberSaveable(playlist.id) { mutableStateOf(emptyList<Long>()) }
-    var editTracks by remember(playlist.id) { mutableStateOf(playlist.tracks) }
+    var editTrackIds by rememberSaveable(playlist.id) { mutableStateOf(playlist.tracks.map { it.id }) }
+    val tracksById = remember(playlist.tracks) { playlist.tracks.associateBy { it.id } }
+    val editTracks = remember(editTrackIds, tracksById, playlist.tracks) { editTrackIds.mapNotNull { trackId -> tracksById[trackId] } }
     var sort by rememberSaveable(playlist.id) {
         mutableStateOf(preferences.loadEnumSort(SORT_PLAYLIST_PREFIX + playlist.id, PlaylistSort.CustomOrder, PlaylistSort.entries))
     }
     LaunchedEffect(playlist.tracks) {
-        if (!editMode) editTracks = playlist.tracks
+        if (!editMode) editTrackIds = playlist.tracks.map { it.id }
     }
     LaunchedEffect(editMode) {
         onEditModeChanged(editMode)
         if (!editMode) selectedIds = emptyList()
     }
-    BackHandler(enabled = editMode) {
+    val hasPendingPlaylistEdits =
+        remember(editMode, playlist.tracks, editTrackIds) {
+            editMode && playlist.tracks.map { it.id } != editTrackIds
+        }
+    val commitEditsAndExit = {
+        if (hasPendingPlaylistEdits) onReplacePlaylistTracks(editTracks)
+        showExitEditDialog = false
         editMode = false
+    }
+    val discardEditsAndExit = {
+        editTrackIds = playlist.tracks.map { it.id }
+        showExitEditDialog = false
+        editMode = false
+    }
+    val requestExitEditMode = {
+        if (hasPendingPlaylistEdits) {
+            showExitEditDialog = true
+        } else {
+            editMode = false
+        }
+    }
+    BackHandler(enabled = editMode) {
+        requestExitEditMode()
+    }
+    if (showExitEditDialog) {
+        AlertDialog(
+            onDismissRequest = { showExitEditDialog = false },
+            title = { Text(stringResource(R.string.playlist_edit_unsaved_title)) },
+            text = { Text(stringResource(R.string.playlist_edit_unsaved_message)) },
+            confirmButton = {
+                TextButton(onClick = commitEditsAndExit) { Text(stringResource(R.string.save)) }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = discardEditsAndExit) { Text(stringResource(R.string.discard)) }
+                    TextButton(onClick = { showExitEditDialog = false }) { Text(stringResource(R.string.cancel)) }
+                }
+            },
+        )
     }
     if (renameDialog) {
         AlertDialog(
@@ -2249,8 +2318,7 @@ private fun PlaylistDetailScreen(
             val fromIndex = from.index - headerItems
             val toIndex = to.index - headerItems
             if (fromIndex in editTracks.indices && toIndex in editTracks.indices && fromIndex != toIndex) {
-                editTracks = editTracks.toMutableList().apply { add(toIndex, removeAt(fromIndex)) }
-                onReplacePlaylistTracks(editTracks)
+                editTrackIds = editTrackIds.toMutableList().apply { add(toIndex, removeAt(fromIndex)) }
             }
         }
     val showPinnedTitle by remember {
@@ -2306,20 +2374,30 @@ private fun PlaylistDetailScreen(
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
-                            TextButton(
-                                onClick = {
-                                    val shuffledTracks = tracks.smartAntiRepeatShuffle(trackStats)
-                                    shuffledTracks.firstOrNull()?.let { onTrackClick(it, shuffledTracks) }
-                                },
-                                enabled = tracks.isNotEmpty(),
-                            ) {
-                                Text(stringResource(R.string.shuffle_play))
+                            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceVariant) {
+                                IconButton(
+                                    onClick = {
+                                        val shuffledTracks = tracks.smartAntiRepeatShuffle(trackStats)
+                                        shuffledTracks.firstOrNull()?.let { onTrackClick(it, shuffledTracks) }
+                                    },
+                                    enabled = tracks.isNotEmpty(),
+                                    modifier = Modifier.size(42.dp),
+                                ) {
+                                    Icon(Icons.Default.Shuffle, contentDescription = stringResource(R.string.shuffle_play))
+                                }
                             }
-                            TextButton(
-                                onClick = { tracks.firstOrNull()?.let { onTrackClick(it, tracks) } },
-                                enabled = tracks.isNotEmpty(),
-                            ) {
-                                Text(stringResource(R.string.play))
+                            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primary) {
+                                IconButton(
+                                    onClick = { tracks.firstOrNull()?.let { onTrackClick(it, tracks) } },
+                                    enabled = tracks.isNotEmpty(),
+                                    modifier = Modifier.size(42.dp),
+                                ) {
+                                    Icon(
+                                        Icons.Default.PlayArrow,
+                                        contentDescription = stringResource(R.string.play),
+                                        tint = MaterialTheme.colorScheme.onPrimary,
+                                    )
+                                }
                             }
                         }
                     }
@@ -2408,7 +2486,7 @@ private fun PlaylistDetailScreen(
                             onLongClick =
                                 if (isCustomPlaylist) {
                                     {
-                                        editTracks = playlist.tracks
+                                        editTrackIds = playlist.tracks.map { it.id }
                                         selectedIds = listOf(track.id)
                                         editMode = true
                                     }
@@ -2434,7 +2512,7 @@ private fun PlaylistDetailScreen(
                     .padding(start = 8.dp, top = 18.dp, end = 8.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = { if (editMode) editMode = false else onBack() }) {
+            IconButton(onClick = { if (editMode) requestExitEditMode() else onBack() }) {
                 Icon(
                     Icons.AutoMirrored.Default.ArrowBack,
                     contentDescription = stringResource(R.string.back),
@@ -2476,6 +2554,9 @@ private fun PlaylistDetailScreen(
                         modifier = Modifier.padding(end = 8.dp),
                     )
                 }
+                TextButton(onClick = commitEditsAndExit) {
+                    Text(stringResource(R.string.done))
+                }
             } else {
                 IconButton(onClick = onToggleFavorite) {
                     Icon(
@@ -2511,7 +2592,7 @@ private fun PlaylistDetailScreen(
                             onClick = {
                                 menuExpanded = false
                                 editMode = true
-                                editTracks = playlist.tracks
+                                editTrackIds = playlist.tracks.map { it.id }
                             },
                         )
                         DropdownMenuItem(
@@ -2544,11 +2625,11 @@ private fun PlaylistDetailScreen(
                 hasSelection = selectedTracks.isNotEmpty(),
                 onPlay = {
                     onReplaceCurrentQueue(selectedTracks)
-                    editMode = false
+                    commitEditsAndExit()
                 },
                 onAdd = {
-                    editMode = false
                     onAddTracksToRoute(selectedTracks)
+                    commitEditsAndExit()
                 },
                 onShare = {
                     val intent =
@@ -2560,9 +2641,8 @@ private fun PlaylistDetailScreen(
                     context.startActivity(Intent.createChooser(intent, null))
                 },
                 onDelete = {
-                    editTracks = editTracks.filterNot { it.id in selectedSet }
+                    editTrackIds = editTracks.filterNot { it.id in selectedSet }.map { it.id }
                     selectedIds = emptyList()
-                    onReplacePlaylistTracks(editTracks)
                 },
             )
         }
@@ -5900,6 +5980,8 @@ private fun TrackActionSheet(
     onAdd: () -> Unit,
     onDelete: () -> Unit,
     onShare: () -> Unit,
+    onTrackInfo: () -> Unit,
+    onEditMetadata: () -> Unit,
     onAlbum: () -> Unit,
     onArtist: () -> Unit,
 ) {
@@ -5919,6 +6001,8 @@ private fun TrackActionSheet(
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(bottom = 12.dp),
             )
+            TrackActionRow(Icons.Default.Info, stringResource(R.string.track_info), onTrackInfo)
+            TrackActionRow(Icons.Default.Edit, stringResource(R.string.edit_metadata), onEditMetadata)
             TrackActionRow(Icons.Default.Add, stringResource(R.string.add_to), onAdd)
             TrackActionRow(Icons.Default.Delete, stringResource(R.string.delete), onDelete)
             TrackActionRow(Icons.Default.Share, stringResource(R.string.share), onShare)

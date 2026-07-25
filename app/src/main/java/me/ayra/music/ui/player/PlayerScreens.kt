@@ -164,6 +164,7 @@ import me.ayra.music.PlayerState
 import me.ayra.music.R
 import me.ayra.music.Track
 import me.ayra.music.lyrics.LrclibLyricsProvider
+import me.ayra.music.lyrics.Lyrics
 import me.ayra.music.lyrics.LyricsRenderer
 import me.ayra.music.lyrics.LyricsRepository
 import me.ayra.music.lyrics.LyricsSearchResult
@@ -1215,7 +1216,7 @@ private data class MetadataUpdateResult(
 )
 
 @Composable
-private fun TrackInfoDialog(
+fun TrackInfoDialog(
     track: Track,
     onDismiss: () -> Unit,
 ) {
@@ -1241,7 +1242,7 @@ private fun TrackInfoDialog(
 }
 
 @Composable
-private fun TrackMetadataEditorDialog(
+fun TrackMetadataEditorDialog(
     track: Track,
     onDismiss: () -> Unit,
     onSaved: () -> Unit,
@@ -1464,17 +1465,27 @@ private fun LyricsContent(
     val coroutineScope = rememberCoroutineScope()
     val lyricsProvider = remember { LrclibLyricsProvider() }
     val lyricsRepository = remember(context) { LyricsRepository(context) }
-    var selectedLyrics by remember(track?.id) { mutableStateOf(playerState.lyrics) }
+    var selectedLyrics by remember(track?.id) { mutableStateOf<Lyrics?>(null) }
     var menuExpanded by rememberSaveable { mutableStateOf(false) }
     var showSearchSheet by rememberSaveable { mutableStateOf(false) }
     var searchQuery by rememberSaveable(track?.id) { mutableStateOf(track?.title.orEmpty()) }
     var searchLoading by rememberSaveable { mutableStateOf(false) }
+    var savingLyricsResultId by rememberSaveable(track?.id) { mutableStateOf<Long?>(null) }
     var searchResults by remember { mutableStateOf(emptyList<LyricsSearchResult>()) }
-    val visibleLyrics = selectedLyrics ?: playerState.lyrics
+    var localLyrics by remember(track?.id) { mutableStateOf<Lyrics?>(null) }
+    val visibleLyrics = selectedLyrics ?: localLyrics ?: playerState.lyrics
+    val lyricsAreSavedLocally = visibleLyrics?.source == LyricsRepository.LOCAL_SOURCE
+    val hasDownloadedLyrics = localLyrics != null
+    val localLyricsSignature = remember(localLyrics) { localLyrics?.lyricsSignature() }
 
-    LaunchedEffect(playerState.lyrics, track?.id) {
-        if (selectedLyrics == null) {
-            selectedLyrics = playerState.lyrics
+    LaunchedEffect(track?.id) {
+        val currentTrack = track
+        if (currentTrack == null) {
+            localLyrics = null
+            selectedLyrics = null
+        } else {
+            localLyrics = lyricsRepository.localLyricsFor(currentTrack)
+            selectedLyrics = lyricsRepository.selectedLyricsFor(currentTrack.id)
         }
     }
 
@@ -1489,6 +1500,9 @@ private fun LyricsContent(
             searchLoading = false
         }
     }
+    suspend fun refreshDownloadedState(currentTrack: Track) {
+        localLyrics = lyricsRepository.localLyricsFor(currentTrack)
+    }
 
     if (showSearchSheet) {
         LyricsSearchSheet(
@@ -1500,9 +1514,33 @@ private fun LyricsContent(
             },
             onDismiss = { showSearchSheet = false },
             onResultClick = {
+                track?.let { currentTrack ->
+                    lyricsRepository.setSelectedLyrics(currentTrack.id, it.lyrics)
+                }
                 selectedLyrics = it.lyrics
-                showSearchSheet = false
             },
+            onSaveResult = { result ->
+                val currentTrack = track ?: return@LyricsSearchSheet
+                coroutineScope.launch {
+                    savingLyricsResultId = result.id
+                    try {
+                        if (lyricsRepository.saveLocal(currentTrack, result.lyrics)) {
+                            refreshDownloadedState(currentTrack)
+                            val savedLyrics = localLyrics
+                            if (savedLyrics != null) {
+                                selectedLyrics = savedLyrics
+                            }
+                        } else {
+                            Toast.makeText(context, context.getString(R.string.lyrics_download_failed), Toast.LENGTH_SHORT).show()
+                        }
+                    } finally {
+                        savingLyricsResultId = null
+                    }
+                }
+            },
+            downloadedLyricsSignature = localLyricsSignature,
+            selectedLyricsSignature = visibleLyrics?.lyricsSignature(),
+            savingResultId = savingLyricsResultId,
             onSearch = { searchLyrics(searchQuery) },
         )
     }
@@ -1535,6 +1573,32 @@ private fun LyricsContent(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                Text(
+                    text =
+                        if (hasDownloadedLyrics) {
+                            stringResource(R.string.lyrics_downloaded_yes)
+                        } else {
+                            stringResource(R.string.lyrics_downloaded_no)
+                        },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                visibleLyrics?.let { lyrics ->
+                    Text(
+                        text =
+                            if (lyricsAreSavedLocally) {
+                                stringResource(R.string.lyrics_saved_locally)
+                            } else {
+                                stringResource(R.string.lyrics_source, lyrics.source)
+                            },
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
             Box {
                 FilledIconButton(
@@ -1565,10 +1629,20 @@ private fun LyricsContent(
                                 coroutineScope.launch {
                                     if (isLocalLyrics) {
                                         if (lyricsRepository.deleteLocal(currentTrack)) {
+                                            refreshDownloadedState(currentTrack)
+                                            lyricsRepository.setSelectedLyrics(currentTrack.id, null)
                                             selectedLyrics = null
+                                        } else {
+                                            Toast.makeText(context, context.getString(R.string.lyrics_delete_failed), Toast.LENGTH_SHORT).show()
                                         }
                                     } else if (lyricsRepository.saveLocal(currentTrack, currentLyrics)) {
-                                        selectedLyrics = currentLyrics.copy(source = LyricsRepository.LOCAL_SOURCE)
+                                        refreshDownloadedState(currentTrack)
+                                        val savedLyrics = localLyrics
+                                        if (savedLyrics != null) {
+                                            selectedLyrics = savedLyrics
+                                        }
+                                    } else {
+                                        Toast.makeText(context, context.getString(R.string.lyrics_download_failed), Toast.LENGTH_SHORT).show()
                                     }
                                 }
                             },
@@ -1635,6 +1709,10 @@ private fun LyricsSearchSheet(
     onQueryChange: (String) -> Unit,
     onDismiss: () -> Unit,
     onResultClick: (LyricsSearchResult) -> Unit,
+    onSaveResult: (LyricsSearchResult) -> Unit,
+    downloadedLyricsSignature: String?,
+    selectedLyricsSignature: String?,
+    savingResultId: Long?,
     onSearch: () -> Unit,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -1655,6 +1733,11 @@ private fun LyricsSearchSheet(
                 Text(
                     text = stringResource(R.string.search_lyric_description),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = stringResource(R.string.search_lyric_hint_actions),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
                 )
             }
             Row(
@@ -1756,8 +1839,14 @@ private fun LyricsSearchSheet(
                         ) { result ->
                             LyricsSearchResultRow(
                                 result = result,
+                                downloaded = downloadedLyricsSignature != null && downloadedLyricsSignature == result.lyrics.lyricsSignature(),
+                                selected = selectedLyricsSignature != null && selectedLyricsSignature == result.lyrics.lyricsSignature(),
+                                saving = savingResultId == result.id,
                                 onClick = {
                                     onResultClick(result)
+                                },
+                                onSaveClick = {
+                                    onSaveResult(result)
                                 },
                             )
                         }
@@ -1771,7 +1860,11 @@ private fun LyricsSearchSheet(
 @Composable
 private fun LyricsSearchResultRow(
     result: LyricsSearchResult,
+    downloaded: Boolean,
+    selected: Boolean,
+    saving: Boolean,
     onClick: () -> Unit,
+    onSaveClick: () -> Unit,
 ) {
     ElevatedCard(
         onClick = onClick,
@@ -1841,7 +1934,25 @@ private fun LyricsSearchResultRow(
                         onClick = {},
                         enabled = false,
                         label = {
-                            Text("Synced")
+                            Text(stringResource(R.string.lyrics_synced))
+                        },
+                    )
+                }
+                if (downloaded) {
+                    AssistChip(
+                        onClick = {},
+                        enabled = false,
+                        label = {
+                            Text(stringResource(R.string.lyrics_downloaded_badge))
+                        },
+                    )
+                }
+                if (selected) {
+                    AssistChip(
+                        onClick = {},
+                        enabled = false,
+                        label = {
+                            Text(stringResource(R.string.lyrics_selected_badge))
                         },
                     )
                 }
@@ -1860,10 +1971,32 @@ private fun LyricsSearchResultRow(
                         style = MaterialTheme.typography.labelMedium,
                     )
                 }
+                FilledTonalButton(onClick = onSaveClick, enabled = !saving && !downloaded) {
+                    Text(
+                        stringResource(
+                            when {
+                                downloaded -> R.string.lyrics_already_downloaded
+                                saving -> R.string.loading_lyric
+                                else -> R.string.save_lyric
+                            },
+                        ),
+                    )
+                }
             }
         }
     }
 }
+
+private fun Lyrics.lyricsSignature(): String =
+    buildString {
+        append(source)
+        lines.forEach { line ->
+            append('|')
+            append(line.startMs ?: -1L)
+            append(':')
+            append(line.text.trim())
+        }
+    }
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalAnimationApi::class)
 @Composable

@@ -155,6 +155,12 @@ class MusicPreferences(
         preferences.edit().putInt(KEY_REPEAT_MODE, value.coerceIn(0, 2)).apply()
     }
 
+    fun loadPlaylistAddToTop(): Boolean = preferences.getBoolean(KEY_PLAYLIST_ADD_TO_TOP, false)
+
+    fun savePlaylistAddToTop(value: Boolean) {
+        preferences.edit().putBoolean(KEY_PLAYLIST_ADD_TO_TOP, value).apply()
+    }
+
     fun registerSettingsListener(listener: android.content.SharedPreferences.OnSharedPreferenceChangeListener) {
         preferences.registerOnSharedPreferenceChangeListener(listener)
     }
@@ -195,5 +201,6 @@ class MusicPreferences(
         private const val KEY_LAST_FOLDER_TREE_PATH = "last_folder_tree_path"
         private const val KEY_SHUFFLE_ENABLED = "shuffle_enabled"
         private const val KEY_REPEAT_MODE = "repeat_mode"
+        private const val KEY_PLAYLIST_ADD_TO_TOP = "playlist_add_to_top"
     }
 }
