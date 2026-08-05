@@ -2148,7 +2148,8 @@ class MediaStoreScanner(
                 cachedTrack.sizeBytes == scanned.sizeBytes &&
                 cachedTrack.trackNumber == scanned.track.trackNumber &&
                 cachedTrack.discNumber == scanned.track.discNumber &&
-                cachedTrack.dateAddedMs == scanned.track.dateAddedMs
+                cachedTrack.dateAddedMs == scanned.track.dateAddedMs &&
+                cachedTrack.fileType == scanned.track.fileType
             ) {
                 val audioInfo = cachedAudioInfo[cachedTrack.trackId]
                 resolved[index] = scanned.copy(track = cachedTrack.toTrack(audioInfo), audioInfo = audioInfo)

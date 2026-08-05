@@ -3706,7 +3706,7 @@ private fun AlbumDetailScreen(
                                         .padding(bottom = if (isLastTrack) 14.dp else 0.dp),
                             ) {
                                 AlbumTrackRow(
-                                    index = index + 1,
+                                    index = track.trackNumber.takeIf { it > 0 } ?: index + 1,
                                     track = track,
                                     showDivider = !isLastTrack,
                                     onClick = { onTrackClick(track, albumTracks) },
@@ -4274,7 +4274,7 @@ private fun ArtistTrackTab(
                             groupIndex == albumGroups.lastIndex &&
                             index == group.tracks.lastIndex
                     AlbumTrackRow(
-                        index = index + 1,
+                        index = track.trackNumber.takeIf { it > 0 } ?: index + 1,
                         track = track,
                         showDivider = !isLastTrack,
                         onClick = { onTrackClick(track, albumTracks) },
