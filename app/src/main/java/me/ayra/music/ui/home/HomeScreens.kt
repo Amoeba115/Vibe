@@ -810,7 +810,6 @@ private fun DetailHost(
                 },
                 onAdd = { playlist ->
                     track?.let { onAddTracksToPlaylist(playlist.id, listOf(it)) }
-                    onBack()
                 },
                 modifier = modifier,
             )
@@ -838,7 +837,6 @@ private fun DetailHost(
                 },
                 onAdd = { playlist ->
                     onAddTracksToPlaylist(playlist.id, selectedTracks)
-                    onBack()
                 },
                 modifier = modifier,
             )

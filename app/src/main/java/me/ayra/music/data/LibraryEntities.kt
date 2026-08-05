@@ -123,6 +123,31 @@ data class CustomPlaylistTrackEntity(
     val addedAt: Long,
 )
 
+@Entity(
+    tableName = "lyrics_candidates",
+    primaryKeys = ["track_id", "candidate_index"],
+    indices = [Index("track_id")],
+)
+data class LyricsCandidateEntity(
+    @ColumnInfo(name = "track_id")
+    val trackId: Long,
+    @ColumnInfo(name = "candidate_index")
+    val candidateIndex: Int,
+    @ColumnInfo(name = "result_id")
+    val resultId: Long,
+    val title: String,
+    val artist: String,
+    val album: String,
+    @ColumnInfo(name = "duration_ms")
+    val durationMs: Long,
+    @ColumnInfo(name = "lyrics_text")
+    val lyricsText: String,
+    @ColumnInfo(name = "lyrics_source")
+    val lyricsSource: String,
+    @ColumnInfo(name = "is_selected")
+    val isSelected: Boolean = false,
+)
+
 @Entity(tableName = "album_cache")
 data class AlbumCacheEntity(
     @PrimaryKey

@@ -127,6 +127,7 @@ private enum class SettingsCategory(
     Player(R.string.player),
     Library(R.string.library),
     Playlist(R.string.playlist),
+    PlaylistLyrics(R.string.playlist_lyrics, depth = 2),
     HideFolders(R.string.hide_folder, depth = 2),
 }
 
@@ -164,6 +165,10 @@ fun SettingsScreen(
 
                 SettingsCategory.HideFolders -> {
                     SettingsCategory.Library
+                }
+
+                SettingsCategory.PlaylistLyrics -> {
+                    null
                 }
 
                 else -> {
@@ -225,6 +230,10 @@ fun SettingsScreen(
                         onImport = onImportPlaylist,
                         onExport = onExportPlaylists,
                     )
+                }
+
+                SettingsCategory.PlaylistLyrics -> {
+                    PlaylistLyricsScreen(playlists = library.playlists)
                 }
 
                 SettingsCategory.HideFolders -> {
@@ -289,6 +298,13 @@ private fun SettingsCategoryList(onCategorySelected: (SettingsCategory) -> Unit)
                     subtitle = stringResource(R.string.playlist_settings_subtitle),
                     icon = Icons.Rounded.MusicNote,
                     onClick = { onCategorySelected(SettingsCategory.Playlist) },
+                )
+                SettingsDivider()
+                SettingsNavigationRow(
+                    title = stringResource(R.string.playlist_lyrics),
+                    subtitle = stringResource(R.string.playlist_lyrics_subtitle),
+                    icon = Icons.Rounded.LibraryMusic,
+                    onClick = { onCategorySelected(SettingsCategory.PlaylistLyrics) },
                 )
             }
         }
@@ -1043,7 +1059,7 @@ private fun SettingsSectionTitle(
 }
 
 @Composable
-private fun SettingsGroup(
+internal fun SettingsGroup(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -1202,7 +1218,7 @@ private fun SliderSettingRow(
 }
 
 @Composable
-private fun SettingsDivider() {
+internal fun SettingsDivider() {
     HorizontalDivider(
         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
         modifier = Modifier.padding(horizontal = 18.dp),
