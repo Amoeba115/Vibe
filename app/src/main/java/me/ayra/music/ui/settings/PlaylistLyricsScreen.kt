@@ -74,6 +74,7 @@ internal fun PlaylistLyricsScreen(
     var downloading by remember { mutableStateOf(false) }
     var completedTracks by remember { mutableStateOf(0) }
     var tracksWithoutResults by remember { mutableStateOf(0) }
+    var tracksWithExistingLyrics by remember { mutableStateOf(0) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
     var expandedCandidate by remember { mutableStateOf<Pair<Long, Int>?>(null) }
     var editingCandidate by remember { mutableStateOf<LyricsCandidate?>(null) }
@@ -146,9 +147,15 @@ internal fun PlaylistLyricsScreen(
                                 downloading = true
                                 completedTracks = 0
                                 tracksWithoutResults = 0
+                                tracksWithExistingLyrics = 0
                                 statusMessage = null
                                 try {
                                     playlist.tracks.forEach { track ->
+                                        if (repository.localLyricsFor(track) != null) {
+                                            tracksWithExistingLyrics++
+                                            completedTracks++
+                                            return@forEach
+                                        }
                                         val results =
                                             repository
                                                 .searchResults("${track.title} ${track.artist}")
@@ -161,7 +168,8 @@ internal fun PlaylistLyricsScreen(
                                     statusMessage =
                                         context.getString(
                                             R.string.playlist_lyrics_batch_complete,
-                                            playlist.tracks.size - tracksWithoutResults,
+                                            playlist.tracks.size - tracksWithExistingLyrics - tracksWithoutResults,
+                                            tracksWithExistingLyrics,
                                             tracksWithoutResults,
                                         )
                                 } finally {

@@ -24,8 +24,11 @@
     <string name="about_change_playlist_import">• Improved playlist import matching across mixed formats and path styles.</string>
     <string name="about_change_playlist_edit_reliability">• Improved playlist edit reliability with draft persistence and explicit save/discard flow.</string>
     <string name="about_change_playlist_controls">• Added playlist controls for add-to-top preference and icon-based Play/Shuffle actions.</string>
+    <string name="about_change_playlist_enhancements">• Playlist kustom kosong tetap tersimpan dan lagu terpilih dapat ditambahkan ke beberapa playlist sekaligus.</string>
+    <string name="about_change_format_albums">• Album dipisahkan berdasarkan format file audio, dengan lencana format pada setiap album.</string>
     <string name="about_change_track_info_metadata">• Added track file info and manual metadata editing from the now-playing menu.</string>
     <string name="about_change_lyrics_control">• Expanded lyrics controls with local download, source visibility, and clearer selection status.</string>
+    <string name="about_change_lyrics_manager">• Menambahkan impor file lirik dan pengelolaan lirik playlist dengan lima kandidat per lagu; lirik lokal yang ada dipertahankan saat unduhan batch.</string>
     <string name="telegram">Telegram</string>
     <string name="github">GitHub</string>
     <string name="preview_palette_description">Pratinjau diperbarui dengan palet yang dipilih.</string>
@@ -100,7 +103,7 @@
     <string name="playlist_lyrics_no_selection">Pilih playlist kustom untuk mengelola kandidat liriknya.</string>
     <string name="download_lyric_candidates">Unduh 5 kandidat teratas</string>
     <string name="playlist_lyrics_download_progress">Mengunduh kandidat: %1$d dari %2$d lagu</string>
-    <string name="playlist_lyrics_batch_complete">Kandidat diunduh untuk %1$d lagu. Tidak ada hasil untuk %2$d lagu.</string>
+    <string name="playlist_lyrics_batch_complete">Kandidat diunduh untuk %1$d lagu. Lirik yang ada dipertahankan untuk %2$d lagu. Tidak ada hasil untuk %3$d lagu.</string>
     <string name="playlist_lyrics_batch_failed">Tidak dapat mengunduh kandidat lirik.</string>
     <string name="lyrics_candidates">Kandidat lirik</string>
     <string name="lyrics_candidates_empty">Belum ada kandidat tersimpan. Unduh kandidat untuk meninjau lirik lagu ini.</string>

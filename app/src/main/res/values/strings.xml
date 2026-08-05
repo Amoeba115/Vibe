@@ -24,8 +24,11 @@
     <string name="about_change_playlist_import">• Improved playlist import matching across mixed formats and path styles.</string>
     <string name="about_change_playlist_edit_reliability">• Improved playlist edit reliability with draft persistence and explicit save/discard flow.</string>
     <string name="about_change_playlist_controls">• Added playlist controls for add-to-top preference and icon-based Play/Shuffle actions.</string>
+    <string name="about_change_playlist_enhancements">• Kept empty custom playlists and enabled adding selected tracks to multiple playlists at once.</string>
+    <string name="about_change_format_albums">• Separated album groups by audio file format, with a format badge on each album.</string>
     <string name="about_change_track_info_metadata">• Added track file info and manual metadata editing from the now-playing menu.</string>
     <string name="about_change_lyrics_control">• Expanded lyrics controls with local download, source visibility, and clearer selection status.</string>
+    <string name="about_change_lyrics_manager">• Added lyric-file import and playlist lyric management with five searchable candidates per track; existing local lyrics are preserved during batch downloads.</string>
     <string name="telegram">Telegram</string>
     <string name="github">GitHub</string>
     <string name="preview_palette_description">Preview updates with your selected palette.</string>
@@ -100,7 +103,7 @@
     <string name="playlist_lyrics_no_selection">Select a custom playlist to manage its lyric candidates.</string>
     <string name="download_lyric_candidates">Download top 5 candidates</string>
     <string name="playlist_lyrics_download_progress">Downloading candidates: %1$d of %2$d tracks</string>
-    <string name="playlist_lyrics_batch_complete">Downloaded candidates for %1$d tracks. No results for %2$d tracks.</string>
+    <string name="playlist_lyrics_batch_complete">Downloaded candidates for %1$d tracks. Preserved existing lyrics for %2$d tracks. No results for %3$d tracks.</string>
     <string name="playlist_lyrics_batch_failed">Could not download lyric candidates.</string>
     <string name="lyrics_candidates">Lyric candidates</string>
     <string name="lyrics_candidates_empty">No saved candidates. Download candidates to review lyrics for this track.</string>

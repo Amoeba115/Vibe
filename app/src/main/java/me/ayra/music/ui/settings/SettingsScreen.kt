@@ -419,8 +419,11 @@ private fun AboutCard() {
                 stringResource(R.string.about_change_playlist_import),
                 stringResource(R.string.about_change_playlist_edit_reliability),
                 stringResource(R.string.about_change_playlist_controls),
+                stringResource(R.string.about_change_playlist_enhancements),
+                stringResource(R.string.about_change_format_albums),
                 stringResource(R.string.about_change_track_info_metadata),
                 stringResource(R.string.about_change_lyrics_control),
+                stringResource(R.string.about_change_lyrics_manager),
             )
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(
