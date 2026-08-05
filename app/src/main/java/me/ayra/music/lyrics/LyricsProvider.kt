@@ -4,6 +4,7 @@ interface LyricsProvider {
     suspend fun search(
         title: String,
         artist: String,
+        durationMs: Long = 0L,
     ): Lyrics?
 
     suspend fun searchResults(

@@ -11,6 +11,8 @@ import android.provider.OpenableColumns
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.PredictiveBackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.animation.SizeTransform
@@ -168,6 +170,8 @@ import me.ayra.music.lyrics.Lyrics
 import me.ayra.music.lyrics.LyricsRenderer
 import me.ayra.music.lyrics.LyricsRepository
 import me.ayra.music.lyrics.LyricsSearchResult
+import me.ayra.music.lyrics.parseLyrics
+import me.ayra.music.lyrics.toEditableText
 import me.ayra.music.util.MusicPreferences
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
@@ -784,6 +788,8 @@ private fun FancyPlayerBackground(
     }
 }
 
+private fun Track.lyricsSearchQuery(): String = "$title $artist".trim()
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun CollapsedPlayerContent(
@@ -1018,6 +1024,7 @@ private fun ExpandedPlayerContent(
                         accent = seekAccent,
                         onSeek = onSeek,
                         onExit = onExitUpperContent,
+                        onAddTo = onAddTo,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
@@ -1450,6 +1457,37 @@ private fun formatFileSize(sizeBytes: Long): String {
     }
 }
 
+@Composable
+private fun LocalLyricsEditorDialog(
+    lyrics: Lyrics,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit,
+) {
+    var lyricsText by remember(lyrics) { mutableStateOf(lyrics.toEditableText()) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.edit_lyric)) },
+        text = {
+            OutlinedTextField(
+                value = lyricsText,
+                onValueChange = { lyricsText = it },
+                label = { Text(stringResource(R.string.lyrics_edit_hint)) },
+                modifier = Modifier.fillMaxWidth().height(360.dp),
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(lyricsText) }) {
+                Text(stringResource(R.string.save))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+    )
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun LyricsContent(
@@ -1458,6 +1496,7 @@ private fun LyricsContent(
     accent: Color,
     onSeek: (Long) -> Unit,
     onExit: () -> Unit,
+    onAddTo: (Track) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val track = playerState.currentTrack
@@ -1468,15 +1507,46 @@ private fun LyricsContent(
     var selectedLyrics by remember(track?.id) { mutableStateOf<Lyrics?>(null) }
     var menuExpanded by rememberSaveable { mutableStateOf(false) }
     var showSearchSheet by rememberSaveable { mutableStateOf(false) }
-    var searchQuery by rememberSaveable(track?.id) { mutableStateOf(track?.title.orEmpty()) }
+    var searchQuery by rememberSaveable(track?.id) { mutableStateOf(track?.lyricsSearchQuery().orEmpty()) }
     var searchLoading by rememberSaveable { mutableStateOf(false) }
     var savingLyricsResultId by rememberSaveable(track?.id) { mutableStateOf<Long?>(null) }
     var searchResults by remember { mutableStateOf(emptyList<LyricsSearchResult>()) }
     var localLyrics by remember(track?.id) { mutableStateOf<Lyrics?>(null) }
+    var lyricsImportTarget by remember { mutableStateOf<Track?>(null) }
+    var editingLocalLyrics by remember(track?.id) { mutableStateOf<Lyrics?>(null) }
     val visibleLyrics = selectedLyrics ?: localLyrics ?: playerState.lyrics
     val lyricsAreSavedLocally = visibleLyrics?.source == LyricsRepository.LOCAL_SOURCE
     val hasDownloadedLyrics = localLyrics != null
     val localLyricsSignature = remember(localLyrics) { localLyrics?.lyricsSignature() }
+    val lyricsImportLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            val importTarget = lyricsImportTarget
+            lyricsImportTarget = null
+            if (uri != null && importTarget != null) {
+                coroutineScope.launch {
+                    val rawLyrics =
+                        withContext(Dispatchers.IO) {
+                            context.contentResolver
+                                .openInputStream(uri)
+                                ?.bufferedReader()
+                                ?.use { it.readText() }
+                        }
+                    if (rawLyrics.isNullOrBlank()) {
+                        Toast.makeText(context, context.getString(R.string.lyrics_import_failed), Toast.LENGTH_SHORT).show()
+                        return@launch
+                    }
+                    val importedLyrics = parseLyrics(rawLyrics, LyricsRepository.LOCAL_SOURCE)
+                    if (importedLyrics.lines.isEmpty() || !lyricsRepository.saveLocal(importTarget, importedLyrics)) {
+                        Toast.makeText(context, context.getString(R.string.lyrics_import_failed), Toast.LENGTH_SHORT).show()
+                        return@launch
+                    }
+                    if (track?.id == importTarget.id) {
+                        localLyrics = lyricsRepository.localLyricsFor(importTarget)
+                        selectedLyrics = localLyrics
+                    }
+                }
+            }
+        }
 
     LaunchedEffect(track?.id) {
         val currentTrack = track
@@ -1544,6 +1614,29 @@ private fun LyricsContent(
             onSearch = { searchLyrics(searchQuery) },
         )
     }
+    editingLocalLyrics?.let { lyrics ->
+        LocalLyricsEditorDialog(
+            lyrics = lyrics,
+            onDismiss = { editingLocalLyrics = null },
+            onSave = { lyricsText ->
+                val currentTrack = track ?: return@LocalLyricsEditorDialog
+                val editedLyrics = parseLyrics(lyricsText, LyricsRepository.LOCAL_SOURCE)
+                if (editedLyrics.lines.isEmpty()) {
+                    Toast.makeText(context, context.getString(R.string.lyrics_empty), Toast.LENGTH_SHORT).show()
+                    return@LocalLyricsEditorDialog
+                }
+                coroutineScope.launch {
+                    if (lyricsRepository.saveLocal(currentTrack, editedLyrics)) {
+                        refreshDownloadedState(currentTrack)
+                        selectedLyrics = localLyrics
+                        editingLocalLyrics = null
+                    } else {
+                        Toast.makeText(context, context.getString(R.string.lyrics_download_failed), Toast.LENGTH_SHORT).show()
+                    }
+                }
+            },
+        )
+    }
 
     Column(modifier = modifier) {
         Row(
@@ -1600,6 +1693,12 @@ private fun LyricsContent(
                     )
                 }
             }
+            IconButton(
+                onClick = { track?.let(onAddTo) },
+                enabled = enabled && track != null,
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Add to", modifier = Modifier.size(36.dp))
+            }
             Box {
                 FilledIconButton(
                     onClick = { menuExpanded = true },
@@ -1615,6 +1714,15 @@ private fun LyricsContent(
                     val currentLyrics = visibleLyrics
                     val isLocalLyrics = currentLyrics?.source == LyricsRepository.LOCAL_SOURCE
                     if (currentLyrics != null) {
+                        if (isLocalLyrics) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.edit_lyric)) },
+                                onClick = {
+                                    menuExpanded = false
+                                    editingLocalLyrics = currentLyrics
+                                },
+                            )
+                        }
                         DropdownMenuItem(
                             text = {
                                 Text(
@@ -1653,8 +1761,17 @@ private fun LyricsContent(
                         onClick = {
                             menuExpanded = false
                             showSearchSheet = true
-                            searchQuery = track?.title.orEmpty()
+                            searchQuery = track?.lyricsSearchQuery().orEmpty()
                             searchLyrics(searchQuery)
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.import_lyric)) },
+                        enabled = track != null,
+                        onClick = {
+                            menuExpanded = false
+                            lyricsImportTarget = track
+                            lyricsImportLauncher.launch(arrayOf("text/plain", "application/octet-stream"))
                         },
                     )
                 }

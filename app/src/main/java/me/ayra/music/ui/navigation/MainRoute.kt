@@ -8,7 +8,7 @@ sealed interface MainRoute {
     data class SearchAlbums(val query: String) : MainRoute
     data object Settings : MainRoute
 
-    data class Album(val id: Long) : MainRoute
+    data class Album(val id: String) : MainRoute
     data class Artist(val name: String) : MainRoute
     data class Folder(val path: String) : MainRoute
 

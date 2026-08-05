@@ -177,10 +177,14 @@ data class Track(
     val discNumber: Int = 0,
     val year: Int = 0,
     val dateAddedMs: Long = 0L,
+    val fileType: String = "",
     val audioInfo: AudioInfo? = null,
 ) {
     val albumArtUri: Uri
         get() = ContentUris.withAppendedId(Uri.parse("content://media/external/audio/albumart"), albumId)
+
+    val albumGroupId: String
+        get() = "$albumId:${fileType.ifBlank { "unknown" }}"
 }
 
 data class AudioInfo(
@@ -193,10 +197,11 @@ data class AudioInfo(
 )
 
 data class AlbumGroup(
-    val id: Long,
+    val id: String,
     val title: String,
     val artist: String,
     val tracks: List<Track>,
+    val fileType: String,
 )
 
 data class ArtistGroup(
@@ -274,7 +279,7 @@ data class LibraryState(
     val folders: List<FolderGroup> = emptyList(),
     val allFolders: List<FolderGroup> = emptyList(),
     val tracksById: Map<Long, Track> = emptyMap(),
-    val albumsById: Map<Long, AlbumGroup> = emptyMap(),
+    val albumsById: Map<String, AlbumGroup> = emptyMap(),
     val artistsByName: Map<String, ArtistGroup> = emptyMap(),
     val foldersByPath: Map<String, FolderGroup> = emptyMap(),
     val error: String? = null,
@@ -1702,6 +1707,7 @@ class LibraryScanner(
     suspend fun shouldAutoRefreshLibrary(hasCachedTracks: Boolean): Boolean =
         withContext(Dispatchers.IO) {
             if (!hasCachedTracks) return@withContext true
+            if (dao.hasTracksMissingFileTypes()) return@withContext true
             val now = System.currentTimeMillis()
             val lastRefreshMs = preferences.loadLastLibraryRefreshMs()
             if (lastRefreshMs > 0L && now - lastRefreshMs < AUTO_REFRESH_MIN_INTERVAL_MS) {
@@ -1884,8 +1890,7 @@ class LibraryScanner(
     }
 
     fun buildPlaylists(tracks: List<Track>): List<PlaylistGroup> {
-        if (tracks.isEmpty()) return emptyList()
-        return customPlaylistsCache.filter { playlist -> playlist.tracks.any { track -> track in tracks } } +
+        return customPlaylistsCache +
             listOf(
                 PlaylistGroup("recently-added", "Recently added", tracks.take(50), tracks.firstOrNull()?.albumArtUri),
                 PlaylistGroup("most-played", "Most played", tracks.sortedBy { it.title }.take(50), tracks.getOrNull(1)?.albumArtUri),
@@ -2070,6 +2075,7 @@ class MediaStoreScanner(
                 val albumIdColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
                 val trackNumberColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TRACK)
                 val yearColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.YEAR)
+                val displayNameColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
                 val dateAddedColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
                 val dateModifiedColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_MODIFIED)
                 val sizeColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE)
@@ -2087,6 +2093,7 @@ class MediaStoreScanner(
                     val title = cursor.getString(titleColumn)?.takeIf { it.isNotBlank() } ?: "Unknown title"
                     val artist = cursor.getString(artistColumn)?.takeIf { it.isNotBlank() } ?: "Unknown artist"
                     val album = cursor.getString(albumColumn)?.takeIf { it.isNotBlank() } ?: "Unknown album"
+                    val fileType = cursor.getString(displayNameColumn).fileType()
                     val folder = cursor.getStringOrNull(relativePathColumn)?.trimEnd('/') ?: "Music"
                     val trackMetadata = cursor.getInt(trackNumberColumn).toTrackMetadata()
                     val rawTrack =
@@ -2105,6 +2112,7 @@ class MediaStoreScanner(
                                     discNumber = trackMetadata.discNumber,
                                     year = cursor.getInt(yearColumn).takeIf { it > 0 } ?: 0,
                                     dateAddedMs = cursor.getLong(dateAddedColumn).coerceAtLeast(0L) * 1_000L,
+                                    fileType = fileType,
                                 ),
                             cacheKey = uri.toString(),
                             source = LibrarySource.MediaStore,
@@ -2140,7 +2148,8 @@ class MediaStoreScanner(
                 cachedTrack.sizeBytes == scanned.sizeBytes &&
                 cachedTrack.trackNumber == scanned.track.trackNumber &&
                 cachedTrack.discNumber == scanned.track.discNumber &&
-                cachedTrack.dateAddedMs == scanned.track.dateAddedMs
+                cachedTrack.dateAddedMs == scanned.track.dateAddedMs &&
+                cachedTrack.fileType == scanned.track.fileType
             ) {
                 val audioInfo = cachedAudioInfo[cachedTrack.trackId]
                 resolved[index] = scanned.copy(track = cachedTrack.toTrack(audioInfo), audioInfo = audioInfo)
@@ -2177,6 +2186,13 @@ class MediaStoreScanner(
     }
 }
 
+private fun String?.fileType(): String =
+    this
+        ?.substringAfterLast('.', missingDelimiterValue = "")
+        ?.takeIf { it.isNotBlank() }
+        ?.uppercase(Locale.ROOT)
+        ?: "UNKNOWN"
+
 private fun List<Track>.filterVisible(hiddenFolders: Set<String>): List<Track> {
     if (hiddenFolders.isEmpty()) return this
     return filterNot { track -> track.folder in hiddenFolders }
@@ -2187,14 +2203,11 @@ private fun LibraryState.withDerivedCollections(): LibraryState {
     val derivedFavoriteTracks = tracks.filter { it.id in favorites }
     val derivedAlbums =
         tracks
-            .groupBy { it.albumId }
-            .values
-            .map { items -> AlbumGroup(items.first().albumId, items.first().album, items.first().artist, items) }
-            .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.title })
+            .toAlbumGroups()
     val derivedArtists =
         tracks
             .groupBy { it.artist.ifBlank { "Unknown artist" } }
-            .map { (name, items) -> ArtistGroup(name, items.map { it.albumId }.distinct().size, items) }
+            .map { (name, items) -> ArtistGroup(name, items.map { it.albumGroupId }.distinct().size, items) }
             .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
     val derivedFolders = tracks.toFolderGroups()
     val derivedAllFolders = allTracks.toFolderGroups()
@@ -2215,6 +2228,19 @@ private fun List<Track>.toFolderGroups(): List<FolderGroup> =
     groupBy { it.folder.ifBlank { "Unknown folder" } }
         .map { (path, items) -> FolderGroup(path.substringAfterLast('/').ifBlank { path }, path, items) }
         .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.path })
+
+fun List<Track>.toAlbumGroups(): List<AlbumGroup> =
+    groupBy { it.albumGroupId }
+        .values
+        .map { items ->
+            AlbumGroup(
+                id = items.first().albumGroupId,
+                title = items.first().album,
+                artist = items.first().artist,
+                tracks = items,
+                fileType = items.first().fileType,
+            )
+        }.sortedWith(compareBy<AlbumGroup> { it.title.lowercase(Locale.ROOT) }.thenBy { it.fileType })
 
 private fun Context.extractAudioInfo(track: Track): AudioInfo? = extractMediaAudioInfo(track)
 
@@ -2507,7 +2533,7 @@ fun MusicApp(
                     onDeleteTrack = { track -> requestPermanentDelete(listOf(track)) },
                     onShareTrack = ::shareTrack,
                     onAlbum = { track ->
-                        library.albumsById[track.albumId]?.let { album ->
+                        library.albumsById[track.albumGroupId]?.let { album ->
                             navigator.navigate(MainRoute.Album(album.id))
                         }
                     },

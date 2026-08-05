@@ -31,6 +31,9 @@ interface LibraryDao {
     @Query("SELECT cache_key FROM tracks WHERE source = :source")
     suspend fun loadTrackCacheKeysBySource(source: String): List<String>
 
+    @Query("SELECT EXISTS(SELECT 1 FROM tracks WHERE file_type = '')")
+    suspend fun hasTracksMissingFileTypes(): Boolean
+
     @Query("DELETE FROM tracks WHERE cache_key IN (:cacheKeys)")
     suspend fun deleteTracksByCacheKeys(cacheKeys: List<String>)
 
@@ -107,6 +110,39 @@ interface LibraryDao {
     ) {
         deleteCustomPlaylistTracks(playlistId)
         if (tracks.isNotEmpty()) upsertCustomPlaylistTracks(tracks)
+    }
+
+    @Query("SELECT * FROM lyrics_candidates WHERE track_id IN (:trackIds) ORDER BY track_id ASC, candidate_index ASC")
+    suspend fun loadLyricsCandidates(trackIds: List<Long>): List<LyricsCandidateEntity>
+
+    @Upsert
+    suspend fun upsertLyricsCandidates(candidates: List<LyricsCandidateEntity>)
+
+    @Query("DELETE FROM lyrics_candidates WHERE track_id = :trackId")
+    suspend fun deleteLyricsCandidates(trackId: Long)
+
+    @Query("DELETE FROM lyrics_candidates WHERE track_id = :trackId AND candidate_index = :candidateIndex")
+    suspend fun deleteLyricsCandidate(
+        trackId: Long,
+        candidateIndex: Int,
+    )
+
+    @Query("UPDATE lyrics_candidates SET is_selected = 0 WHERE track_id = :trackId")
+    suspend fun clearSelectedLyricsCandidate(trackId: Long)
+
+    @Query("UPDATE lyrics_candidates SET is_selected = 1 WHERE track_id = :trackId AND candidate_index = :candidateIndex")
+    suspend fun selectLyricsCandidate(
+        trackId: Long,
+        candidateIndex: Int,
+    )
+
+    @Transaction
+    suspend fun replaceLyricsCandidates(
+        trackId: Long,
+        candidates: List<LyricsCandidateEntity>,
+    ) {
+        deleteLyricsCandidates(trackId)
+        if (candidates.isNotEmpty()) upsertLyricsCandidates(candidates)
     }
 
     @Upsert

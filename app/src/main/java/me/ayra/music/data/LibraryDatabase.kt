@@ -15,11 +15,12 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         TrackStatsEntity::class,
         CustomPlaylistEntity::class,
         CustomPlaylistTrackEntity::class,
+        LyricsCandidateEntity::class,
         AlbumCacheEntity::class,
         ArtistCacheEntity::class,
         AudioInfoEntity::class,
     ],
-    version = 10,
+    version = 12,
     exportSchema = false,
 )
 abstract class LibraryDatabase : RoomDatabase() {
@@ -46,6 +47,8 @@ abstract class LibraryDatabase : RoomDatabase() {
                         MIGRATION_7_8,
                         MIGRATION_8_9,
                         MIGRATION_9_10,
+                        MIGRATION_10_11,
+                        MIGRATION_11_12,
                     )
                     .fallbackToDestructiveMigration(false)
                     .build()
@@ -156,6 +159,35 @@ abstract class LibraryDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("DROP TABLE IF EXISTS vgm_metadata_cache")
                 db.execSQL("DELETE FROM tracks WHERE source = 'vgm'")
+            }
+        }
+
+        private val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE tracks ADD COLUMN file_type TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        private val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS lyrics_candidates (
+                        track_id INTEGER NOT NULL,
+                        candidate_index INTEGER NOT NULL,
+                        result_id INTEGER NOT NULL,
+                        title TEXT NOT NULL,
+                        artist TEXT NOT NULL,
+                        album TEXT NOT NULL,
+                        duration_ms INTEGER NOT NULL,
+                        lyrics_text TEXT NOT NULL,
+                        lyrics_source TEXT NOT NULL,
+                        is_selected INTEGER NOT NULL DEFAULT 0,
+                        PRIMARY KEY(track_id, candidate_index)
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_lyrics_candidates_track_id ON lyrics_candidates(track_id)")
             }
         }
     }
