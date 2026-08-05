@@ -788,6 +788,8 @@ private fun FancyPlayerBackground(
     }
 }
 
+private fun Track.lyricsSearchQuery(): String = "$title $artist".trim()
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun CollapsedPlayerContent(
@@ -1505,7 +1507,7 @@ private fun LyricsContent(
     var selectedLyrics by remember(track?.id) { mutableStateOf<Lyrics?>(null) }
     var menuExpanded by rememberSaveable { mutableStateOf(false) }
     var showSearchSheet by rememberSaveable { mutableStateOf(false) }
-    var searchQuery by rememberSaveable(track?.id) { mutableStateOf(track?.title.orEmpty()) }
+    var searchQuery by rememberSaveable(track?.id) { mutableStateOf(track?.lyricsSearchQuery().orEmpty()) }
     var searchLoading by rememberSaveable { mutableStateOf(false) }
     var savingLyricsResultId by rememberSaveable(track?.id) { mutableStateOf<Long?>(null) }
     var searchResults by remember { mutableStateOf(emptyList<LyricsSearchResult>()) }
@@ -1759,7 +1761,7 @@ private fun LyricsContent(
                         onClick = {
                             menuExpanded = false
                             showSearchSheet = true
-                            searchQuery = track?.title.orEmpty()
+                            searchQuery = track?.lyricsSearchQuery().orEmpty()
                             searchLyrics(searchQuery)
                         },
                     )

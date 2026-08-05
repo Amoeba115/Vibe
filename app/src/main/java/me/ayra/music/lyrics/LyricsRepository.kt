@@ -20,7 +20,7 @@ class LyricsRepository(
             localProvider.find(track)
                 ?: selectedOverrides[track.id]
                 ?: providers.firstNotNullOfOrNull { provider ->
-                    provider.search(track.title, track.artist)
+                    provider.search(track.title, track.artist, track.durationMs)
                 }
         cache[track.id] = lyrics
         return lyrics

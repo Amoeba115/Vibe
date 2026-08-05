@@ -18,6 +18,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
+import kotlin.math.abs
 
 class LrclibLyricsProvider(
     private val client: HttpClient = defaultClient(),
@@ -25,6 +26,7 @@ class LrclibLyricsProvider(
     override suspend fun search(
         title: String,
         artist: String,
+        durationMs: Long,
     ): Lyrics? =
         withContext(Dispatchers.IO) {
             runCatching {
@@ -45,7 +47,7 @@ class LrclibLyricsProvider(
 
                 val best =
                     records
-                        .map { record ->
+                        .mapNotNull { record ->
                             val obj = record.jsonObject
 
                             val titleScore =
@@ -70,7 +72,7 @@ class LrclibLyricsProvider(
                                     )
                                 }
 
-                            val totalScore =
+                            val metadataScore =
                                 if (artist.isUnknownArtist()) {
                                     titleScore
                                 } else {
@@ -80,6 +82,32 @@ class LrclibLyricsProvider(
                                     ) / 100
                                 }
 
+                            val candidateDurationMs =
+                                (
+                                    obj["duration"]
+                                            ?.jsonPrimitive
+                                            ?.doubleOrNull
+                                            ?: 0.0
+                                ).times(1_000)
+                                    .toLong()
+                            val durationDifferenceMs =
+                                if (durationMs > 0L && candidateDurationMs > 0L) {
+                                    abs(durationMs - candidateDurationMs)
+                                } else {
+                                    null
+                                }
+                            if (durationDifferenceMs != null &&
+                                durationDifferenceMs > MAX_AUTOMATIC_DURATION_DIFFERENCE_MS
+                            ) {
+                                return@mapNotNull null
+                            }
+                            val totalScore =
+                                durationDifferenceMs?.let { difference ->
+                                    (
+                                            metadataScore * METADATA_SCORE_WEIGHT +
+                                                durationScore(difference) * DURATION_SCORE_WEIGHT
+                                    ) / 100
+                                } ?: metadataScore
                             record to totalScore
                         }.maxByOrNull { it.second }
                         ?.takeIf { it.second >= 70 } // minimum similarity
@@ -213,7 +241,14 @@ class LrclibLyricsProvider(
             .replace(Regex("""\s+"""), " ")
             .trim()
 
+    private fun durationScore(differenceMs: Long): Int =
+        (100 - (differenceMs * 100 / MAX_AUTOMATIC_DURATION_DIFFERENCE_MS).toInt()).coerceIn(0, 100)
+
     companion object {
+        private const val MAX_AUTOMATIC_DURATION_DIFFERENCE_MS = 2_000L
+        private const val METADATA_SCORE_WEIGHT = 75
+        private const val DURATION_SCORE_WEIGHT = 25
+
         private fun defaultClient(): HttpClient =
             HttpClient(Android) {
                 install(ContentNegotiation) {
