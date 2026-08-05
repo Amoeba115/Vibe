@@ -171,6 +171,7 @@ import me.ayra.music.lyrics.LyricsRenderer
 import me.ayra.music.lyrics.LyricsRepository
 import me.ayra.music.lyrics.LyricsSearchResult
 import me.ayra.music.lyrics.parseLyrics
+import me.ayra.music.lyrics.toEditableText
 import me.ayra.music.util.MusicPreferences
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
@@ -1454,6 +1455,37 @@ private fun formatFileSize(sizeBytes: Long): String {
     }
 }
 
+@Composable
+private fun LocalLyricsEditorDialog(
+    lyrics: Lyrics,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit,
+) {
+    var lyricsText by remember(lyrics) { mutableStateOf(lyrics.toEditableText()) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.edit_lyric)) },
+        text = {
+            OutlinedTextField(
+                value = lyricsText,
+                onValueChange = { lyricsText = it },
+                label = { Text(stringResource(R.string.lyrics_edit_hint)) },
+                modifier = Modifier.fillMaxWidth().height(360.dp),
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(lyricsText) }) {
+                Text(stringResource(R.string.save))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+    )
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun LyricsContent(
@@ -1479,6 +1511,7 @@ private fun LyricsContent(
     var searchResults by remember { mutableStateOf(emptyList<LyricsSearchResult>()) }
     var localLyrics by remember(track?.id) { mutableStateOf<Lyrics?>(null) }
     var lyricsImportTarget by remember { mutableStateOf<Track?>(null) }
+    var editingLocalLyrics by remember(track?.id) { mutableStateOf<Lyrics?>(null) }
     val visibleLyrics = selectedLyrics ?: localLyrics ?: playerState.lyrics
     val lyricsAreSavedLocally = visibleLyrics?.source == LyricsRepository.LOCAL_SOURCE
     val hasDownloadedLyrics = localLyrics != null
@@ -1579,6 +1612,29 @@ private fun LyricsContent(
             onSearch = { searchLyrics(searchQuery) },
         )
     }
+    editingLocalLyrics?.let { lyrics ->
+        LocalLyricsEditorDialog(
+            lyrics = lyrics,
+            onDismiss = { editingLocalLyrics = null },
+            onSave = { lyricsText ->
+                val currentTrack = track ?: return@LocalLyricsEditorDialog
+                val editedLyrics = parseLyrics(lyricsText, LyricsRepository.LOCAL_SOURCE)
+                if (editedLyrics.lines.isEmpty()) {
+                    Toast.makeText(context, context.getString(R.string.lyrics_empty), Toast.LENGTH_SHORT).show()
+                    return@LocalLyricsEditorDialog
+                }
+                coroutineScope.launch {
+                    if (lyricsRepository.saveLocal(currentTrack, editedLyrics)) {
+                        refreshDownloadedState(currentTrack)
+                        selectedLyrics = localLyrics
+                        editingLocalLyrics = null
+                    } else {
+                        Toast.makeText(context, context.getString(R.string.lyrics_download_failed), Toast.LENGTH_SHORT).show()
+                    }
+                }
+            },
+        )
+    }
 
     Column(modifier = modifier) {
         Row(
@@ -1656,6 +1712,15 @@ private fun LyricsContent(
                     val currentLyrics = visibleLyrics
                     val isLocalLyrics = currentLyrics?.source == LyricsRepository.LOCAL_SOURCE
                     if (currentLyrics != null) {
+                        if (isLocalLyrics) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.edit_lyric)) },
+                                onClick = {
+                                    menuExpanded = false
+                                    editingLocalLyrics = currentLyrics
+                                },
+                            )
+                        }
                         DropdownMenuItem(
                             text = {
                                 Text(

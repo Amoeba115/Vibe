@@ -91,6 +91,8 @@
     <string name="lyrics_import_failed">Could not import lyric</string>
     <string name="lyrics_delete_failed">Could not remove local lyric</string>
     <string name="delete_lyric">Delete lyric</string>
+    <string name="edit_lyric">Edit lyric</string>
+    <string name="lyrics_empty">Lyrics cannot be empty.</string>
     <string name="download_lyric">Download lyric</string>
     <string name="save_lyric">Save lyric</string>
     <string name="favorite">Favorite</string>
