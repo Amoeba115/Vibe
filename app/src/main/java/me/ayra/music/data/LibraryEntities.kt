@@ -39,6 +39,8 @@ data class TrackEntity(
     val year: Int,
     @ColumnInfo(name = "date_added_ms", defaultValue = "0")
     val dateAddedMs: Long,
+    @ColumnInfo(name = "file_type", defaultValue = "''")
+    val fileType: String,
     val source: String,
     @ColumnInfo(name = "last_modified_ms")
     val lastModifiedMs: Long,

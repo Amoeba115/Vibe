@@ -60,7 +60,7 @@ private fun MainRoute.toKey(): String =
         is MainRoute.SearchArtists -> "searchArtists:${Uri.encode(query)}"
         is MainRoute.SearchAlbums -> "searchAlbums:${Uri.encode(query)}"
         MainRoute.Settings -> "settings"
-        is MainRoute.Album -> "album:$id"
+        is MainRoute.Album -> "album:${Uri.encode(id)}"
         is MainRoute.Artist -> "artist:$name"
         is MainRoute.Folder -> "folder:$path"
         is MainRoute.Playlist -> "playlist:$id"
@@ -79,7 +79,7 @@ private fun String.toMainRoute(): MainRoute? =
         startsWith("searchArtists:") -> MainRoute.SearchArtists(Uri.decode(removePrefix("searchArtists:")))
         startsWith("searchAlbums:") -> MainRoute.SearchAlbums(Uri.decode(removePrefix("searchAlbums:")))
         this == "settings" -> MainRoute.Settings
-        startsWith("album:") -> removePrefix("album:").toLongOrNull()?.let(MainRoute::Album)
+        startsWith("album:") -> MainRoute.Album(Uri.decode(removePrefix("album:")))
         startsWith("artist:") -> MainRoute.Artist(removePrefix("artist:"))
         startsWith("folder:") -> MainRoute.Folder(removePrefix("folder:"))
         startsWith("playlist:") -> MainRoute.Playlist(removePrefix("playlist:"))

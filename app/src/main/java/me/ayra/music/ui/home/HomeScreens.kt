@@ -159,6 +159,7 @@ import me.ayra.music.PlaylistGroup
 import me.ayra.music.R
 import me.ayra.music.Track
 import me.ayra.music.TrackStats
+import me.ayra.music.toAlbumGroups
 import me.ayra.music.ui.navigation.MainRoute
 import me.ayra.music.ui.navigation.MusicNavigator
 import me.ayra.music.ui.player.AlbumArt
@@ -503,7 +504,7 @@ fun MainScreen(
                     },
                     onAlbum = {
                         trackMenuTrack = null
-                        library.albumsById[track.albumId]?.let { navigate(MainRoute.Album(it.id)) }
+                        library.albumsById[track.albumGroupId]?.let { navigate(MainRoute.Album(it.id)) }
                     },
                     onArtist = {
                         trackMenuTrack = null
@@ -681,9 +682,7 @@ private fun DetailHost(
                     artist = artist,
                     albums =
                         artist.tracks
-                            .groupBy { it.albumId }
-                            .values
-                            .map { items -> AlbumGroup(items.first().albumId, items.first().album, items.first().artist, items) },
+                            .toAlbumGroups(),
                     onBack = onBack,
                     onSettings = onSettings,
                     onSearch = onSearch,
@@ -2665,15 +2664,13 @@ private fun SelectTrackScreen(
     val albums =
         remember(tracks) {
             tracks
-                .groupBy { it.albumId }
-                .map { (_, items) -> AlbumGroup(items.first().albumId, items.first().album, items.first().artist, items) }
-                .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.title })
+                .toAlbumGroups()
         }
     val artists =
         remember(tracks) {
             tracks
                 .groupBy { it.artist.ifBlank { "Unknown artist" } }
-                .map { (name, items) -> ArtistGroup(name, items.map { it.albumId }.distinct().size, items) }
+                .map { (name, items) -> ArtistGroup(name, items.map { it.albumGroupId }.distinct().size, items) }
                 .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
         }
     val folders =
@@ -2687,7 +2684,7 @@ private fun SelectTrackScreen(
         remember(detailRoute, albums, artists, folders) {
             when {
                 detailRoute?.startsWith("album:") == true -> {
-                    val albumId = detailRoute?.removePrefix("album:")?.toLongOrNull()
+                    val albumId = detailRoute?.removePrefix("album:").orEmpty()
                     albums.firstOrNull { it.id == albumId }?.tracks.orEmpty()
                 }
 
@@ -2709,7 +2706,7 @@ private fun SelectTrackScreen(
     val detailTitle =
         when {
             detailRoute?.startsWith("album:") == true -> {
-                val albumId = detailRoute?.removePrefix("album:")?.toLongOrNull()
+                val albumId = detailRoute?.removePrefix("album:").orEmpty()
                 albums.firstOrNull { it.id == albumId }?.title
             }
 
@@ -3172,9 +3169,8 @@ private fun LibraryState.favoriteCards(): List<FavoriteCardItem> {
             }
 
             FavoriteType.Album -> {
-                favorite.key
-                    .toLongOrNull()
-                    ?.let { albumId -> albums.firstOrNull { it.id == albumId } }
+                albums
+                    .firstOrNull { it.id == favorite.key || it.id.startsWith("${favorite.key}:") }
                     ?.let { album ->
                         cards +=
                             FavoriteCardItem(
@@ -3428,7 +3424,7 @@ private fun AlbumTab(
     val preferences = rememberSortPreferences()
     val context = LocalContext.current
     var editMode by rememberSaveable { mutableStateOf(false) }
-    var selectedIds by rememberSaveable { mutableStateOf(emptyList<Long>()) }
+    var selectedIds by rememberSaveable { mutableStateOf(emptyList<String>()) }
     var confirmDelete by rememberSaveable { mutableStateOf(false) }
     var sort by rememberSaveable {
         mutableStateOf(preferences.loadEnumSort(SORT_ALBUM, AlbumSort.Release, AlbumSort.entries))
@@ -3492,6 +3488,7 @@ private fun AlbumTab(
                     title = album.title,
                     subtitle = "${album.artist} | ${album.tracks.size} tracks",
                     artwork = album.tracks.firstOrNull()?.albumArtUri,
+                    badge = album.fileType,
                     selectionVisible = editMode,
                     selected = editMode && album.id in selectedIds,
                     artworkModifier =
@@ -4352,6 +4349,7 @@ private fun ArtistAlbumTab(
                 title = album.title,
                 subtitle = album.yearLabel(),
                 artwork = album.tracks.firstOrNull()?.albumArtUri,
+                badge = album.fileType,
                 modifier = Modifier.clickable { onAlbumClick(album) },
             )
         }
@@ -5160,7 +5158,7 @@ private data class AlbumTrackGroup(
 private fun List<Track>.sortedForAlbumPlayback(): List<Track> = groupForAlbumDetail().flatMap { it.tracks }
 
 private fun List<Track>.sortedForArtistPlayback(): List<Track> =
-    groupBy { it.albumId }
+    groupBy { it.albumGroupId }
         .values
         .sortedWith(
             compareBy<List<Track>>(
@@ -5289,7 +5287,7 @@ private fun LazyListState.centeredTabIndex(tabCount: Int): Int {
         ?: firstVisibleItemIndex.coerceIn(0, tabCount - 1)
 }
 
-private fun albumSharedKey(albumId: Long): String = "album-art-$albumId"
+private fun albumSharedKey(albumId: String): String = "album-art-$albumId"
 
 @Composable
 private fun rememberSortPreferences(): MusicPreferences {
@@ -6284,6 +6282,7 @@ private fun ArtworkCard(
     title: String,
     subtitle: String,
     artwork: Uri?,
+    badge: String = "",
     selectionVisible: Boolean = false,
     selected: Boolean = false,
     modifier: Modifier = Modifier,
@@ -6300,6 +6299,24 @@ private fun ArtworkCard(
             contentAlignment = Alignment.Center,
         ) {
             AlbumArt(artwork, Modifier.fillMaxSize(), RoundedCornerShape(18.dp))
+            if (badge.isNotBlank()) {
+                Surface(
+                    modifier =
+                        Modifier
+                            .align(Alignment.TopStart)
+                            .padding(8.dp),
+                    shape = RoundedCornerShape(6.dp),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                ) {
+                    Text(
+                        text = badge,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            }
             if (title.contains("Favorite", ignoreCase = true)) {
                 Box(
                     modifier =

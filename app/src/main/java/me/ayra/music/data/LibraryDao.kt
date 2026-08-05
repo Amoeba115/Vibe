@@ -31,6 +31,9 @@ interface LibraryDao {
     @Query("SELECT cache_key FROM tracks WHERE source = :source")
     suspend fun loadTrackCacheKeysBySource(source: String): List<String>
 
+    @Query("SELECT EXISTS(SELECT 1 FROM tracks WHERE file_type = '')")
+    suspend fun hasTracksMissingFileTypes(): Boolean
+
     @Query("DELETE FROM tracks WHERE cache_key IN (:cacheKeys)")
     suspend fun deleteTracksByCacheKeys(cacheKeys: List<String>)
 

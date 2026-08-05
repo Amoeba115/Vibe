@@ -62,6 +62,7 @@ fun TrackEntity.toTrack(audioInfo: AudioInfo? = null): Track =
         discNumber = discNumber,
         year = year,
         dateAddedMs = dateAddedMs,
+        fileType = fileType,
         audioInfo = audioInfo,
     )
 
@@ -80,6 +81,7 @@ fun ScannedTrack.toEntity(): TrackEntity =
         discNumber = track.discNumber,
         year = track.year,
         dateAddedMs = track.dateAddedMs,
+        fileType = track.fileType,
         source = source,
         lastModifiedMs = lastModifiedMs,
         sizeBytes = sizeBytes,
