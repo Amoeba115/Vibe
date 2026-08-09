@@ -10,4 +10,9 @@ interface LyricsProvider {
     suspend fun searchResults(
         query: String,
     ): List<LyricsSearchResult> = emptyList()
+
+    suspend fun searchResults(
+        title: String,
+        artist: String,
+    ): List<LyricsSearchResult> = searchResults("$title $artist")
 }
