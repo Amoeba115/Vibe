@@ -158,7 +158,7 @@ internal fun PlaylistLyricsScreen(
                                         }
                                         val results =
                                             repository
-                                                .searchResults("${track.title} ${track.artist}")
+                                                .searchResults(track.title, track.artist)
                                                 .take(LyricsRepository.MAX_CANDIDATES_PER_TRACK)
                                         if (results.isEmpty()) tracksWithoutResults++
                                         repository.replaceCandidates(track, results)

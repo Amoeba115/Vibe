@@ -29,6 +29,12 @@ class LyricsRepository(
     suspend fun searchResults(query: String): List<LyricsSearchResult> =
         providers.flatMap { provider -> provider.searchResults(query) }
 
+    suspend fun searchResults(
+        title: String,
+        artist: String,
+    ): List<LyricsSearchResult> =
+        providers.flatMap { provider -> provider.searchResults(title, artist) }
+
     suspend fun localLyricsFor(track: Track): Lyrics? = localProvider.find(track)
 
     fun selectedLyricsFor(trackId: Long): Lyrics? = selectedOverrides[trackId]

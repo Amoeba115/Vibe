@@ -125,11 +125,27 @@ class LrclibLyricsProvider(
         }
 
     override suspend fun searchResults(query: String): List<LyricsSearchResult> =
+        searchResults { parameter("q", query) }
+
+    override suspend fun searchResults(
+        title: String,
+        artist: String,
+    ): List<LyricsSearchResult> =
+        searchResults {
+            parameter("track_name", title)
+            if (!artist.isUnknownArtist()) {
+                parameter("artist_name", artist)
+            }
+        }
+
+    private suspend fun searchResults(
+        parameters: io.ktor.client.request.HttpRequestBuilder.() -> Unit,
+    ): List<LyricsSearchResult> =
         withContext(Dispatchers.IO) {
             runCatching {
                 val response =
                     client.get("https://lrclib.net/api/search") {
-                        parameter("q", query)
+                        parameters()
                     }
                 if (!response.status.isSuccess()) return@runCatching emptyList()
                 Json
